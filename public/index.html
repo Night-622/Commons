@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Commons</title>
+  <meta name="description" content="Build a city on a shared map, next to everyone else's.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23eef1e8'/><rect x='2' y='2' width='5' height='5' fill='%23e3a34b'/><rect x='9' y='2' width='5' height='5' fill='%233f6fb5'/><rect x='2' y='9' width='5' height='5' fill='%235b9e5f'/><rect x='9' y='9' width='5' height='5' fill='%236b4fa0'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&display=swap">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <section id="login" class="screen">
+    <div class="deed">
+      <h1 class="wordmark">Commons</h1>
+      <p class="lede">Claim a plot on a shared map. Build a city next to everyone else's, and keep it alive.</p>
+      <button id="btn-signin" class="btn primary">Sign in with Google</button>
+      <p id="login-err" class="err" role="alert"></p>
+    </div>
+  </section>
+
+  <section id="loading" class="screen hidden"><p>Surveying your plot…</p></section>
+
+  <main id="game" class="hidden">
+    <canvas id="map" aria-label="City map"></canvas>
+
+    <header class="cartouche">
+      <button id="city-name" class="city-name" title="Rename your city"></button>
+      <p id="clock" class="clock"></p>
+      <button id="btn-rebuild" class="btn primary hidden">Rebuild on the ruins</button>
+    </header>
+
+    <aside class="ledger" aria-label="City status">
+      <dl id="ledger-body"></dl>
+      <p id="save-state" class="save-state">Saved</p>
+    </aside>
+
+    <nav class="views" aria-label="Map views">
+      <button id="btn-home" class="btn">My plot</button>
+      <button id="btn-world" class="btn">Whole map</button>
+      <button id="btn-traffic" class="btn" aria-pressed="false">Traffic</button>
+      <button id="btn-board" class="btn">Leaderboards</button>
+      <button id="btn-help" class="btn">Help</button>
+      <button id="btn-signout" class="btn quiet">Sign out</button>
+    </nav>
+
+    <div id="inspector" class="inspector hidden" aria-live="polite"></div>
+    <footer id="tools" class="tools" aria-label="Build tools"></footer>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </main>
+
+  <dialog id="modal"><div id="modal-body"></div></dialog>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

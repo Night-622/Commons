@@ -1,0 +1,10 @@
+{
+  "name": "commons",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node test/sim.test.mjs",
+    "serve": "firebase emulators:start --only hosting",
+    "deploy:rules": "firebase deploy --only firestore:rules"
+  }
+}

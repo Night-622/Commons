@@ -1,0 +1,47 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+
+    // Which plot each player owns. Written once, when the plot is claimed.
+    match /users/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['plotId', 'createdAt']);
+      allow update, delete: if false;
+    }
+
+    // Plot counter for spiral allocation. Can only ever go up by one.
+    match /worlds/{worldId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.nextIndex == 1;
+      allow update: if signedIn() && request.resource.data.nextIndex == resource.data.nextIndex + 1;
+      allow delete: if false;
+    }
+
+    // Everyone can see every plot; only the owner can change theirs.
+    match /plots/{plotId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.owner == request.auth.uid
+        && plotId == request.resource.data.world + '_' + string(request.resource.data.px) + '_' + string(request.resource.data.py)
+        && !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && request.resource.data.state.size() < 200000;
+      allow update: if signedIn()
+        && resource.data.owner == request.auth.uid
+        && request.resource.data.owner == resource.data.owner
+        && request.resource.data.world == resource.data.world
+        && request.resource.data.px == resource.data.px
+        && request.resource.data.py == resource.data.py
+        && request.resource.data.state.size() < 200000;
+      allow delete: if false;
+    }
+
+    // Permanent records of fallen cities.
+    match /legacy/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.owner == request.auth.uid;
+      allow update, delete: if false;
+    }
+  }
+}
