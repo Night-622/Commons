@@ -1,46 +1,34 @@
-Commons 1.8 update: how to install
+Commons: how updates go live (from 1.9)
 
-1. Open C:\Users\Other user\Desktop\Commons
-2. Delete the old "public" folder and the old "test" folder.
-3. Unzip this file into the Commons folder. It puts back:
-     public\          (all the game files)
-     test\            (sim.test.mjs and balance.mjs)
-     .github\workflows\firebase-hosting-merge.yml
-     firestore.rules, package.json, README.md, HOW-TO-UPDATE.txt
-   Say yes to replacing files. Don't touch anything else
-   (firebase.json, .firebaserc, .agents, .claude, .firebase).
+The game lives in git and on GitHub. Pushing to the main branch runs every test
+on GitHub and, only if they all pass, publishes the site to https://commons-ww.web.app
+(about 5-10 minutes). If a test fails, the live site stays as it was.
 
-4. PUT THE NEW SECURITY RULES LIVE FIRST. This is what fixes saving, joining and chat.
-   In a terminal in the Commons folder (you do NOT need Firebase installed; npx fetches it):
-     npm run login            (once: opens a browser to sign in to Google)
-     npm run deploy:rules
-   You should see "Deploy complete!". If it says "permission denied", sign in with the
-   Google account that owns the commons-ww Firebase project.
+When an update changes firestore.rules (the security rules):
+  1. In a terminal in the Commons folder:
+       npm run login          (once: opens a browser to sign in to Google)
+       npm run deploy:rules   (wait for "Deploy complete!")
+  2. THEN push. The rules must be live before the game code that needs them.
 
-5. THEN commit and push to GitHub. The Action tests and deploys the website.
-6. Open https://commons-ww.web.app and press Ctrl+F5.
+To run the tests yourself (optional; GitHub runs them anyway):
+  npm install                          (once)
+  npx playwright install chromium      (once)
+  npm test                 simulation
+  npm run test:rules       security rules (needs Java 21: Temurin 21 from adoptium.net)
+  npm run test:smoke       the game in a browser with a pretend server
+  npm run balance -- 1-60  60 scripted towns for 100 days
 
-Optional, so step 4 happens automatically on every push from now on:
-   Google Cloud console > IAM > find the service account named like
-   "github-action-...@commons-ww.iam.gserviceaccount.com" > Edit > Add role
-   "Firebase Rules Admin". Until then the Action skips the rules with a warning.
-
-Admin page (new in 1.1): https://commons-ww.web.app/admin.html
+Admin page: https://commons-ww.web.app/admin.html
    1. Sign in to the game once with Google, then in the Firebase console open
       Authentication > Users and copy your User UID.
    2. Firestore Database > Start collection "admins" > Document ID = your UID,
       add any field (e.g. name = Michael) > Save.
    3. Open admin.html and sign in with the same Google account.
-   (Needs the new firestore.rules deployed, step 4 above.)
 
-Password reset emails, if they still don't arrive:
+Password reset emails, if they don't arrive:
    - Check spam/junk. They come from noreply@commons-ww.firebaseapp.com.
    - Firebase console > Authentication > Sign-in method: Email/Password must be on.
    - Firebase console > Authentication > Settings > Authorised domains must list
-     commons-ww.web.app (it should by default).
+     commons-ww.web.app.
    - Accounts made with "Continue with Google" have no password to reset.
    - Firebase stays silent (on purpose) when an address has no account.
-
-Optional checks:
-   npm test          (simulation tests)
-   npm run balance   (a mayor who follows the advisor, 100 days)

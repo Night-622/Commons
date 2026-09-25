@@ -1859,7 +1859,8 @@ export function tick(s, rng = Math.random) {
   if (s.status !== 'alive') return { plan: null, collapsed: null };
   construct(s);
   const p = s._plan && s._plan.day === s.day ? s._plan : plan(s, rng);
-  const avg = s.people.length ? s.people.reduce((a, x) => a + x.m, 0) / s.people.length : 0.5;
+  // An empty town counts as hopeful as a new one, so it can fill up again if it still has homes and money.
+  const avg = s.people.length ? s.people.reduce((a, x) => a + x.m, 0) / s.people.length : 0.65;
   s.happiness += (avg - s.happiness) * 0.25;
   s.hour++;
   let collapsed = null, day = null;
@@ -1942,7 +1943,8 @@ export function advice(s, plan) {
   if (n.school < 0.8) add(4, 'Children are missing school. Build schools, and make sure you have teachers with degrees.', c.teens > c.kids ? T.HIGH : T.SCHOOL);
   if (n.health < 0.8 || c.sick > c.total * 0.1) add(4, 'Sick people aren’t being treated.', tot.counts[T.CLINIC] ? T.HOSPITAL : T.CLINIC);
   if (n.safety < 0.7) add(3.5, 'Crime is rising.', tot.counts[T.POLICE] ? T.COURT : T.POLICE);
-  if (n.leisure < 0.6) add(3, 'People have nothing to do in the evenings.', T.PARK);
+  // Leisure is worth nearly as much mood as a job, so the more people lack it the higher it ranks.
+  if (n.leisure < 0.6) add(3 + 3 * (0.6 - n.leisure), 'People have nothing to do in the evenings.', T.PARK);
   if (n.commute < 0.8) add(3.5, 'Roads are jammed. Add routes or footpaths, or a bus service.', tot.counts[T.DEPOT] ? T.STOP : T.DEPOT);
   if (s.flags.utilSince !== undefined) {
     const u = s._util || utilities(s), all = s.grid.filter((t) => B[t]?.cat).length || 1;

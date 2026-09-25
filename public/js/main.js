@@ -3,6 +3,7 @@ import {
   T, B, PLOT, TICK_MS, MAX_OFFLINE_DAYS, HOURS_PER_DAY, SAVE_EVERY_MS, RUBBLE_CLEAR_COST, MAX_LEVEL, LEVEL, UPGRADABLE,
   REBUILD_MONEY, MOVE_KEEP, TUTORIAL_REWARD, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome, DECISIONS, ZONES, ZONE_COST,
   LOAN_DAYS, HISTORIC_DAYS, BADGES, REGIONAL, REGIONAL_SHARE, ALLIANCE_TRADE, DAILY, DAILY_REWARD, WEEKLY, WEEKLY_REWARD, GIFT_LIMITS, REACTIONS,
+  WASTE_POP, SEWAGE_POP,
 } from './constants.js';
 import { Renderer, STRIDE, thumbnail, modelHeight } from './render.js';
 import { loadPrefs, savePrefs, applyPrefs, resolvedTheme, palette, PALETTES } from './prefs.js';
@@ -64,7 +65,7 @@ const NEEDS = [
   { k: 'safety', icon: 'i-lock', label: 'Safety', fix: 'Crime is up. Build a police station and a courthouse, and create jobs.' },
   { k: 'commute', icon: 'i-car', label: 'Commute', fix: 'Roads are jammed. Add routes, footpaths for walkers and bikes, or move jobs closer to homes.' },
   { k: 'leisure', icon: 'i-tree', label: 'Fun', fix: 'People have nothing to do in the evenings. Build parks, sport, cafés or a cinema.' },
-  { k: 'waste', icon: 'i-clear', label: 'Rubbish and drains', fix: 'Every resident makes rubbish and sewage. From 25 people build a landfill or recycling centre; from 40, a sewage works.' },
+  { k: 'waste', icon: 'i-clear', label: 'Rubbish and drains', fix: `Every resident makes rubbish and sewage. From ${WASTE_POP} people build a landfill or recycling centre; from ${SEWAGE_POP}, a sewage works.` },
   { k: 'air', icon: 'i-spark', label: 'Clean air', fix: 'Fossil power, factories and traffic foul the air. Use solar or wind, plant parks and farms, or try a carbon tax.' },
 ];
 const CITY_NAMES = ['Maple Bay', 'Riverside', 'Kingsford', 'Ashgrove', 'Bellhaven', 'Coral Point', 'Elm Hollow', 'Fernvale', 'Glenmore', 'Harbourview', 'Oakridge', 'Wattle Creek'];
@@ -2440,8 +2441,14 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 1.8';
+const VERSION = 'Commons 1.9';
 const CHANGELOG = [
+  ['1.9', [
+    'Young towns get room to breathe: rubbish now needs handling from 45 people (was 25) and sewage from 70 (was 40), so the utility bills don’t all arrive at once.',
+    'The advisor ranks leisure higher when many people have nothing to do in the evenings. A park is cheap and lifts everyone’s mood.',
+    'A town that has emptied out but still has homes and money now attracts new people instead of sitting empty.',
+    'Fairer leaderboards: the server now refuses impossible jumps in money, population and city age.',
+  ]],
   ['1.8', [
     'Ελληνικά: the game now speaks Greek. Menus, buttons, panels, settings, buildings and the sign-in screens are translated; news items and tips follow in later updates.',
     'Language setting in Settings, Interface: Automatic (follows your device), English or Ελληνικά.',
@@ -2488,7 +2495,7 @@ const CHANGELOG = [
     'Many households have a pet. Owners are happier, but worry once the town is big and has no vet. New: the Vet.',
     'Pensions: retirees draw $1 a day, so an ageing city costs more to run.',
     'School quality: schools short of teachers teach more slowly. Bookish children learn a little faster.',
-    'Rubbish and sewage: from 25 people build a landfill or recycling centre (which sells what it sorts); from 40, a sewage works. Without them, streets get dirty and illness spreads.',
+    `Rubbish and sewage: from ${WASTE_POP} people build a landfill or recycling centre (which sells what it sorts); from ${SEWAGE_POP}, a sewage works. Without them, streets get dirty and illness spreads.`,
     'Timelapse: Stats, History, Watch your city grow. Scrub through every day and save it as a video.',
     'The Build bar hint no longer gets squashed on narrower screens.',
   ]],

@@ -68,7 +68,7 @@ export const B = {
   [T.WATER]: { key: 'water', name: 'Water tower', cat: 'utility', col: 'work', cost: 350, work: 36, upkeep: 5, jobs: [['Technician', 1, 1]], supply: 10, water: true, blurb: 'Clean water for every building within 10 tiles. Without it, illness spreads faster.' },
   [T.LANDFILL]: { key: 'landfill', name: 'Landfill', cat: 'utility', col: 'work', cost: 240, work: 24, upkeep: 3, jobs: [['Refuse collector', 0, 2]], waste: 70, pollution: 2, smog: 0.02, blurb: 'Takes the rubbish of 70 people. Smelly: homes nearby are less happy.' },
   [T.RECYCLE]: { key: 'recycle', name: 'Recycling centre', cat: 'utility', col: 'work', cost: 520, work: 50, upkeep: 5, jobs: [['Sorter', 0, 3], ['Manager', 2, 1]], waste: 120, sells: 0.3, blurb: 'Takes the rubbish of 120 people with no smell, and sells what it sorts.' },
-  [T.SEWAGE]: { key: 'sewage', name: 'Sewage works', cat: 'utility', col: 'work', cost: 620, work: 60, upkeep: 6, jobs: [['Technician', 1, 2]], sewage: 150, pollution: 1, blurb: 'Treats the sewage of 150 people. Without it, once the town passes 40, illness spreads.' },
+  [T.SEWAGE]: { key: 'sewage', name: 'Sewage works', cat: 'utility', col: 'work', cost: 620, work: 60, upkeep: 6, jobs: [['Technician', 1, 2]], sewage: 150, pollution: 1, blurb: 'Treats the sewage of 150 people. Without it, once the town passes 70, illness spreads.' },
   [T.DRAIN]: { key: 'drain', name: 'Storm drains', cat: 'utility', col: 'work', cost: 260, work: 24, upkeep: 3, supply: 8, blurb: 'Protects everything within 8 tiles from floods after heavy rain.' },
   [T.RAIL]: { key: 'rail', name: 'Railway', cost: 25, work: 2, upkeep: 0.5, blurb: 'Track for trains. Join stations together, or run it to your plot edge to reach a neighbour.' },
 
@@ -183,7 +183,7 @@ export const TRAITS = [
 ];
 export const PET_SHARE = 0.4;              // share of households with a pet
 export const PENSION = 1;                  // dollars a day per retiree
-export const WASTE_POP = 25, SEWAGE_POP = 40;   // from this many people, rubbish and sewage need handling
+export const WASTE_POP = 45, SEWAGE_POP = 70;   // from this many people, rubbish and sewage need handling
 // Research: educated residents and libraries earn research points; each project unlocks or improves something.
 export const TECH = [
   { id: 'greenconcrete', name: 'Green concrete', cost: 40, text: 'Everything costs 10% less to build.' },

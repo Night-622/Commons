@@ -283,7 +283,7 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
 {
   seed = 88;
   const s = sim.newCity('Waste', rng); s.money = 1e5; s.land.fill(1);
-  for (let k = 0; k < 60; k++) s.people.push({ ...s.people[0], i: 3000 + k, a: k % 3 ? 30 : 70 });
+  for (let k = 0; k < 80; k++) s.people.push({ ...s.people[0], i: 3000 + k, a: k % 3 ? 30 : 70 });   // past SEWAGE_POP
   const traits = new Set(s.people.map(sim.traitOf));
   assert(traits.size >= 4, 'residents have a mix of characters');
   assert.equal(sim.traitOf(s.people[5]), sim.traitOf({ ...s.people[5] }), 'traits are stable');
@@ -383,5 +383,18 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
     for (let h = 0; h < 24 * 6; h++) sim.tick(s, r);
   }
   console.log('stress ok: all events, no events, and middling luck');
+}
+// ---- an empty town with homes and money fills up again rather than sitting empty
+{
+  seed = 7;
+  const s = sim.newCity('Empty', rng); s.money = 2000;
+  for (let x = c - 3; x <= c + 3; x++) put(s, x, c + 1, T.ROAD);
+  put(s, c - 2, c + 2, T.HOUSE); put(s, c + 2, c + 2, T.HOUSE);
+  for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = [];
+  s.people = []; s.day = 10;
+  for (let h = 0; h < 24 * 4 && !s.people.length; h++) sim.tick(s, rng);
+  assert.equal(s.status, 'alive');
+  assert(s.people.length > 0, 'people move into an empty town that has homes');
+  console.log('empty town ok:', s.people.length, 'arrived');
 }
 console.log('all tests passed');

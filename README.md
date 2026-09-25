@@ -21,6 +21,12 @@ Guests can turn their guest city into a full account later (Account menu). Linki
 - Saves are split: `plots/{id}` is a small public summary everyone listens to; `plotState/{id}` holds the full city and is only fetched for adjacent neighbours.
 - `node test/balance.mjs` runs a scripted city for 100 days.
 
+## New in 1.9: young towns
+- Utilities arrive in stages: power and water from 25 people (`UTILITY_POP`), rubbish from 45 (`WASTE_POP`), sewage from 70 (`SEWAGE_POP`). Before, three of them landed at 25 and the fourth at 40, and about a third of scripted towns stalled or collapsed.
+- The advisor's leisure tip scores `3 + 3 × shortfall` instead of a flat 3, so parks get built early.
+- An empty town counts at mood 0.65 (like a new one), so newcomers can arrive if it has homes.
+- Result with `npm run balance -- 1-60`: grown 57, stalled 3, fell 0 (was 30 / 20 / 10).
+
 ## New in 1.8: languages
 - `public/js/i18n.js` translates the interface as it is drawn: the English text is its own key, so untranslated text stays English. Anything inside `[translate="no"]` is left alone.
 - Dictionaries live in `public/js/lang/`. To add a language: copy `el.js` to e.g. `fr.js`, translate the right-hand sides, then add it to `LANGS` and `languages` in `i18n.js`. Text with numbers in it goes in `patterns`.
