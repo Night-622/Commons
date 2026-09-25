@@ -1,0 +1,10 @@
+{
+  "name": "Commons",
+  "short_name": "Commons",
+  "description": "Build a city on a shared map, right next to everyone else's.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#dbe9d2",
+  "theme_color": "#17313b",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

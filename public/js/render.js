@@ -61,6 +61,11 @@ export function modelHeight(t, lv = 1) {
 
 // Shapes that tell building groups apart without colour (Junction's glyph set).
 const GLYPH_COL = { house: 0, work: 1, shop: 2, school: 3, park: 4, hall: 5 };
+// Short labels so every building type is distinct in the 2D view.
+const CODE = { [T.HOUSE]: 'H', [T.APARTMENT]: 'Ap', [T.VILLA]: 'V', [T.WORK]: 'Of', [T.SHOP]: 'G', [T.CAFE]: 'Ca', [T.FACTORY]: 'F', [T.YARD]: 'By',
+  [T.DAYCARE]: 'Dc', [T.SCHOOL]: 'PS', [T.HIGH]: 'HS', [T.UNI]: 'U', [T.TUTOR]: 'Tu', [T.LIBRARY]: 'Li', [T.CLINIC]: '+', [T.HOSPITAL]: 'H+',
+  [T.POLICE]: 'Po', [T.FIRE]: 'Fi', [T.COURT]: 'Ct', [T.CEMETERY]: 'Ce', [T.PARK]: 'Pk', [T.PLAYGROUND]: 'Pl', [T.SPORTS]: 'Sp', [T.GYM]: 'Gy',
+  [T.DOJO]: 'Do', [T.POOL]: 'Sw', [T.CINEMA]: 'Ci', [T.STATION]: 'St', [T.STOP]: 'Bs', [T.DEPOT]: 'Bd', [T.HALL]: 'TH' };
 export const glyphOf = (t) => GLYPH_COL[B[t]?.col];
 // Ground colour for buildings that are mostly open space.
 const GROUND = { [T.SPORTS]: '#6fbf5a', [T.POOL]: '#e9e2cf', [T.CEMETERY]: '#8fb77a', [T.PLAYGROUND]: '#e8d6a3', [T.YARD]: '#c9ae86', [T.VILLA]: '#b8e09a' };
@@ -156,6 +161,10 @@ export class Renderer {
     this.th = THEMES[scene.theme] || THEMES.light;
     this.pal = scene.palette;
     this.scene = scene;
+    this._lights = [];
+    const season = scene.season, dark = scene.theme === 'dark';
+    this.seasonTop = season === 'Winter' ? (dark ? '#5b6b66' : '#e6eee9') : season === 'Autumn' ? (dark ? '#5d6b3d' : '#c2cf86') : null;
+    this.seasonTree = season === 'Autumn' ? '#d9822b' : season === 'Winter' ? (dark ? '#8a9a95' : '#f3f7f5') : null;
     const grd = g.createLinearGradient(0, 0, 0, this.h);
     grd.addColorStop(0, this.th.bg);
     grd.addColorStop(1, this.th.bg2);
@@ -187,6 +196,8 @@ export class Renderer {
       this.tileOutline(g, t.px, t.py, t.tx, t.ty, `rgba(255,201,51,${0.5 + a * 0.5})`, `rgba(255,201,51,${0.15 + a * 0.2})`);
     }
     this.night(g, scene);
+    this.lights(g, scene);
+    this.weatherFx(g, scene);
     if (this.cam.z < 13) for (const plot of plots) this.label(g, plot);
     this.pops(g, scene);
   }
@@ -220,7 +231,8 @@ export class Renderer {
     poly(g, [P(PLOT, 0, 0), P(PLOT, PLOT, 0), P(PLOT, PLOT, d), P(PLOT, 0, d)], th.side2);
     poly(g, [P(0, PLOT, d * 0.45), P(PLOT, PLOT, d * 0.45), P(PLOT, PLOT, d), P(0, PLOT, d)], th.soil);
     poly(g, [P(PLOT, 0, d * 0.45), P(PLOT, PLOT, d * 0.45), P(PLOT, PLOT, d), P(PLOT, 0, d)], th.soil2);
-    poly(g, [P(0, 0), P(PLOT, 0), P(PLOT, PLOT), P(0, PLOT)], plot.status === 'ruins' ? shade(th.top, -0.1, 0.5) : th.top);
+    const top = this.seasonTop || th.top;
+    poly(g, [P(0, 0), P(PLOT, 0), P(PLOT, PLOT), P(0, PLOT)], plot.status === 'ruins' ? shade(th.top, -0.1, 0.5) : top);
 
     if (z >= 12) {   // subtle lawn stripes
       g.globalAlpha = 0.5;
@@ -243,17 +255,19 @@ export class Renderer {
       if (t === T.EMPTY) continue;
       const tx = i % PLOT, ty = (i / PLOT) | 0;
       const dia = [P(tx, ty), P(tx + 1, ty), P(tx + 1, ty + 1), P(tx, ty + 1)];
-      if (t === T.ROAD) {
+      if (t === T.ROAD || t === T.XING) {
         let col = plot.uc?.has(i) ? th.dirt : th.road;
         if (traffic && traffic.cap[i]) col = jamColour(traffic.load[i] / traffic.cap[i]);
         if (z >= 9 && !plot.uc?.has(i)) {
           // Pavement on the sides that don't continue into more road.
           poly(g, dia, th.pave);
-          const road = (dx, dy) => { const x = tx + dx, y = ty + dy; return x >= 0 && y >= 0 && x < PLOT && y < PLOT && [T.ROAD, T.HALL].includes(grid[y * PLOT + x]); };
+          const road = (dx, dy) => { const x = tx + dx, y = ty + dy; return x >= 0 && y >= 0 && x < PLOT && y < PLOT && [T.ROAD, T.HALL, T.XING].includes(grid[y * PLOT + x]); };
           const e = 0.16, x0 = road(-1, 0) ? 0 : e, x1 = road(1, 0) ? 1 : 1 - e, y0 = road(0, -1) ? 0 : e, y1 = road(0, 1) ? 1 : 1 - e;
           poly(g, [P(tx + x0, ty + y0), P(tx + x1, ty + y0), P(tx + x1, ty + y1), P(tx + x0, ty + y1)], col);
         } else poly(g, dia, col);
-        if (z >= 10 && !plot.uc?.has(i)) this.laneMarks(g, P, grid, i, tx, ty, z);
+        if (z >= 10 && !plot.uc?.has(i) && t === T.ROAD) this.laneMarks(g, P, grid, i, tx, ty, z);
+        if (t === T.XING && !plot.uc?.has(i)) this.rail(g, P, grid, i, tx, ty, z, false, true);
+        if (live && t === T.ROAD && this.scene.nightAmt > 0.3 && hash(i, 21) < 0.35) this._lights.push([plot, tx + 0.12, ty + 0.12]);
       } else if (t === T.RAIL) {
         this.rail(g, P, grid, i, tx, ty, z, plot.uc?.has(i));
       } else if (t === T.PATH) {
@@ -298,7 +312,7 @@ export class Renderer {
     g.beginPath();
     let n = 0;
     for (const [dx, dy, j] of dirs) {
-      if (j < 0 || (grid[j] !== T.ROAD && grid[j] !== T.HALL)) continue;
+      if (j < 0 || (grid[j] !== T.ROAD && grid[j] !== T.HALL && grid[j] !== T.XING)) continue;
       n++;
       const a = P(cx, cy), b = P(cx + dx * 0.5, cy + dy * 0.5);
       g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]);
@@ -343,6 +357,7 @@ export class Renderer {
     poly(g, [P(x1, y0, h), P(x1, y1, h), a], shade(col, -0.16, grey));
   }
   tree(g, P, x, y, size, col, z) {
+    if (this.seasonTree) col = this.seasonTree;
     const [bx, by] = P(x, y, 0), [tx2, ty2] = P(x, y, size * 0.9);
     g.strokeStyle = '#7a5a3a'; g.lineWidth = Math.max(1, z / 12);
     g.beginPath(); g.moveTo(bx, by); g.lineTo(tx2, ty2); g.stroke();
@@ -365,7 +380,9 @@ export class Renderer {
     if (plot.uc?.has(i)) { this.site(g, P, t, tx, ty, q, z); return; }
     const cond = t === T.HALL ? 100 : plot.cond[i] ?? 100;
     const grey = cond <= 0 ? 0.9 : cond < 40 ? 0.5 : 0;
-    const col = pal[B[t].col || B[t].key] || '#999999';
+    const base = pal[B[t].col || B[t].key] || '#999999';
+    const col = [T.HOUSE, T.VILLA, T.APARTMENT].includes(t) ? shade(base, (hash(i, 31) - 0.5) * 0.35) : base;
+    if (live && z >= 9 && this.view === '3d' && !this.scene.pulseOnly) poly(g, [P(tx + 0.2, ty + 0.25), P(tx + 1.05, ty + 0.25), P(tx + 1.05, ty + 1.05), P(tx + 0.2, ty + 1.05)], 'rgba(20,30,20,0.10)');
     const night = live && this.scene.nightAmt > 0.15 && cond > 0;
     const glass = night ? '#ffd57a' : th.glass;
     let top = 0.5;
@@ -513,14 +530,17 @@ export class Renderer {
 
 
 
-  rail(g, P, grid, i, tx, ty, z, building) {
-    poly(g, [P(tx + 0.08, ty + 0.08), P(tx + 0.92, ty + 0.08), P(tx + 0.92, ty + 0.92), P(tx + 0.08, ty + 0.92)], building ? this.th.dirt : '#b3a58f');
+  rail(g, P, grid, i, tx, ty, z, building, overRoad) {
+    if (!overRoad) poly(g, [P(tx + 0.08, ty + 0.08), P(tx + 0.92, ty + 0.08), P(tx + 0.92, ty + 0.92), P(tx + 0.08, ty + 0.92)], building ? this.th.dirt : '#b3a58f');
     if (building || z < 6) return;
-    const is = (dx, dy) => { const x = tx + dx, y = ty + dy; return x >= 0 && y >= 0 && x < PLOT && y < PLOT && [T.RAIL, T.STATION].includes(grid[y * PLOT + x]); };
-    const ew = is(1, 0) || is(-1, 0) || tx === 0 || tx === PLOT - 1, ns = is(0, 1) || is(0, -1) || ty === 0 || ty === PLOT - 1;
+    const is = (dx, dy) => { const x = tx + dx, y = ty + dy; return x >= 0 && y >= 0 && x < PLOT && y < PLOT && [T.RAIL, T.STATION, T.XING].includes(grid[y * PLOT + x]); };
+    const railish = (dx, dy) => { const x = tx + dx, y = ty + dy; return x >= 0 && y >= 0 && x < PLOT && y < PLOT && [T.RAIL, T.XING].includes(grid[y * PLOT + x]); };
+    const ew = overRoad ? railish(1, 0) || railish(-1, 0) : is(1, 0) || is(-1, 0) || tx === 0 || tx === PLOT - 1;
+    const ns = overRoad ? railish(0, 1) || railish(0, -1) : is(0, 1) || is(0, -1) || ty === 0 || ty === PLOT - 1;
     const dirs = ew || !ns ? [['x']] : [];
     if (ns) dirs.push(['y']);
     for (const [d] of dirs) {
+      if (overRoad) { g.strokeStyle = '#f2f2f2'; g.lineWidth = Math.max(2, z / 8); g.setLineDash([z * 0.1, z * 0.1]); const a = d === 'x' ? P(tx + 0.02, ty + 0.1) : P(tx + 0.1, ty + 0.02), b = d === 'x' ? P(tx + 0.02, ty + 0.9) : P(tx + 0.9, ty + 0.02); g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke(); g.setLineDash([]); }
       g.strokeStyle = '#7a5b3e'; g.lineWidth = Math.max(1.5, z / 10);
       g.beginPath();
       for (let k = 0.1; k < 1; k += 0.2) {
@@ -547,7 +567,7 @@ export class Renderer {
       else this.face(g, P, 'E', x + hx, y - hy + 0.04, y + hy - 0.04, 0.12, 0.19, '#cfe3ee');
       return;
     }
-    const L = 0.46, W = 0.15, hx = along ? L : W, hy = along ? W : L;
+    const L = 0.4, W = 0.15, hx = along ? L : W, hy = along ? W : L;
     this.box(g, P, x - hx, y - hy, x + hx, y + hy, 0.04, 0.27, '#eef2f5');
     if (along) { this.face(g, P, 'S', y + hy, x - hx, x + hx, 0.06, 0.1, '#d8463a'); this.face(g, P, 'S', y + hy, x - hx + 0.05, x + hx - 0.05, 0.15, 0.22, '#3d5a73'); }
     else { this.face(g, P, 'E', x + hx, y - hy, y + hy, 0.06, 0.1, '#d8463a'); this.face(g, P, 'E', x + hx, y - hy + 0.05, y + hy - 0.05, 0.15, 0.22, '#3d5a73'); }
@@ -838,7 +858,7 @@ export class Renderer {
       const x = x0 + (i % PLOT) * s, y = y0 + ((i / PLOT) | 0) * s;
       if (x > this.w || y > this.h || x + s < 0 || y + s < 0) continue;
       const uc = plot.uc?.has(i);
-      if (t === T.ROAD || t === T.PATH || t === T.RAIL) {
+      if (t === T.ROAD || t === T.PATH || t === T.RAIL || t === T.XING) {
         let col = uc ? th.dirt : t === T.PATH ? th.pave : t === T.RAIL ? '#8f826d' : th.road;
         if (traffic && traffic.cap[i]) col = jamColour(traffic.load[i] / traffic.cap[i]);
         g.fillStyle = col; g.fillRect(x, y, s + 0.5, s + 0.5);
@@ -860,7 +880,8 @@ export class Renderer {
       g.fillStyle = shade(col, 0, grey);
       g.fillRect(bx, by, bs, bs);
       if (detailed) {
-        glyph(g, glyphOf(t), bx + bs / 2, by + bs / 2, bs * 0.2, 'rgba(255,255,255,0.92)');
+        if (CODE[t] && bs >= 16) { g.fillStyle = 'rgba(255,255,255,0.95)'; g.font = `800 ${Math.round(bs * 0.34)}px Overpass, system-ui`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(CODE[t], bx + bs / 2, by + bs / 2 + 1); }
+        else glyph(g, glyphOf(t), bx + bs / 2, by + bs / 2, bs * 0.2, 'rgba(255,255,255,0.92)');
         const lv = plot.lv ? plot.lv[i] || 1 : 1;
         for (let k = 1; k < lv; k++) { g.fillStyle = '#fff'; g.fillRect(bx + 3 + (k - 1) * 5, by + bs - 6, 3, 3); }
         if (plot.queueMap?.get(i)?.up) { g.strokeStyle = th.scaffold; g.lineWidth = 2; g.strokeRect(bx + 1, by + 1, bs - 2, bs - 2); }
@@ -932,6 +953,59 @@ export class Renderer {
     if (a <= 0) return;
     g.fillStyle = `rgba(14,22,58,${a * 0.3})`;
     g.fillRect(0, 0, this.w, this.h);
+  }
+
+  lights(g, scene) {
+    if (!this._lights.length) return;
+    g.save(); g.globalCompositeOperation = 'lighter';
+    for (const [plot, x, y] of this._lights) {
+      const [sx, sy] = this.project(plot.px * STRIDE + x, plot.py * STRIDE + y, 0.3);
+      const r = this.cam.z * 0.5;
+      const grd = g.createRadialGradient(sx, sy, 0, sx, sy, r);
+      grd.addColorStop(0, 'rgba(255,214,140,0.45)'); grd.addColorStop(1, 'rgba(255,214,140,0)');
+      g.fillStyle = grd; g.beginPath(); g.arc(sx, sy, r, 0, Math.PI * 2); g.fill();
+    }
+    g.restore();
+  }
+
+  weatherFx(g, scene) {
+    const w = scene.weather;
+    if (w !== 'rain' && w !== 'snow') return;
+    const t = scene.prefs.reducedMotion ? 0 : performance.now() / 1000;
+    g.save();
+    if (w === 'rain') { g.strokeStyle = 'rgba(160,190,220,0.45)'; g.lineWidth = 1; g.beginPath(); }
+    else g.fillStyle = 'rgba(255,255,255,0.85)';
+    for (let k = 0; k < 140; k++) {
+      const x = (hash(k, 1) * this.w + t * (w === 'rain' ? -60 : 12 + hash(k, 3) * 10)) % this.w;
+      const y = (hash(k, 2) * this.h + t * (w === 'rain' ? 520 : 40 + hash(k, 4) * 30)) % this.h;
+      const X = x < 0 ? x + this.w : x;
+      if (w === 'rain') { g.moveTo(X, y); g.lineTo(X - 3, y + 12); }
+      else { g.beginPath(); g.arc(X, y, 1.5 + hash(k, 5) * 1.5, 0, Math.PI * 2); g.fill(); }
+    }
+    if (w === 'rain') g.stroke();
+    g.restore();
+  }
+
+  // Clicks in 3D: test buildings front to back so the top of a tall building selects that building.
+  pick(sx, sy) {
+    const ground = this.hit(sx, sy);
+    if (this.view !== '3d' || !this.scene?.plots) return ground;
+    const w = this.toWorld(sx, sy);
+    const bx = Math.floor(w.x), by = Math.floor(w.y);
+    for (let d = 4; d >= 0; d--) for (let k = 0; k <= d; k++) {
+      const wx = bx + k, wy = by + (d - k);
+      const h = this.tileAt(wx, wy);
+      if (!h) continue;
+      const plot = [...this.scene.plots.values()].find((p) => p.px === h.px && p.py === h.py);
+      const t = plot?.grid[h.i];
+      if (!t || !B[t]?.cat && t !== T.HALL) continue;
+      const H = modelHeight(t, plot.lv?.[h.i] || 1);
+      const ox = h.px * STRIDE + h.tx, oy = h.py * STRIDE + h.ty;
+      const left = this.project(ox, oy + 1)[0], right = this.project(ox + 1, oy)[0];
+      const topY = this.project(ox, oy, H)[1], bottom = this.project(ox + 1, oy + 1)[1];
+      if (sx >= left && sx <= right && sy >= topY && sy <= bottom) return h;
+    }
+    return ground;
   }
 
   pops(g, scene) {

@@ -148,4 +148,21 @@ const finishAll = (s) => { for (const q of [...s.queue]) { while (s.queue.includ
   assert(got === 3 && Bt.people.length === before + 3, 'a migrating family is welcomed');
   console.log('linked cities ok:', JSON.stringify(plan.out.B), 'visitor income', Bt.stats.byClass.visitors);
 }
+
+// ---- compact saves, level crossings, requests
+{
+  seed = 31;
+  const s = sim.newCity('Pack', rng); s.money = 9000; s.land.fill(1);
+  put(s, 13, c, T.ROAD); put(s, 14, c, T.ROAD);
+  for (let h = 0; h < 12; h++) sim.tick(s, rng);
+  assert(sim.place(s, sim.idx(14, c), T.RAIL).ok, 'rail over road makes a crossing');
+  assert.equal(s.grid[sim.idx(14, c)], T.XING);
+  for (let h = 0; h < 48; h++) sim.tick(s, rng);
+  const json = sim.serialize(s), back = sim.migrate(JSON.parse(json));
+  assert(Array.isArray(JSON.parse(json).people[0]), 'people saved as arrays');
+  assert.deepEqual(back.people.map((p) => [p.i, p.a, p.e, p.h, p.j]), s.people.map((p) => [p.i, p.a, p.e, p.h, p.j]), 'people survive a round trip');
+  const fresh = sim.newCity('Clock', rng);
+  assert.equal(fresh.hour, sim.worldHour(fresh.lastTick), 'new cities start on the world clock');
+  console.log('saves ok:', json.length, 'bytes for', s.people.length, 'people');
+}
 console.log('all tests passed');

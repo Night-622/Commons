@@ -16,6 +16,7 @@ import * as fb from './firebase.js';
 
 const { esc, icon, money, pct, bar, avatar } = panels;
 const $ = (id) => document.getElementById(id);
+const ago = (t) => { const m = Math.round((Date.now() - (t || 0)) / 60000); return m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`; };
 const hourLabel = (h) => (h === 0 ? 'midnight' : h === 12 ? 'noon' : `${h % 12} ${h < 12 ? 'am' : 'pm'}`);
 
 // ---------- state ----------
@@ -23,17 +24,24 @@ let prefs = loadPrefs();
 let user = null, plotId = null, me = null, state = null, mayor = '';
 let world = { id: localStorage.getItem('commons-world') || 'public', name: 'Public world' }, worlds = [];
 let plan = null, totalsNow = null;
-let mode = 'select', brush = null, moveFrom = -1, catalog = null, catCat = 'all';
+let mode = 'select', brush = null, moveFrom = -1, catalog = null, catCat = 'all', catQ = '', catAfford = false;
 let overlay = null, hover = null, cursor = null, selected = null;
 let drawer = null, personId = null, peopleFilter = 'all', peopleQuery = '', statsTab = 'overview', acctTab = 'profile';
 let pops = [], undoStack = [], bridges = new Map(), neighbourInfo = [], pulseTile = null, taps = 0, followCam = false;
 let saveTimer = null, lastSave = Date.now(), loopTimer = null, worldTimer = null, lastHour = -1;
 let spaceHeld = false, dirty = true, lastFrame = performance.now(), warnedDay = -1;
-let worldUnsub = null, movesUnsub = null, lastSaved = '', offerCache = new Map(), live = false;
+let worldUnsub = null, movesUnsub = null, lastSaved = '', offerCache = new Map(), live = false, liveTimer = null, fetching = new Set();
+const INACTIVE_MS = 10 * 60 * 1000;   // a neighbour idle this long stops sharing facilities
 let profile = null, profileDirty = false, chatUnsub = null, chatMessages = [], chatUnread = 0, chatDraft = '', lastChat = 0;
 const plots = new Map();
 const byXY = new Map();
 const trips = new TripSim();
+const favKey = () => `commons-fav-${plotId}`;
+const favs = () => new Set(JSON.parse(localStorage.getItem(favKey()) || '[]'));
+function toggleFav(id) { const f = favs(); f.has(id) ? f.delete(id) : f.add(id); try { localStorage.setItem(favKey(), JSON.stringify([...f])); } catch { /* ignore */ } }
+const muted = () => new Set(JSON.parse(localStorage.getItem('commons-muted') || '[]'));
+const BLOCKED = ['fuck', 'shit', 'cunt', 'bitch', 'nigg', 'fag', 'retard', 'whore', 'slut', 'rape'];
+const clean = (t) => BLOCKED.reduce((a, w) => a.replace(new RegExp(w + '\\w*', 'gi'), (m) => m[0] + '•'.repeat(m.length - 1)), String(t));
 
 const canvas = $('map');
 const renderer = new Renderer(canvas);
@@ -188,7 +196,7 @@ async function showFound() {
         const r = ruins.find((x) => x.id === b.dataset.ruin);
         const m = $('found-mayor').value.trim(), c = $('found-city').value.trim();
         if (!m || !c) throw new Error('Give yourself and your city a name first.');
-        const st = sim.migrate(JSON.parse(r.state));
+        const st = sim.migrate(JSON.parse(r.state || await fb.getState(r.id)));
         sim.rebuild(st, c, REBUILD_MONEY);
         st.lastTick = Date.now();
         startGame(await fb.takeOverRuins(user, m, r.id, st, world.id));
@@ -229,6 +237,7 @@ async function startGame(doc) {
   plotId = doc.id;
   mayor = doc.ownerName || 'Mayor';
   state = sim.migrate(JSON.parse(doc.state));
+  if (typeof doc.money === 'number' && state.money > doc.money + 1) state.money = doc.money;   // the checked summary wins
   plots.clear(); byXY.clear(); trips.clear(); bridges.clear();
   selected = null; drawer = null; followCam = false; lastHour = -1; moveFrom = -1; catalog = null; brush = null;
   me = toPlot(doc);
@@ -265,9 +274,29 @@ function plotFrom(id, px, py, st, meta) {
   };
 }
 function toPlot(d) {
-  let st;
-  try { st = sim.migrate(JSON.parse(d.state)); } catch { return null; }
-  return plotFrom(d.id, d.px, d.py, st, { ownerName: d.ownerName, version: d.updatedAt?.toMillis?.() ?? Date.now(), mine: d.owner === user.uid, owner: d.owner, out: d.out });
+  const meta = { ownerName: d.ownerName, version: d.updatedAt?.toMillis?.() ?? Date.now(), mine: d.owner === user.uid, owner: d.owner, out: d.out };
+  if (d.state) {
+    try { const p = plotFrom(d.id, d.px, d.py, sim.migrate(JSON.parse(d.state)), meta); p.offer = d.offer; p.active = meta.version; return p; } catch { return null; }
+  }
+  if (!d.map) return null;
+  // Most neighbours arrive as a small summary: enough to draw them. Their full save is fetched only if they're next door.
+  const m = sim.fromMap(d.map);
+  const old = plots.get(d.id);
+  return {
+    id: d.id, px: d.px, py: d.py, st: old?.version === meta.version ? old.st : null, name: d.name, ownerName: d.ownerName, status: d.status,
+    pop: d.pop || 0, peakPop: d.peakPop || 0, day: d.day || 0, happiness: d.happiness || 0, cityNo: d.cityNo || 1,
+    grid: m.grid, cond: m.cond, lv: m.lv, land: m.land, uc: m.uc, queueMap: new Map(), version: meta.version, mine: meta.mine,
+    owner: d.owner, out: d.out || {}, offer: d.offer, active: meta.version,
+  };
+}
+function fetchState(p) {
+  if (p.st || fetching.has(p.id) || p.status !== 'alive') return;
+  fetching.add(p.id);
+  fb.getState(p.id).then((str) => {
+    fetching.delete(p.id);
+    const cur = plots.get(p.id);
+    if (str && cur) { cur.st = sim.migrate(JSON.parse(str)); trips.drop(cur.id); dirty = true; }
+  }).catch(() => fetching.delete(p.id));
 }
 function addPlot(p) {
   if (!p) return;
@@ -288,17 +317,25 @@ function startLive() {
   worldUnsub = fb.listenWorld(world.id, (docs) => {
     live = true;
     for (const d of docs) if (d.id !== plotId) addPlot(toPlot(d));
-    computeLinks();
-    refreshDerived();
-    drawMinimap();
-    updateHud();
-    if (drawer === 'world') renderDrawer();
     dirty = true;
+    // Many players saving at once shouldn't re-plan the city each time: wait for a quiet moment.
+    clearTimeout(liveTimer);
+    liveTimer = setTimeout(() => {
+      computeLinks();
+      refreshDerived();
+      drawMinimap();
+      updateHud();
+      if (drawer === 'world') renderDrawer();
+    }, 800);
   });
   movesUnsub = fb.listenMoves(world.id, user.uid, async (moves) => {
     for (const m of moves) {
       if (m.to !== plotId || !state) continue;
-      const n = sim.welcome(state, m.people || [], m.fromName || 'a nearby city');
+      const clean = (m.people || []).slice(0, 8).map((o) => ({
+        f: Math.abs(o.f | 0) % sim.FIRST.length, l: Math.abs(o.l | 0) % sim.SURNAMES.length, a: Math.max(0, Math.min(90, o.a | 0)),
+        e: Math.max(0, Math.min(3, o.e | 0)), sp: Math.max(0, Math.min(12, +o.sp || 0)), hp: Math.max(1, Math.min(100, +o.hp || 100)), m: Math.max(0, Math.min(1, +o.m || 0.6)),
+      }));
+      const n = clean.length ? sim.welcome(state, clean, String(m.fromName || 'a nearby city').slice(0, 40)) : 0;
       if (n) { notify(`A family of ${n} moved here from ${m.fromName}.`, 'good'); play('coin'); afterChange(); }
       fb.finishMove(world.id, m.id).catch((e) => console.error(e));
     }
@@ -307,8 +344,9 @@ function startLive() {
 function refreshWorld() { if (!worldUnsub) startLive(); }
 
 // Roads that meet across the gap between two plots form a link (and a bridge).
-const roadDone = (p, i) => p.grid[i] === T.ROAD && !p.uc.has(i);
-const railDone = (p, i) => p.grid[i] === T.RAIL && !p.uc.has(i);
+const roadDone = (p, i) => (p.grid[i] === T.ROAD || p.grid[i] === T.XING) && !p.uc.has(i);
+const railDone = (p, i) => (p.grid[i] === T.RAIL || p.grid[i] === T.XING) && !p.uc.has(i);
+const isActive = (p) => p.mine || Date.now() - (p.active || 0) < INACTIVE_MS;
 function computeLinks() {
   bridges = new Map();
   const linksWith = new Map();
@@ -347,7 +385,7 @@ function computeLinks() {
   const abroad = [], visitorsFrom = [], incoming = { fun: 0, care: 0, shop: 0, school: 0, tourists: 0 };
   for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
     const q = plotAt(me.px + dx, me.py + dy);
-    if (!q || q.status !== 'alive') continue;
+    if (!q || q.status !== 'alive' || !isActive(q)) continue;
     let edge = -1, via = null;
     for (let k = 0; k < PLOT && via !== 'rail'; k++) {
       const mine = dx === 1 ? k * PLOT + PLOT - 1 : dx === -1 ? k * PLOT : dy === 1 ? (PLOT - 1) * PLOT + k : k;
@@ -357,7 +395,7 @@ function computeLinks() {
     }
     if (!via) continue;
     const key = `${q.id}|${q.version}`;
-    if (!offerCache.has(key)) offerCache.set(key, sim.offer(q.st));
+    if (!offerCache.has(key)) { if (offerCache.size > 200) offerCache.clear(); offerCache.set(key, q.offer || (q.st ? sim.offer(q.st) : { fun: 0, care: 0, shop: 0, school: 0, homesFree: 0, happiness: 0 })); }
     abroad.push({ id: q.id, name: q.name, via, edge, ...offerCache.get(key) });
     const theirUse = q.out?.[plotId];
     if (theirUse) {
@@ -376,7 +414,7 @@ function computeLinks() {
   if (rail > railWas) { notify('A railway now runs to your neighbour. Commuter trains and extra trade start tomorrow.', 'good'); sim.note(state, 'good', 'A railway link to a neighbouring city opened.'); }
   neighbourInfo = SIDES.map(([dx, dy, side]) => {
     const q = plotAt(me.px + dx, me.py + dy);
-    return q && { side, px: q.px, py: q.py, name: q.name, ownerName: q.ownerName, pop: q.pop, status: q.status, links: linksWith.get(q.id) || 0 };
+    return q && { side, px: q.px, py: q.py, name: q.name, ownerName: q.ownerName, pop: q.pop, status: q.status, links: linksWith.get(q.id) || 0, idle: !isActive(q), ago: ago(q.active) };
   }).filter(Boolean);
   if (state.links + rail > before && rail === railWas) { notify('Linked with a neighbour. Trade income and mood go up.', 'good'); sim.note(state, 'good', 'A road link to a neighbouring city opened.'); play('goal'); }
   dirty = true;
@@ -412,13 +450,37 @@ function advance() {
 function sendEmigrants(list) {
   for (const e of list || []) {
     const q = plots.get(e.to);
-    if (!q?.owner) continue;
+    if (!q?.owner) { sim.welcome(state, e.people, 'their trip'); continue; }
     fb.sendMove(world.id, { from: plotId, fromName: state.name, fromOwner: user.uid, to: e.to, toOwner: q.owner, people: e.people.slice(0, 8) })
-      .catch((err) => console.error('Move failed', err));
+      .catch((err) => { console.error('Move failed', err); sim.welcome(state, e.people, 'their trip (the move fell through)'); afterChange(); });
   }
 }
 
+// One-off tips the first time something happens.
+function tipOnce(key, text) {
+  const seen = new Set(JSON.parse(localStorage.getItem('commons-tips') || '[]'));
+  if (seen.has(key)) return;
+  seen.add(key);
+  try { localStorage.setItem('commons-tips', JSON.stringify([...seen])); } catch { /* ignore */ }
+  notify(text, 'act');
+}
+function firstTimeTips(st) {
+  const c = sim.census(state);
+  if (c.sick) tipOnce('sick', 'Tip: someone is ill. A clinic treats illness before it gets serious; a hospital handles the rest.');
+  if (st.crimes) tipOnce('crime', 'Tip: there was a crime. Police catch offenders, a courthouse hears their cases, and jobs keep crime down.');
+  if (st.deaths) tipOnce('death', 'Tip: a resident died. A cemetery helps families grieve and move on.');
+  if (state.links) tipOnce('link', 'Tip: you’re linked to a neighbour. Residents can now use each other’s facilities, visit and even move.');
+  if ((state.wants || []).length) tipOnce('want', 'Tip: a resident has a request. Open Goals to see it; building what they ask for pays a reward.');
+  if (c.seeking > 3) tipOnce('jobs', 'Tip: people are looking for work. Check which jobs they qualify for in Stats, People.');
+  if (sim.weather(sim.worldDay()) !== 'clear') tipOnce('weather', 'Tip: weather changes with the seasons. Rain and snow keep people in; snow slows traffic; heat spreads illness.');
+}
+function alertBrowser(text) {
+  if (!prefs.alerts || !document.hidden || !('Notification' in window) || Notification.permission !== 'granted') return;
+  try { new Notification(`${state.name}: ${text}`, { icon: 'icon.svg', tag: 'commons' }); } catch { /* not supported */ }
+}
+
 function onNewDay(st) {
+  firstTimeTips(st);
   const hall = sim.xy(sim.HALL_INDEX);
   if (st.income > 0) { addPop(hall.x, hall.y, 1.8, `+${money(st.income)}`, '#ffd24a'); play('coin'); }
   if (st.event) notify(st.event, 'info');
@@ -572,13 +634,20 @@ function renderModebar() {
   tut.refresh();
 }
 
+// Undo: a snapshot before each change. Restoring keeps the clock, news and history moving forward.
+const UNDO_MS = 60000;
+function checkpoint(label) {
+  undoStack.push({ label, at: Date.now(), snap: sim.serialize(state) });
+  if (undoStack.length > 15) undoStack.shift();
+}
 function placeAt(i, type, quiet) {
   const { x, y } = sim.xy(i);
+  const snap = sim.serialize(state);
   const r = sim.place(state, i, type);
   if (r.ok) {
     play('place');
-    undoStack.push(i);
-    if (undoStack.length > 40) undoStack.shift();
+    if (!quiet || !undoStack.length || Date.now() - undoStack.at(-1).at > 1500) undoStack.push({ label: B[type].name, at: Date.now(), snap });
+    if (undoStack.length > 15) undoStack.shift();
     if (!BRUSHES.includes(type)) addPop(x, y, 0.8, `−$${r.cost}`, '#ffffff');
     announce(`${B[type].name} placed at ${x + 1}, ${y + 1}. ${money(state.money)} left.`);
     afterChange();
@@ -588,18 +657,22 @@ function placeAt(i, type, quiet) {
 function demolish(i, quiet) {
   if (quiet && state.grid[i] === T.EMPTY) return false;
   const { x, y } = sim.xy(i);
+  const snap = sim.serialize(state);
   const r = sim.bulldoze(state, i);
+  if (r.ok && (!quiet || !undoStack.length || Date.now() - undoStack.at(-1).at > 1500)) { undoStack.push({ label: 'demolition', at: Date.now(), snap }); if (undoStack.length > 15) undoStack.shift(); }
   if (r.ok) { play('clear'); if (r.refund) addPop(x, y, 0.6, `${r.refund > 0 ? '+' : ''}${money(r.refund)}`, r.refund > 0 ? '#ffd24a' : '#ffffff'); afterChange(); }
   else if (!quiet) { notify(r.reason, 'act'); play('error'); }
   return r.ok;
 }
 function upgradeAt(i) {
   const { x, y } = sim.xy(i);
+  if (sim.canUpgrade(state, i).ok) checkpoint('upgrade');
   const r = sim.upgrade(state, i);
   if (r.ok) { play('place'); addPop(x, y, 1.2, `−$${r.cost}`, '#ffffff'); announce(`Upgrading for ${money(r.cost)}.`); afterChange(); }
   else { notify(r.reason, 'act'); play('error'); }
 }
 function buyChunk(c) {
+  if (sim.canBuyLand(state, c).ok) checkpoint('land purchase');
   const r = sim.buyLand(state, c);
   if (!r.ok) { notify(r.reason, 'act'); play('error'); return; }
   play('coin');
@@ -618,6 +691,7 @@ function askBuyLand(i) {
   if (r.ok) $('buy-go').onclick = () => { closeModal(); buyChunk(c); };
 }
 function doMove(to) {
+  if (sim.canMove(state, moveFrom, to).ok) checkpoint('move');
   const r = sim.moveBuilding(state, moveFrom, to);
   if (!r.ok) { notify(r.reason, 'act'); play('error'); return; }
   const { x, y } = sim.xy(to);
@@ -686,13 +760,18 @@ function click(h, sx, sy) {
 }
 
 function undo() {
-  while (undoStack.length) {
-    const i = undoStack.pop();
-    const r = sim.undoPlace(state, i);
-    if (r.ok) { play('clear'); notify(`Undone. ${money(r.refund)} back.`, 'act'); afterChange(); return; }
-  }
-  notify('Nothing to undo. Builders keep what they’ve started.', 'act');
+  const last = undoStack.pop();
+  if (!last || Date.now() - last.at > UDO_MS_GUARD()) { undoStack.length = 0; notify('Nothing to undo. You can undo changes from the last minute.', 'act'); return; }
+  const keep = { hour: state.hour, day: state.day, lastTick: state.lastTick, log: state.log, history: state.history, stats: state.stats, links: state.links, railLinks: state.railLinks, busLinks: state.busLinks };
+  const back = sim.migrate(JSON.parse(last.snap));
+  for (const k of Object.keys(state)) if (!k.startsWith('_')) delete state[k];
+  Object.assign(state, back, keep);
+  state._plan = null;
+  play('clear');
+  notify(`Undid the ${last.label.toLowerCase()}.`, 'act');
+  afterChange();
 }
+const UDO_MS_GUARD = () => UNDO_MS;
 
 function hoverInfo(h) {
   if (!isMine(h)) return null;
@@ -738,9 +817,13 @@ function renderCatalog() {
   const box = $('catalog');
   if (!catalog) return;
   const scroll = box.querySelector('.cat-grid')?.scrollTop || 0;
-  box.innerHTML = panels.catalogHtml({ s: state, tile: catalog.tile, cat: catCat, avail: (t) => sim.availability(state, t) });
+  const focused = document.activeElement?.id, caret = document.activeElement?.selectionStart;
+  box.innerHTML = panels.catalogHtml({ s: state, tile: catalog.tile, cat: catCat, q: catQ, afford: catAfford, avail: (t) => sim.availability(state, t) });
+  $('cat-q').oninput = (e) => { catQ = e.target.value; renderCatalog(); };
+  $('cat-afford').onchange = (e) => { catAfford = e.target.checked; renderCatalog(); };
+  if (focused === 'cat-q') { $('cat-q').focus(); $('cat-q').setSelectionRange(caret, caret); }
   box.classList.remove('hidden');
-  box.querySelector('.cat-grid').scrollTop = scroll;
+  if (box.querySelector('.cat-grid')) box.querySelector('.cat-grid').scrollTop = scroll;
   for (const c of box.querySelectorAll('canvas.thumb')) thumbnail(c, +c.dataset.type, palette(prefs), resolvedTheme(prefs));
   box.querySelector('[data-cat-close]').onclick = closeCatalog;
   box.querySelectorAll('[data-cat]').forEach((b) => { b.onclick = () => { catCat = b.dataset.cat; renderCatalog(); }; });
@@ -753,7 +836,7 @@ function renderCatalog() {
       placeAt(tile, t);
     };
   });
-  if (!box.contains(document.activeElement)) box.querySelector('[data-cat][aria-checked="true"]')?.focus({ preventScroll: true });
+  if (!box.contains(document.activeElement)) $('cat-q').focus({ preventScroll: true });
   dirty = true;
 }
 
@@ -865,7 +948,7 @@ function endPointer(e) {
   pointers.delete(e.pointerId);
   canvas.classList.remove('panning');
   if (pinch) { if (pointers.size < 2) pinch = null; drag = null; return; }
-  if (drag && !drag.moved && !drag.paints && drag.button === 0) click(renderer.hit(e.offsetX, e.offsetY), e.offsetX, e.offsetY);
+  if (drag && !drag.moved && !drag.paints && drag.button === 0) click(renderer.pick(e.offsetX, e.offsetY), e.offsetX, e.offsetY);
   drag = null;
 }
 canvas.addEventListener('pointerup', endPointer);
@@ -912,8 +995,8 @@ window.addEventListener('keydown', (e) => {
     '0': fitWorld, t: toggleTraffic, v: toggleView, h: fitHome, g: () => setPref('grid', !prefs.grid),
     m: () => { setPref('sound', !prefs.sound); notify(prefs.sound ? 'Sound on' : 'Sound off', 'act'); },
     o: () => openPanel('goals'), p: () => openPanel('people'), c: () => openPanel('stats'), n: () => openPanel('news'),
-    k: () => openPanel('chat'), j: () => openPanel('world'), l: showBoard, ',': showSettings, '?': showHelp,
-    escape: () => { if (trips.followed) stopFollow(); if (brush) setBrush(brush); else if (moveFrom >= 0) { moveFrom = -1; renderModebar(); } else closeDrawer(); cursor = null; hover = null; },
+    k: () => openPanel('chat'), f: togglePhoto, j: () => openPanel('world'), l: showBoard, ',': showSettings, '?': showHelp,
+    escape: () => { if (document.body.classList.contains('photo')) { togglePhoto(); return; } if (trips.followed) stopFollow(); if (brush) setBrush(brush); else if (moveFrom >= 0) { moveFrom = -1; renderModebar(); } else closeDrawer(); cursor = null; hover = null; },
   };
   if (actions[lk]) { e.preventDefault(); actions[lk](); }
 });
@@ -926,7 +1009,8 @@ function visiblePlotIds() {
   const bd = renderer.bounds(), out = [];
   for (const p of plots.values()) {
     if (p.px * STRIDE < bd.x1 && (p.px + 1) * STRIDE > bd.x0 && p.py * STRIDE < bd.y1 && (p.py + 1) * STRIDE > bd.y0) {
-      if (!trips.has(p.id) && p.status === 'alive') trips.set(p.id, p.st);
+      if (!p.st && !p.mine && Math.abs(p.px - me.px) + Math.abs(p.py - me.py) === 1) fetchState(p);
+      if (p.st && !trips.has(p.id) && p.status === 'alive') trips.set(p.id, p.st);
       out.push(p.id);
     }
   }
@@ -951,10 +1035,11 @@ function frame(now) {
       pulseTileMove = { px: me.px, py: me.py, tx: x, ty: y };
     } else pulseTileMove = null;
     if (catalog) { const { x, y } = sim.xy(catalog.tile); hv = { px: me.px, py: me.py, tx: x, ty: y, i: catalog.tile, ok: true, tool: 'build' }; }
-    if (dirty || agentsByPlot.size || pops.length || pulseTile || pulseTileMove) {
+    const wx = sim.weather(sim.worldDay());
+    if (dirty || agentsByPlot.size || pops.length || pulseTile || pulseTileMove || wx === 'rain' || wx === 'snow') {
       renderer.draw({
         plots, hover: hv, cursor, selected, overlay, traffic: plan, agentsByPlot, pops, prefs, bridges, pulseTile: pulseTile || pulseTileMove,
-        showLand: mode === 'build', landPrice: state ? sim.landPrice(state) : 0,
+        showLand: mode === 'build', landPrice: state ? sim.landPrice(state) : 0, season: sim.season(sim.worldDay()), weather: sim.weather(sim.worldDay()),
         theme: resolvedTheme(prefs), palette: palette(prefs), paletteKey: prefs.colours, shapes: prefs.shapes, nightAmt: nightAmt(),
       });
       dirty = false;
@@ -1020,11 +1105,32 @@ $('btn-help').onclick = showHelp;
 $('btn-undo').onclick = undo;
 $('city-name').onclick = showRename;
 $('rail').onclick = (e) => { const b = e.target.closest('[data-panel]'); if (b) openPanel(b.dataset.panel); };
+function citySummary() {
+  const c = sim.census(state), needs = plan?.needs || {};
+  const worst = NEEDS.map((n) => [n, needs[n.k] ?? 1]).sort((a, b) => a[1] - b[1])[0];
+  const net = (state.stats.income || 0) - (state.stats.upkeep || 0);
+  return `${state.name}, day ${state.day}, ${hourLabel(state.hour)}. ${c.total} people, ${c.employed} working, ${c.seeking} looking for work. Mood ${pct(state.happiness)}. ${money(state.money)}, ${net >= 0 ? 'earning' : 'losing'} ${money(Math.abs(net))} a day. ${worst && worst[1] < 0.7 ? `Biggest need: ${worst[0].label.toLowerCase()}.` : 'No urgent needs.'} ${sim.season(sim.worldDay())}, ${sim.weather(sim.worldDay())}.`;
+}
+$('btn-summary').onclick = () => { const t = citySummary(); announce(t); notify(t, 'act'); if (prefs.speak && 'speechSynthesis' in window) speechSynthesis.speak(new SpeechSynthesisUtterance(t)); };
 $('pulse-toggle').onclick = () => {
   const open = $('pulse-toggle').getAttribute('aria-expanded') !== 'true';
   $('pulse-toggle').setAttribute('aria-expanded', open);
   $('pulse').classList.toggle('closed', !open);
 };
+function togglePhoto() {
+  const on = document.body.classList.toggle('photo');
+  $('photo-bar').classList.toggle('hidden', !on);
+  if (on) { closeDrawer(); closeCatalog(); announce('Photo mode. Press F or Escape to leave.'); }
+  renderer.resize(); dirty = true;
+}
+$('photo-save').onclick = () => {
+  const a = document.createElement('a');
+  a.download = `${state.name.replace(/[^\w ]/g, '')} day ${state.day}.png`;
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+  play('coin');
+};
+$('photo-exit').onclick = togglePhoto;
 function drawThumbs() {
   for (const c of document.querySelectorAll('canvas.thumb')) thumbnail(c, +c.dataset.type, palette(prefs), resolvedTheme(prefs));
 }
@@ -1144,6 +1250,7 @@ function openPanel(m) {
   dirty = true;
 }
 function closeDrawer() {
+  lastLikes = null; likeCache = '';
   drawer = null; selected = null; personId = null;
   renderDrawer();
   dirty = true;
@@ -1170,12 +1277,12 @@ function renderDrawer() {
     const p = state.people.find((x) => x.i === personId);
     if (!p) { drawer = 'people'; return renderDrawer(); }
     const agent = trips.agents(plotId).find((a) => a.p === p.i);
-    html = panels.personCard(state, plan, p, whereabouts(state, plan, p, clockNow(), agent));
+    html = panels.personCard(state, plan, p, whereabouts(state, plan, p, clockNow(), agent), favs().has(p.i));
   } else if (drawer === 'goals') html = panels.goalsPanel(state);
-  else if (drawer === 'people') html = panels.peoplePanel(state, plan, peopleFilter, peopleQuery);
+  else if (drawer === 'people') html = panels.peoplePanel(state, plan, peopleFilter, peopleQuery, favs());
   else if (drawer === 'stats') html = panels.statsPanel({ state, totals: totalsNow || sim.totals(state), plan, census: sim.census(state) }, statsTab);
   else if (drawer === 'news') html = panels.newsPanel(state, unseenFrom());
-  else if (drawer === 'chat') html = panels.chatPanel({ messages: chatMessages, me: user.uid, world, colourOf });
+  else if (drawer === 'chat') { const m = muted(); html = panels.chatPanel({ messages: chatMessages.filter((x) => !m.has(x.uid)).map((x) => ({ ...x, text: clean(x.text) })), me: user.uid, world, colourOf }); }
   else if (drawer === 'world') html = panels.worldPanel(worldCtx());
   box.innerHTML = html;
   box.classList.remove('hidden');
@@ -1183,12 +1290,25 @@ function renderDrawer() {
   wireDrawer(box);
   box.scrollTop = scroll;
   if (drawer === 'chat') { $('chat-text').value = chatDraft; const l = $('chat-list'); l.scrollTop = l.scrollHeight; }
+  const lk = $('likes');
+  if (lk && lk.dataset.plot !== lastLikes) { lastLikes = lk.dataset.plot; loadLikes(lk.dataset.plot); } else if (lk && likeCache) lk.innerHTML = likeCache;
   if (focusKey) {
     const el = box.querySelector(`#${CSS.escape(focusKey)}`) || box.querySelector(`[data-do="${focusKey}"],[data-person="${focusKey}"],[data-filter="${focusKey}"]`);
     if (el) { el.focus({ preventScroll: true }); if (caret != null && el.setSelectionRange) el.setSelectionRange(caret, caret); }
   }
 }
 
+let lastLikes = null, likeCache = '';
+async function loadLikes(id) {
+  try {
+    const { count, mine } = await fb.likes(world.id, id, user.uid);
+    likeCache = `<button class="btn ${mine ? 'primary' : ''}" type="button" id="like-btn" aria-pressed="${mine}">${mine ? '♥ Liked' : '♡ Like this city'}</button><span class="soft small">${count} like${count === 1 ? '' : 's'}</span>`;
+    const lk = $('likes');
+    if (!lk) return;
+    lk.innerHTML = likeCache;
+    $('like-btn').onclick = async () => { await fb.setLike(world.id, id, user.uid, !mine).catch(() => {}); lastLikes = null; loadLikes(id); play('coin'); };
+  } catch (e) { console.error(e); }
+}
 function wireDrawer(box) {
   box.querySelectorAll('[data-close-drawer]').forEach((b) => { b.onclick = closeDrawer; });
   box.querySelectorAll('[data-do]').forEach((b) => { b.onclick = () => inspectorAction(b.dataset.do, b.dataset.arg); });
@@ -1198,6 +1318,17 @@ function wireDrawer(box) {
   const q = box.querySelector('#people-q');
   if (q) q.oninput = () => { peopleQuery = q.value; renderDrawer(); };
   box.querySelectorAll('[data-person]').forEach((b) => { b.onclick = () => showPerson(+b.dataset.person); });
+  box.querySelectorAll('[data-fav]').forEach((b) => { b.onclick = () => { toggleFav(+b.dataset.fav); renderDrawer(); }; });
+  box.querySelectorAll('[data-home]').forEach((b) => { b.onclick = () => { const i = +b.dataset.home, { x, y } = sim.xy(i); select({ px: me.px, py: me.py, tx: x, ty: y, i }); goTo(me.px, me.py, x, y, 18); }; });
+  box.querySelectorAll('input[type=range][data-policy]').forEach((r) => {
+    r.oninput = () => { state.policy[r.dataset.policy] = +r.value; $(`pol-${r.dataset.policy}-v`).textContent = pct(+r.value); };
+    r.onchange = () => { state.policy[r.dataset.policy] = +r.value; afterChange(); announce(`${r.getAttribute('aria-label')} set to ${pct(+r.value)}.`); };
+  });
+  box.querySelectorAll('input[type=checkbox][data-policy]').forEach((c) => { c.onchange = () => { state.policy[c.dataset.policy] = c.checked; afterChange(); }; });
+  box.querySelectorAll('[data-mute]').forEach((b) => { b.onclick = () => { const m = muted(); m.add(b.dataset.mute); localStorage.setItem('commons-muted', JSON.stringify([...m])); notify('Muted. You won’t see their messages.', 'act'); renderDrawer(); }; });
+  box.querySelectorAll('[data-report]').forEach((b) => {
+    b.onclick = () => { const msg = chatMessages.find((x) => x.id === b.dataset.report); if (!msg) return; fb.report(world.id, user.uid, { kind: 'chat', message: msg.id, author: msg.uid, text: String(msg.text).slice(0, 280) }).then(() => notify('Reported. Thanks for keeping chat friendly.', 'act')).catch(() => notify('Couldn’t send the report.', 'warn')); };
+  });
   box.querySelectorAll('[data-goto]').forEach((b) => { b.onclick = () => { const [x, y] = b.dataset.goto.split(',').map(Number); goTo(x, y); }; });
   box.querySelectorAll('[data-move]').forEach((b) => { b.onclick = () => confirmMove(b.dataset.move); });
   box.querySelectorAll('[data-world]').forEach((b) => { b.onclick = () => switchWorld(b.dataset.world); });
@@ -1367,7 +1498,10 @@ function otherPlot(h) {
   }
   const n = neighbourInfo.find((x) => x.px === p.px && x.py === p.py);
   const t = p.grid[h.i];
+  const idle = !isActive(p);
   return `<h2>${esc(p.name)}</h2><p class="soft">Mayor ${esc(p.ownerName)}${p.cityNo > 1 ? `, city number ${p.cityNo} on this plot` : ''}</p>
+    <p class="${idle ? 'warn' : 'good-t'} small">${idle ? `Last active ${ago(p.active)}. Paused until the mayor returns, so it isn't sharing facilities.` : 'Active now'}</p>
+    <div class="likes" id="likes" data-plot="${p.id}"></div>
     ${t && B[t] ? `<p class="soft small">You tapped their ${B[t].name.toLowerCase()}.</p>` : ''}
     ${row('People', p.pop)}${row('Peak', p.peakPop)}${row('Days running', p.day)}${meter('Mood', p.happiness || 0)}
     ${n ? row('Road links with you', n.links || 'None yet') : ''}
@@ -1414,7 +1548,7 @@ function confirmMove(targetId) {
     <div class="mfoot"><button class="btn" data-close>Stay here</button><button class="btn danger" id="do-move">Abandon ${esc(state.name)} and move</button></div>`);
   $('do-move').onclick = () => busy($('do-move'), async () => {
     const name = $('move-name').value.trim() || `New ${p.name}`;
-    const fresh = sim.migrate(JSON.parse(sim.serialize(p.st)));
+    const fresh = sim.migrate(JSON.parse(p.st ? sim.serialize(p.st) : await fb.getState(p.id)));
     sim.rebuild(fresh, name, REBUILD_MONEY + keep);
     fresh.lastTick = Date.now();
     const doc = await fb.takeOverRuins(user, mayor, p.id, fresh, world.id);
@@ -1490,7 +1624,7 @@ function showHelp() {
       <section><h3>${icon('i-link')}Neighbours</h3><p>Roads or railways that meet across a plot edge link two cities: trade, mood, and out-of-town jobs by train or bus. Chat with everyone in your world.</p></section>
     </div>
     <h3 class="keys-h">Keys</h3>
-    <p class="keys"><kbd>B</kbd> build, <kbd>E</kbd> select, <kbd>R</kbd> move, <kbd>1</kbd>–<kbd>4</kbd> road, footpath, railway, clear (in Build), <kbd>Ctrl</kbd> <kbd>Z</kbd> undo, <kbd>T</kbd> traffic, <kbd>V</kbd> 3D or 2D, <kbd>H</kbd> home, <kbd>0</kbd> whole map, <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> pan, <kbd>+</kbd> <kbd>−</kbd> zoom, <kbd>O</kbd> goals, <kbd>P</kbd> people, <kbd>C</kbd> stats, <kbd>N</kbd> news, <kbd>K</kbd> chat, <kbd>J</kbd> world, <kbd>Esc</kbd> cancel. Click the map, then use the arrow keys and <kbd>Enter</kbd> to play without a mouse.</p>`, 'wide');
+    <p class="keys"><kbd>B</kbd> build, <kbd>E</kbd> select, <kbd>R</kbd> move, <kbd>1</kbd>–<kbd>4</kbd> road, footpath, railway, clear (in Build), <kbd>Ctrl</kbd> <kbd>Z</kbd> undo, <kbd>T</kbd> traffic, <kbd>V</kbd> 3D or 2D, <kbd>H</kbd> home, <kbd>0</kbd> whole map, <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> pan, <kbd>+</kbd> <kbd>−</kbd> zoom, <kbd>O</kbd> goals, <kbd>P</kbd> people, <kbd>C</kbd> stats, <kbd>N</kbd> news, <kbd>K</kbd> chat, <kbd>J</kbd> world, <kbd>F</kbd> photo mode, <kbd>Esc</kbd> cancel. Click the map, then use the arrow keys and <kbd>Enter</kbd> to play without a mouse.</p>`, 'wide');
   $('h-tour').onclick = () => { closeModal(); tut.start(0); };
 }
 
@@ -1570,7 +1704,10 @@ function showSettings() {
     interface: `<div class="srow"><span>Text size</span>${seg('textSize', [[1, 'Normal'], [1.15, 'Large'], [1.3, 'Larger']])}</div>
       <div class="srow"><span>Notifications</span>${seg('notes', [['all', 'All'], ['warn', 'Warnings'], ['off', 'Off']])}</div>
       ${tgl('compact', 'Compact layout', 'Smaller panels and a tighter dock')}
-      ${tgl('minimap', 'Minimap')}`,
+      ${tgl('minimap', 'Minimap')}
+      ${tgl('alerts', 'Alerts when the game is in the background', 'Browser notifications for warnings like unpaid upkeep')}
+      ${tgl('speak', 'Read the city summary aloud', 'The summary button in the mood panel speaks as well as shows it')}
+      <div class="srow"><span>Photo mode</span><button class="btn" type="button" id="set-photo">Hide the interface (F)</button></div>`,
     sound: `${tgl('sound', 'Sound effects', 'Shortcut: M')}
       <div class="srow"><span>Volume</span><input type="range" min="0" max="1" step="0.05" value="${prefs.volume}" data-pref="volume" aria-label="Volume"></div>`,
   };
@@ -1588,7 +1725,16 @@ function showSettings() {
       modal.querySelector(`[data-pref="${k}"][aria-checked="true"]`)?.focus();
     };
   });
-  modal.querySelectorAll('input[type=checkbox][data-pref]').forEach((c) => { c.onchange = () => setPref(c.dataset.pref, c.checked); });
+  modal.querySelectorAll('input[type=checkbox][data-pref]').forEach((c) => {
+    c.onchange = async () => {
+      if (c.dataset.pref === 'alerts' && c.checked && 'Notification' in window && Notification.permission !== 'granted') {
+        const r = await Notification.requestPermission();
+        if (r !== 'granted') { c.checked = false; notify('Your browser blocked notifications for this site.', 'act'); return; }
+      }
+      setPref(c.dataset.pref, c.checked);
+    };
+  });
+  $('set-photo')?.addEventListener('click', () => { closeModal(); togglePhoto(); });
   modal.querySelectorAll('input[type=range][data-pref]').forEach((r) => {
     r.oninput = () => { prefs.volume = +r.value; savePrefs(prefs); setSound(prefs.sound, prefs.volume); };
     r.onchange = () => play('coin');
@@ -1636,10 +1782,13 @@ function confirmDelete() {
   openModal(`${closeX}<h2 id="modal-title">Delete your account?</h2>
     <p>This can't be undone. Your sign-in, lifetime stats and achievements are deleted. ${esc(state.name)} falls into ruins and stays on the map with its record, where anyone can rebuild on it.</p>
     <label class="field"><span>Type DELETE to confirm</span><input id="del-confirm" autocomplete="off"></label>
+    ${!user.isAnonymous && !user.providerData.some((p) => p.providerId === 'google.com') ? '<label class="field"><span>Your password</span><input id="del-pass" type="password" autocomplete="current-password"></label>' : ''}
+    ${user.providerData.some((p) => p.providerId === 'google.com') ? '<p class="soft small">Google will ask you to confirm it’s you.</p>' : ''}
     <p id="del-msg" class="formmsg" role="alert"></p>
     <div class="mfoot"><button class="btn" data-close>Keep my account</button><button class="btn danger" id="del-go" disabled>Delete my account</button></div>`);
   $('del-confirm').oninput = (e) => { $('del-go').disabled = e.target.value.trim().toUpperCase() !== 'DELETE'; };
   $('del-go').onclick = () => busy($('del-go'), async () => {
+    await fb.confirmIdentity($('del-pass')?.value || '');   // before anything is changed, so nothing half-happens
     if (state.status === 'alive') {
       const record = sim.collapse(state, 'deleted');
       await fb.savePlot(plotId, state);
@@ -1648,11 +1797,7 @@ function confirmDelete() {
     await fb.deleteProfile(user.uid).catch(() => {});
     stopLoops();
     chatUnsub?.();
-    try { await fb.deleteAccount(); }
-    catch (e) {
-      if (String(e.code).includes('requires-recent-login')) throw new Error('For security, sign out, sign back in, then delete again. Your city is already in ruins.');
-      throw e;
-    }
+    await fb.deleteAccount();
     closeModal();
   }, $('del-msg'));
 }
@@ -1673,10 +1818,13 @@ function notify(msg, kind = 'info') {
   const life = kind === 'warn' ? 5200 : 3400;
   setTimeout(() => el.classList.add('out'), life);
   setTimeout(() => el.remove(), life + 400);
-  if (kind === 'warn') play('warn');
+  if (kind === 'warn') { play('warn'); alertBrowser(msg); }
 }
 function announce(msg) {
   const el = $('sr');
   el.textContent = '';
   requestAnimationFrame(() => { el.textContent = msg; });
 }
+
+// Installable app: cache the game shell so it opens instantly and survives a flaky connection.
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});

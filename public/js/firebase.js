@@ -4,15 +4,16 @@ const {
   getAuth, onAuthStateChanged, signInAnonymously, signOut, GoogleAuthProvider, EmailAuthProvider,
   signInWithPopup, linkWithPopup, linkWithCredential, signInWithEmailAndPassword,
   createUserWithEmailAndPassword, sendPasswordResetEmail, updateProfile, deleteUser,
+  reauthenticateWithCredential, reauthenticateWithPopup,
 } = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-auth.js`);
 const {
   getFirestore, doc, getDoc, updateDoc, runTransaction, collection, query, where, orderBy, limit,
-  getDocs, addDoc, serverTimestamp, setDoc, onSnapshot, deleteDoc,
+  getDocs, addDoc, serverTimestamp, setDoc, onSnapshot, deleteDoc, writeBatch, deleteField, getCountFromServer,
 } = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-firestore.js`);
 import { firebaseConfig } from './config.js';
 import { WORLD_ID } from './constants.js';
 import { spiral } from './spiral.js';
-import { newCity, serialize, summary } from './sim.js';
+import { newCity, serialize, summary, mapString } from './sim.js';
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
@@ -97,7 +98,10 @@ export async function findPlot(user, world = WORLD_ID) {
   const link = await getDoc(linkRef(user.uid, world));
   if (!link.exists()) return null;
   const p = await getDoc(doc(db, 'plots', link.data().plotId));
-  return p.exists() && p.data().owner === user.uid ? { id: p.id, ...p.data() } : null;
+  if (!p.exists() || p.data().owner !== user.uid) return null;
+  const data = { id: p.id, ...p.data() };
+  if (!data.state) data.state = await getState(p.id);
+  return data;
 }
 
 // Claims the next frontier plot. A transaction keeps two players from getting the same slot.
@@ -115,14 +119,15 @@ export async function claimPlot(user, mayor, cityName, world = WORLD_ID) {
     const state = newCity(cityName);
     const data = {
       owner: user.uid, ownerName: mayor, world, px: x, py: y, index: n,
-      createdAt: serverTimestamp(), updatedAt: serverTimestamp(), state: serialize(state), ...summary(state),
+      createdAt: serverTimestamp(), updatedAt: serverTimestamp(), ...summary(state), map: mapString(state),
     };
     tx.set(doc(db, 'plots', id), data);
+    tx.set(doc(db, 'plotState', id), { state: serialize(state) });
     if (world === 'public') tx.set(lref, { plotId: id, createdAt: serverTimestamp() });
     else tx.set(lref, { uid: user.uid, world, plotId: id, createdAt: serverTimestamp() });
     if (w.exists()) tx.update(worldRef, { nextIndex: n + 1 });
     else tx.set(worldRef, { nextIndex: 1 });
-    return { id, ...data };
+    return { id, ...data, state: serialize(state) };
   });
 }
 
@@ -134,19 +139,26 @@ export async function takeOverRuins(user, mayor, targetId, newState, world = WOR
     const p = await tx.get(pref);
     const link = await tx.get(lref);
     if (!p.exists() || p.data().status !== 'ruins') throw new Error('Someone has already rebuilt there.');
-    const data = { owner: user.uid, ownerName: mayor, state: serialize(newState), ...summary(newState), updatedAt: serverTimestamp() };
+    const data = { owner: user.uid, ownerName: mayor, ...summary(newState), map: mapString(newState), updatedAt: serverTimestamp(), state: deleteField() };
     tx.update(pref, data);
+    tx.set(doc(db, 'plotState', targetId), { state: serialize(newState) });
     if (link.exists()) tx.update(lref, { plotId: targetId });
     else if (world === 'public') tx.set(lref, { plotId: targetId, createdAt: serverTimestamp() });
     else tx.set(lref, { uid: user.uid, world, plotId: targetId, createdAt: serverTimestamp() });
-    return { id: targetId, ...p.data(), ...data };
+    return { id: targetId, ...p.data(), ...data, state: serialize(newState) };
   });
 }
 
+// Everyone listens to the small summary; the full save sits in plotState and is fetched only up close.
 export function savePlot(id, state, extra = {}) {
-  return updateDoc(doc(db, 'plots', id), {
-    state: serialize(state), ...summary(state), ...extra, updatedAt: serverTimestamp(),
-  });
+  const b = writeBatch(db);
+  b.set(doc(db, 'plotState', id), { state: serialize(state) });
+  b.update(doc(db, 'plots', id), { ...summary(state), map: mapString(state), ...extra, state: deleteField(), updatedAt: serverTimestamp() });
+  return b.commit();
+}
+export async function getState(id) {
+  const d = await getDoc(doc(db, 'plotState', id));
+  return d.exists() ? d.data().state : null;
 }
 
 export async function loadWorld(world = WORLD_ID) {
@@ -162,8 +174,8 @@ export function writeLegacy(user, plotId, mayor, record, world = WORLD_ID) {
 
 // Leaderboards for one world. Plot boards come from the loaded world, so no extra indexes are needed.
 export async function loadLeaderboards(world, plots) {
-  const fallenSnap = await getDocs(query(collection(db, 'legacy'), orderBy('daysSurvived', 'desc'), limit(60)));
-  const fallen = fallenSnap.docs.map((d) => d.data()).filter((r) => (r.world || 'public') === world).slice(0, 10);
+  const fallenSnap = await getDocs(query(collection(db, 'legacy'), where('world', '==', world), limit(200)));
+  const fallen = fallenSnap.docs.map((d) => d.data()).sort((a, b) => (b.daysSurvived || 0) - (a.daysSurvived || 0)).slice(0, 10);
   const byPeak = [...plots].sort((a, b) => (b.peakPop || 0) - (a.peakPop || 0)).slice(0, 10);
   const running = plots.filter((p) => p.status === 'alive').sort((a, b) => (b.day || 0) - (a.day || 0)).slice(0, 10);
   return { peak: byPeak, running, fallen };
@@ -178,6 +190,12 @@ export const deleteProfile = (uid) => deleteDoc(doc(db, 'profiles', uid));
 export const saveProfile = (uid, data) => setDoc(doc(db, 'profiles', uid), { ...data, updatedAt: serverTimestamp() }, { merge: true });
 
 // Deleting an account leaves the city behind as ruins (the caller collapses and saves it first).
+export async function confirmIdentity(password) {
+  const u = auth.currentUser;
+  if (u.isAnonymous) return;
+  if (u.providerData.some((p) => p.providerId === 'google.com')) await reauthenticateWithPopup(u, google());
+  else await reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, password));
+}
 export async function deleteAccount() {
   await deleteUser(auth.currentUser);
 }
@@ -208,3 +226,20 @@ export function listenMoves(world, uid, cb) {
   return onSnapshot(q, (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), (e) => console.error('Moves listener', e));
 }
 export const finishMove = (world, id) => deleteDoc(doc(db, 'worlds', world, 'moves', id));
+
+// ---------- likes and reports ----------
+export async function likes(world, plotId, uid) {
+  const col = collection(db, 'worlds', world, 'likes');
+  const [count, mine] = await Promise.all([
+    getCountFromServer(query(col, where('plot', '==', plotId))),
+    getDoc(doc(col, `${plotId}_${uid}`)),
+  ]);
+  return { count: count.data().count, mine: mine.exists() };
+}
+export function setLike(world, plotId, uid, on) {
+  const ref = doc(db, 'worlds', world, 'likes', `${plotId}_${uid}`);
+  return on ? setDoc(ref, { plot: plotId, uid, createdAt: serverTimestamp() }) : deleteDoc(ref);
+}
+export function report(world, uid, what) {
+  return addDoc(collection(db, 'reports'), { world, uid, ...what, createdAt: serverTimestamp() });
+}

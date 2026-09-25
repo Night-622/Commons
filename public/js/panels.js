@@ -1,5 +1,5 @@
 // HTML for the side drawer and the build catalogue. Pure functions: main.js supplies data and wires up buttons.
-import { T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL } from './constants.js';
+import { T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY } from './constants.js';
 import { ROLES, roleOf, jobText, family, healthText, moodReasons, thought, personName } from './people.js';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -21,7 +21,14 @@ const personRow = (s, plan, p) => `<button type="button" class="person" data-per
 // ---------- goals ----------
 export function goalsPanel(state) {
   const done = state.goalsDone.length;
+  const wants = (state.wants || []).map((w) => ({ ...w, p: state.people.find((x) => x.i === w.p) })).filter((w) => w.p);
   return `${head('Goals', `<span class="soft num fill">${done} of ${GOALS.length}</span>`)}
+    <h3 class="sub">${icon('i-people')}Requests from residents</h3>
+    ${wants.length ? `<ul class="wants">${wants.map((w) => `<li>${avatar(w.p)}<span class="pmain"><b>${esc(personName(w.p))}</b>
+      <small>Wants a ${B[w.t].name.toLowerCase()} within ${w.r} tiles of home. ${Math.max(0, 6 - (state.day - w.d))} days left.</small></span>
+      <b class="num reward">${money(w.reward)}</b><button class="btn" type="button" data-home="${w.p.h}">Show</button></li>`).join('')}</ul>`
+      : '<p class="empty small">No requests right now. Residents ask for things as the city grows.</p>'}
+    <h3 class="sub">${icon('i-flag')}Milestones</h3>
     <div class="progress"><i style="width:${(done / GOALS.length) * 100}%"></i></div>
     <ul class="goal-list">${GOALS.map((g) => {
       const ok = state.goalsDone.includes(g.id);
@@ -40,15 +47,16 @@ export const PEOPLE_FILTERS = [
   ['unhappy', 'Unhappy', (p) => p.m < 0.45],
   ['old', 'Retired', (p) => roleOf(p) === 'retired'],
 ];
-export function peoplePanel(s, plan, filter, q) {
-  const f = PEOPLE_FILTERS.find((x) => x[0] === filter) || PEOPLE_FILTERS[0];
+export function peoplePanel(s, plan, filter, q, favs = new Set()) {
+  const filters = [['fav', 'Favourites', (p) => favs.has(p.i)], ...PEOPLE_FILTERS];
+  const f = filters.find((x) => x[0] === filter) || filters[1];
   const needle = q.trim().toLowerCase();
   const list = s.people.filter(f[2]).filter((p) => !needle || `${personName(p)} ${jobText(s, p)}`.toLowerCase().includes(needle)).sort((a, b) => a.m - b.m);
-  const counts = Object.fromEntries(PEOPLE_FILTERS.map(([k, , fn]) => [k, s.people.filter(fn).length]));
+  const counts = Object.fromEntries(filters.map(([k, , fn]) => [k, s.people.filter(fn).length]));
   const homes = new Set(s.people.map((p) => p.h)).size;
   const shown = list.slice(0, 120);
   return `${head('People', `<span class="soft num fill">${s.people.length} residents in ${homes} homes</span>`)}
-    <div class="chips" role="radiogroup" aria-label="Show">${PEOPLE_FILTERS.map(([k, label]) =>
+    <div class="chips" role="radiogroup" aria-label="Show">${filters.filter(([k]) => k !== 'fav' || favs.size).map(([k, label]) =>
       `<button type="button" role="radio" class="chip" aria-checked="${k === f[0]}" data-filter="${k}">${label} <b class="num">${counts[k]}</b></button>`).join('')}</div>
     <label class="search">${icon('i-search')}<input type="search" id="people-q" placeholder="Search by name or job" value="${esc(q)}" aria-label="Search people"></label>
     <p class="soft small">Least happy first. Click someone to see their life.</p>
@@ -57,13 +65,14 @@ export function peoplePanel(s, plan, filter, q) {
     ${!list.length ? `<p class="empty">${s.people.length ? 'Nobody matches.' : 'No one lives here yet. Build homes next to roads.'}</p>` : ''}`;
 }
 
-export function personCard(s, plan, p, now) {
+export function personCard(s, plan, p, now, fav = false) {
   const fam = family(s, p);
   const rel = (label, q) => q ? `<button type="button" class="relation" data-person="${q.i}">${avatar(q)}<span class="pmain"><b>${esc(personName(q))}</b><small>${label}, ${q.a}</small></span></button>` : '';
   const reasons = moodReasons(s, plan, p);
   return `<button class="iconbtn close" type="button" data-close-drawer aria-label="Close">${icon('i-close')}</button>
     <button class="linkbtn backlink" type="button" data-panel-go="people">← All people</button>
-    <div class="pcard">${avatar(p, 'lg')}<div><h2>${esc(personName(p))}</h2><p class="soft">${p.a} years old. ${ROLES[roleOf(p)].label}.</p></div></div>
+    <div class="pcard">${avatar(p, 'lg')}<div class="fill"><h2>${esc(personName(p))}</h2><p class="soft">${p.a} years old. ${ROLES[roleOf(p)].label}.</p></div>
+      <button type="button" class="iconbtn star ${fav ? 'on' : ''}" data-fav="${p.i}" aria-pressed="${fav}" aria-label="${fav ? 'Remove from' : 'Add to'} favourites">${fav ? '★' : '☆'}</button></div>
     <div class="nowline">${icon('i-look')}<span>${esc(now)}</span></div>
     <p class="quote">“${esc(thought(s, plan, p))}”</p>
     <div class="kv"><span>Mood</span>${bar('Mood', p.m, 'small')}</div>
@@ -75,6 +84,7 @@ export function personCard(s, plan, p, now) {
     ${fam.partner || fam.parents.length || fam.kids.length || fam.household.length ? `<h3 class="sub">Family and home</h3><div class="relations">
       ${rel('Partner', fam.partner)}${fam.parents.map((q) => rel('Parent', q)).join('')}${fam.kids.map((k) => rel('Child', k)).join('')}
       ${fam.household.filter((q) => q !== fam.partner && !fam.parents.includes(q) && !fam.kids.includes(q)).map((q) => rel('Lives with', q)).join('')}</div>` : ''}
+    ${p.hi?.length ? `<h3 class="sub">Life so far</h3><ol class="lifeline">${p.hi.map(([d, what]) => `<li><span class="num soft">Day ${d}</span>${esc(what)}</li>`).join('')}</ol>` : ''}
     <div class="actions">
       <button class="btn primary" type="button" data-do="follow" data-arg="${p.i}">${icon('i-car')}Follow ${esc(personName(p).split(' ')[0])}</button>
       <button class="btn" type="button" data-do="home" data-arg="${p.h}">${icon('i-house')}Show their home</button>
@@ -93,7 +103,7 @@ function spark(values, colour, fmt) {
 }
 export function statsPanel(ctx, tab) {
   const { state: s, totals, plan, census: c } = ctx;
-  const tabs = [['overview', 'People'], ['services', 'Services'], ['budget', 'Budget'], ['history', 'History']];
+  const tabs = [['overview', 'People'], ['services', 'Services'], ['budget', 'Budget'], ['policy', 'Policy'], ['history', 'History']];
   let body = '';
   if (tab === 'overview') {
     const ages = [['Under 5', c.toddlers, '#f2a3c0'], ['5 to 11', c.kids, '#e0588e'], ['12 to 17', c.teens, '#c04a86'], ['18 to 64', c.adults, '#3b7ddd'], ['65 and over', c.seniors, '#7c8a90']];
@@ -125,7 +135,8 @@ export function statsPanel(ctx, tab) {
     const st = s.stats, by = st.byClass || {}, up = st.upkeepBy || {};
     const inRows = [['Basic jobs', by.basic, `$${WAGE[0]} a worker`], ['Skilled jobs', by.skilled, `$${WAGE[1]} a worker`], ['Degree jobs', by.degree, `$${WAGE[2]} a worker`],
       ['Unemployed', by.benefits, ''], ['Trade with neighbours', by.trade, `$${TRADE_PER_LINK} a road link, double for rail`],
-      ['Visitors from neighbours', by.visitors, 'Evenings out, doctors, shopping, school and holidays']];
+      ['Visitors from neighbours', by.visitors, 'Evenings out, doctors, shopping, school and holidays'],
+      ['Goods sold', by.exports, `${st.goods || 0} goods from factories, $2 each to linked neighbours or 50c locally`]];
     const outRows = Object.entries(up).sort((a, b) => b[1] - a[1]).map(([t, v]) => [B[t].name, v]);
     const net = (st.income || 0) - (st.upkeep || 0);
     body = `<p class="soft small">Yesterday. Tax is scaled by mood: at ${pct(s.happiness)} mood you collect ${pct(Math.min(1, Math.max(0, (s.happiness - 0.15) / 0.7)))} of full tax. Sick people don't work or pay.</p>
@@ -134,6 +145,13 @@ export function statsPanel(ctx, tab) {
       <h3 class="sub">Upkeep <b class="num bad">−${money(st.upkeep || 0)}</b></h3>
       ${outRows.length ? outRows.map(([l, v]) => `<div class="kv"><span>${l}</span><b class="num">${money(v)}</b></div>`).join('') : '<p class="soft small">Nothing to maintain yet.</p>'}
       <div class="total ${net < 0 ? 'neg' : ''}"><span>Daily balance</span><b class="num">${net >= 0 ? '+' : '−'}${money(Math.abs(net))}</b></div>`;
+  } else if (tab === 'policy') {
+    const pol = s.policy || { tax: 1, funding: 1, freeTransit: false };
+    const slider = (k, label, [a, b], help) => `<div class="policy"><div class="phead2"><b>${label}</b><b class="num" id="pol-${k}-v">${pct(pol[k])}</b></div>
+      <input type="range" min="${a}" max="${b}" step="0.05" value="${pol[k]}" data-policy="${k}" aria-label="${label}"><p class="soft small">${help}</p></div>`;
+    body = `${slider('tax', 'Tax rate', POLICY.tax, 'Higher tax brings in more money, but every resident likes it a little less.')}
+      ${slider('funding', 'Service funding', POLICY.funding, 'Scales upkeep for schools, health, safety, leisure and transport. More funding means more places and happier people; less saves money.')}
+      <label class="tgl"><input type="checkbox" data-policy="freeTransit" ${pol.freeTransit ? 'checked' : ''}><span class="sw" aria-hidden="true"></span><span class="tl">Free buses and trains<small>Riders are happier. Costs 50c per ride.</small></span></label>`;
   } else {
     const h = s.history;
     body = `<div class="chart"><div class="chart-h"><span>${icon('i-people')}Population</span><b class="num">${s.people.length}</b></div>${spark(h.map((x) => x.pop), '#3b7ddd', (v) => v)}</div>
@@ -163,7 +181,8 @@ export function chatPanel(ctx) {
   return `${head('Chat', `<span class="soft small fill">${esc(world.name)}</span>`)}
     <ul class="chat" id="chat-list" aria-live="polite">${messages.length ? messages.map((m) => `
       <li class="${m.uid === me ? 'mine' : ''}"><span class="avatar-sm" style="--role:${colourOf(m.uid)}" aria-hidden="true">${esc((m.name || '?')[0].toUpperCase())}</span>
-        <div><span class="who"><b>${esc(m.name)}</b> <small>${esc(m.city || '')}, ${time(m)}</small></span><p>${esc(m.text)}</p></div></li>`).join('')
+        <div><span class="who"><b>${esc(m.name)}</b> <small>${esc(m.city || '')}, ${time(m)}</small></span><p>${esc(m.text)}</p>
+        ${m.uid !== me ? `<span class="msg-tools"><button type="button" class="linkbtn" data-mute="${esc(m.uid)}">Mute</button><button type="button" class="linkbtn" data-report="${esc(m.id)}">Report</button></span>` : ''}</div></li>`).join('')
       : '<li class="empty">No messages yet. Say hello to your neighbours.</li>'}</ul>
     <form id="chat-form" class="chat-form"><input id="chat-text" maxlength="280" autocomplete="off" placeholder="Message everyone in ${esc(world.name)}" aria-label="Message">
       <button class="btn primary" type="submit">Send</button></form>
@@ -181,7 +200,7 @@ export function worldPanel(ctx) {
     <h3 class="sub">${icon('i-link')}Neighbours</h3>
     <p class="soft small">Put a road on your plot's edge where a neighbour has a road at the same spot. Each link earns trade and lifts mood, for both of you.</p>
     ${neighbours.length ? `<ul class="nlist">${neighbours.map((n) => `<li><button type="button" class="nrow" data-goto="${n.px},${n.py}">
-      <span class="dir">${n.side}</span><span class="pmain"><b>${esc(n.name)}</b><small>${n.status === 'ruins' ? 'Ruins' : `Mayor ${esc(n.ownerName)}, ${n.pop} people`}</small></span>
+      <span class="dir">${n.side}</span><span class="pmain"><b>${esc(n.name)}</b><small>${n.status === 'ruins' ? 'Ruins' : `Mayor ${esc(n.ownerName)}, ${n.pop} people${n.idle ? `. Paused, last active ${n.ago}` : ''}`}</small></span>
       <span class="links ${n.links ? 'on' : ''}">${n.links ? `${n.links} link${n.links > 1 ? 's' : ''}` : 'Not linked'}</span></button></li>`).join('')}</ul>`
       : '<p class="empty small">No neighbours yet. New players will settle next to you.</p>'}
     <h3 class="sub">${icon('i-people')}Between cities</h3>
@@ -229,11 +248,14 @@ export function gives(t) {
   return bits.join('. ');
 }
 export function catalogHtml(ctx) {
-  const { s, tile, cat, avail } = ctx;
-  const list = BUILDINGS.filter((t) => cat === 'all' || B[t].cat === cat);
+  const { s, tile, cat, avail, q = '', afford = false } = ctx;
+  const needle = q.trim().toLowerCase();
+  const list = BUILDINGS.filter((t) => (cat === 'all' || B[t].cat === cat) && (!needle || `${B[t].name} ${B[t].blurb} ${gives(t)}`.toLowerCase().includes(needle)) && (!afford || avail(t).ok));
   const x = tile % 24 + 1, y = Math.floor(tile / 24) + 1;
   return `<div class="cat-head"><div><h2 id="catalog-title">Build on tile ${x}, ${y}</h2><small class="soft">You have <b>${money(s.money)}</b>. Staffed buildings need people with the right education.</small></div>
       <button class="iconbtn" type="button" data-cat-close aria-label="Close">${icon('i-close')}</button></div>
+    <div class="cat-tools"><label class="search">${icon('i-search')}<input type="search" id="cat-q" placeholder="Search buildings" value="${esc(q)}" aria-label="Search buildings"></label>
+      <label class="tgl compact"><input type="checkbox" id="cat-afford" ${afford ? 'checked' : ''}><span class="sw" aria-hidden="true"></span><span>Only what I can build now</span></label></div>
     <div class="chips cat-tabs" role="tablist">${[['all', 'All'], ...CATS].map(([k, l]) => `<button type="button" role="tab" class="chip" aria-checked="${k === cat}" data-cat="${k}">${l}</button>`).join('')}</div>
     <div class="cat-grid">${list.map((t) => {
       const a = avail(t);
@@ -244,5 +266,5 @@ export function catalogHtml(ctx) {
         <span class="cgives">${esc(gives(t))}</span>
         ${a.ok ? '' : `<span class="cwhy">${a.locked ? icon('i-lock') : ''}${esc(a.reason)}</span>`}
       </button>`;
-    }).join('')}</div>`;
+    }).join('') || '<p class="empty">Nothing matches. Try another search or category.</p>'}</div>`;
 }

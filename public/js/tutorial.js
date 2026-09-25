@@ -84,6 +84,8 @@ export function createTutorial(api) {
     const s = STEPS[step];
     base = s.base ? s.base(api) : null;
     doneAt = 0;
+    // Already done (e.g. traffic is already on)? Skip ahead rather than asking again.
+    if (s.task && s.done && !s.base && s.done(api, base) && n < STEPS.length - 1) { go(n + 1); return; }
     if (s.target === 'hall') api.setPulseTile(api.hallTile());
     else if (s.target) document.querySelector(s.target)?.classList.add('tut-glow');
     box.classList.remove('hidden');

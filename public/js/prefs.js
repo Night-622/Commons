@@ -33,6 +33,8 @@ export const DEFAULTS = {
   sound: true,
   volume: 0.5,
   tips: true,
+  alerts: false,
+  speak: false,
 };
 
 export function loadPrefs() {

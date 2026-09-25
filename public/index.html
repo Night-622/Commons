@@ -11,6 +11,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;700;800&display=swap">
   <link rel="stylesheet" href="styles.css">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icon.svg">
 </head>
 <body>
   <!-- icon set -->
@@ -154,6 +156,7 @@
       </button>
       <ul id="needs" class="needs"></ul>
       <p id="hint" class="hint"></p>
+      <button class="linkbtn summary-btn" id="btn-summary" type="button">Read me a city summary</button>
     </aside>
 
     <nav id="rail" class="rail plate" aria-label="Panels">
@@ -187,6 +190,7 @@
     <p id="tool-tip" class="tool-tip" aria-hidden="true"></p>
 
     <div id="toasts" class="toasts" aria-live="polite"></div>
+    <div id="photo-bar" class="photo-bar plate hidden"><span>Photo mode</span><button class="btn primary" id="photo-save" type="button">Save picture</button><button class="btn" id="photo-exit" type="button">Done</button></div>
     <div id="follow" class="follow-chip hidden" role="status"><span id="follow-text"></span><button type="button" id="follow-stop" class="linkbtn">Stop</button></div>
   </main>
 

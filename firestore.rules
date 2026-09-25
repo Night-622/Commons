@@ -69,14 +69,17 @@ service cloud.firestore {
         && plotId == request.resource.data.world + '_' + string(request.resource.data.px) + '_' + string(request.resource.data.py)
         && !exists(linkPath(request.resource.data.world))
         && getAfter(linkPath(request.resource.data.world)).data.plotId == plotId
-        && request.resource.data.state.size() < 200000;
+        && !('state' in request.resource.data);
       allow update: if signedIn()
         && request.resource.data.world == resource.data.world
         && request.resource.data.px == resource.data.px
         && request.resource.data.py == resource.data.py
-        && request.resource.data.state.size() < 200000
+        && (!('state' in request.resource.data) || request.resource.data.state.size() < 200000)
         && (
-          (resource.data.owner == me() && request.resource.data.owner == me())
+          // The owner saving. Money can't jump faster than a busy city could earn it (a cheap guard against edits).
+          (resource.data.owner == me() && request.resource.data.owner == me()
+            && (!('money' in resource.data) || !('updatedAt' in resource.data)
+              || request.resource.data.money <= resource.data.money + 4000 + (request.time.toMillis() - resource.data.updatedAt.toMillis()) / 10))
           || (resource.data.status == 'ruins'
             && request.resource.data.owner == me()
             && getAfter(linkPath(resource.data.world)).data.plotId == plotId)
@@ -84,36 +87,28 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // World chat. Anyone signed in can read; you can only post as yourself, briefly.
-    match /worlds/{worldId}/chat/{msgId} {
+    // The full save for each plot. Anyone can read it; only the plot's owner can write it.
+    match /plotState/{plotId} {
       allow read: if signedIn();
-      allow create: if signedIn()
-        && request.resource.data.keys().hasOnly(['uid', 'name', 'city', 'text', 'createdAt'])
-        && request.resource.data.uid == me()
-        && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 280
-        && request.resource.data.name is string && request.resource.data.name.size() <= 24
-        && request.resource.data.city is string && request.resource.data.city.size() <= 40
-        && request.resource.data.createdAt == request.time;
-      allow update, delete: if false;
+      allow create, update: if signedIn()
+        && getAfter(docPath('plots', plotId)).data.owner == me()
+        && request.resource.data.keys().hasOnly(['state'])
+        && request.resource.data.state is string && request.resource.data.state.size() < 900000;
+      allow delete: if false;
     }
 
-    // Families moving from one linked city to another. Only the sending mayor can create one;
-    // only the receiving mayor can read it and remove it once the family has moved in.
-    match /worlds/{worldId}/moves/{moveId} {
-      allow create: if signedIn()
-        && request.resource.data.keys().hasOnly(['from', 'fromName', 'fromOwner', 'to', 'toOwner', 'people', 'createdAt'])
-        && request.resource.data.fromOwner == me()
-        && get(docPath('plots', request.resource.data.from)).data.owner == me()
-        && request.resource.data.people is list && request.resource.data.people.size() <= 8
-        && request.resource.data.createdAt == request.time;
-      allow read, delete: if signedIn() && resource.data.toOwner == me();
-      allow update: if false;
+    // Likes on cities: one per player per city.
+    match /worlds/{worldId}/likes/{likeId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.uid == me() && likeId == request.resource.data.plot + '_' + me()
+        && request.resource.data.keys().hasOnly(['plot', 'uid', 'createdAt']);
+      allow delete: if signedIn() && resource.data.uid == me();
     }
 
-    // Each player's lifetime stats and achievements. Private to them.
-    match /profiles/{uid} {
-      allow read, delete: if signedIn() && me() == uid;
-      allow create, update: if signedIn() && me() == uid && request.resource.data.keys().size() < 12;
+    // Chat reports, for you to review in the console.
+    match /reports/{id} {
+      allow create: if signedIn() && request.resource.data.uid == me() && request.resource.data.keys().size() < 10;
+      allow read, update, delete: if false;
     }
 
     // Permanent records of fallen cities.

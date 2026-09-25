@@ -14,6 +14,13 @@ Enable these in the Firebase console under **Authentication → Sign-in method**
 
 Guests can turn their guest city into a full account later (Account menu). Linking keeps the same user id, so the city comes along.
 
+## More
+- Level crossings (draw rail over a road), congestion-aware driving, seasons and weather on a shared world clock.
+- Policies (tax, service funding, free transit), resident requests with rewards, factory goods sold to neighbours.
+- Life stories and favourites for residents, catalogue search, snapshot undo for the last minute, photo mode, likes, chat mute and report, browser alerts, installable app.
+- Saves are split: `plots/{id}` is a small public summary everyone listens to; `plotState/{id}` holds the full city and is only fetched for adjacent neighbours.
+- `node test/balance.mjs` runs a scripted city for 100 days.
+
 ## Deploy
 
 Push to `main`. The GitHub Action deploys hosting.

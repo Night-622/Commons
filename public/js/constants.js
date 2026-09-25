@@ -26,7 +26,8 @@ export const TAP_CAP = 0.25;
 export const ROAD_CAP = 45;
 export const HALL_CAP = 120;
 
-// A day is a year of life, so a child grows up in about 18 real minutes.
+// Two days are a year of life, so a child grows up in about 36 real minutes.
+export const YEAR_DAYS = 2;
 export const ADULT = 18;
 export const RETIRE = 65;
 export const WAGE = [3, 5, 8];   // daily tax by the education a job needs
@@ -45,7 +46,7 @@ export const T = {
   EMPTY: 0, ROAD: 1, HOUSE: 2, WORK: 3, SHOP: 4, SCHOOL: 5, PARK: 6, HALL: 7, RUBBLE: 8,
   PATH: 9, APARTMENT: 10, VILLA: 11, CAFE: 12, FACTORY: 13, DAYCARE: 14, HIGH: 15, UNI: 16, TUTOR: 17, LIBRARY: 18,
   CLINIC: 19, HOSPITAL: 20, POLICE: 21, FIRE: 22, COURT: 23, CEMETERY: 24, PLAYGROUND: 25, SPORTS: 26, GYM: 27,
-  DOJO: 28, POOL: 29, CINEMA: 30, YARD: 31, RAIL: 32, STATION: 33, STOP: 34, DEPOT: 35,
+  DOJO: 28, POOL: 29, CINEMA: 30, YARD: 31, RAIL: 32, STATION: 33, STOP: 34, DEPOT: 35, XING: 36,
 };
 
 export const CATS = [
@@ -57,6 +58,7 @@ export const CATS = [
 export const B = {
   [T.ROAD]: { key: 'road', name: 'Road', cost: 10, work: 1, upkeep: 0.3, blurb: 'Cars, bikes and walkers. Jams above 45 car trips a day.' },
   [T.PATH]: { key: 'path', name: 'Footpath', cost: 5, work: 1, upkeep: 0.1, blurb: 'Walkers and bikes only. Takes cars off the road.' },
+  [T.XING]: { key: 'crossing', name: 'Level crossing', cost: 30, work: 2, upkeep: 0.5, blurb: 'Where a road and a railway meet. Cars wait while trains pass.' },
   [T.RAIL]: { key: 'rail', name: 'Railway', cost: 25, work: 2, upkeep: 0.5, blurb: 'Track for trains. Join stations together, or run it to your plot edge to reach a neighbour.' },
 
   [T.STOP]: { key: 'stop', name: 'Bus stop', cat: 'transport', col: 'hall', cost: 60, work: 6, upkeep: 1, catchment: 4, needs: T.DEPOT, blurb: 'People within 4 tiles ride the bus instead of driving. Needs a bus depot.' },
@@ -107,7 +109,9 @@ export const UPGRADABLE = BUILDINGS.filter((t) => ![T.CEMETERY, T.PARK, T.PLAYGR
 export const MAX_LEVEL = 3;
 export const LEVEL = { capacity: [0, 1, 1.75, 2.5], upkeep: [0, 1, 1.6, 2.2], cost: [0, 0, 1, 1.6] };
 export const isHome = (t) => !!B[t]?.homes;
-export const walkable = (t) => t === T.ROAD || t === T.PATH || t === T.HALL;
+export const walkable = (t) => t === T.ROAD || t === T.PATH || t === T.HALL || t === T.XING;
+export const isRoad = (t) => t === T.ROAD || t === T.XING;
+export const isRail = (t) => t === T.RAIL || t === T.XING;
 
 export const GOALS = [
   { id: 'roads10', text: 'Lay 10 road tiles', reward: 100 },
@@ -129,3 +133,10 @@ export const GOALS = [
   { id: 'pop100', text: 'Reach 100 people', reward: 800 },
   { id: 'days30', text: 'Keep your city running 30 days', reward: 1500 },
 ];
+
+// Policies the mayor can set. Tax raises income but lowers mood; funding scales every service.
+export const POLICY = { tax: [0.8, 1.3], funding: [0.7, 1.2] };
+export const WANT_REWARD = 120;
+export const GOODS_PER_FACTORY = 20;   // goods a staffed factory makes a day
+export const SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter'];
+export const SEASON_DAYS = 10;         // world days per season

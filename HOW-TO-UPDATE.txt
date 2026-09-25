@@ -1,19 +1,25 @@
 Commons update: how to install
 
+The order matters this time: the new rules must be live before the new game goes out,
+because the game now saves each city in two parts.
+
 1. Open C:\Users\Other user\Desktop\Commons
 2. Delete the old "public" folder and the old "test" folder.
 3. Unzip this file into the Commons folder. It puts back:
-     public\  (all the game files)
-     test\
+     public\  (all the game files, plus manifest.webmanifest, icon.svg and sw.js)
+     test\    (sim.test.mjs and balance.mjs)
      firestore.rules
      README.md
    Say yes to replacing firestore.rules and README.md.
    Don't touch anything else (firebase.json, .firebaserc, package.json, .github, .agents, .claude, .firebase).
-4. Commit and push to GitHub. The Action deploys the website.
-5. In a terminal in the Commons folder, run:
+4. FIRST, in a terminal in the Commons folder, run:
      npm run deploy:rules
-   This is required: chat, profiles, achievements, account deletion and families moving between cities won't work until the new rules are live.
-6. Firebase console > Authentication > Sign-in method: make sure Email/Password, Anonymous and Google are all enabled.
-7. Open https://commons-ww.web.app and press Ctrl+F5 to skip the old cached version.
+5. THEN commit and push to GitHub. The Action deploys the website.
+6. Open https://commons-ww.web.app and press Ctrl+F5.
 
-Existing cities are converted automatically: their head counts become named residents, and they keep all their land.
+Optional checks:
+     npm test                 (simulation tests)
+     node test/balance.mjs    (a scripted 100-day city; prints population, money and mood every 10 days)
+
+Existing cities carry over: each one moves to the new two-part save the first time its mayor plays.
+Chat reports land in the "reports" collection: Firebase console > Firestore Database > reports.
