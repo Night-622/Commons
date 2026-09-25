@@ -1,57 +1,161 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Commons</title>
-  <meta name="description" content="Build a city on a shared map, next to everyone else's.">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%23eef1e8'/><rect x='2' y='2' width='5' height='5' fill='%23e3a34b'/><rect x='9' y='2' width='5' height='5' fill='%233f6fb5'/><rect x='2' y='9' width='5' height='5' fill='%235b9e5f'/><rect x='9' y='9' width='5' height='5' fill='%236b4fa0'/></svg>">
+  <meta name="description" content="Build a city on a shared map, right next to everyone else's.">
+  <meta name="theme-color" content="#17313b">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M16 4 29 11v10L16 28 3 21V11z' fill='%23a9d68b'/><path d='M16 4 29 11 16 18 3 11z' fill='%23ffc933'/><path d='M16 18v10L3 21V11z' fill='%2386b566'/></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..800&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;700;800&display=swap">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <section id="login" class="screen">
-    <div class="deed">
-      <h1 class="wordmark">Commons</h1>
-      <p class="lede">Claim a plot on a shared map. Build a city next to everyone else's, and keep it alive.</p>
-      <button id="btn-signin" class="btn primary">Sign in with Google</button>
-      <p id="login-err" class="err" role="alert"></p>
+  <!-- icon set -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M14.5 9.2c-.5-.8-1.4-1.2-2.5-1.2-1.5 0-2.6.8-2.6 2s1 1.6 2.6 2 2.7.8 2.7 2.1-1.2 2-2.7 2c-1.2 0-2.2-.5-2.7-1.4M12 6.5v1.5M12 16v1.5"/></symbol>
+      <symbol id="i-people" viewBox="0 0 24 24"><circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19c.6-3.3 2.7-5 5.5-5s4.9 1.7 5.5 5"/><circle cx="16.5" cy="9.5" r="2.5"/><path d="M15.5 14.2c2.6-.3 4.4 1.2 5 4.3"/></symbol>
+      <symbol id="i-mood" viewBox="0 0 24 24"><path d="M12 2.5 17 12l-5 9.5L7 12z"/><path d="M7 12h10"/></symbol>
+      <symbol id="i-hammer" viewBox="0 0 24 24"><path d="M13.5 6.5 17.5 10.5M4 20l9-9M11 4.5l3-2 5.5 5.5-2 3z"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+      <symbol id="i-jobs" viewBox="0 0 24 24"><rect x="3.5" y="7.5" width="17" height="12" rx="2"/><path d="M9 7.5V5.5h6v2M3.5 12.5h17"/></symbol>
+      <symbol id="i-car" viewBox="0 0 24 24"><path d="M5 16V11l2-5h10l2 5v5M5 16h14M5 16v2M19 16v2M5 11h14"/></symbol>
+      <symbol id="i-bag" viewBox="0 0 24 24"><path d="M5 8h14l-1 12H6z"/><path d="M9 8a3 3 0 0 1 6 0"/></symbol>
+      <symbol id="i-house" viewBox="0 0 24 24"><path d="M4 11 12 4l8 7v9H4z"/><path d="M10 20v-5h4v5"/></symbol>
+      <symbol id="i-school" viewBox="0 0 24 24"><path d="M2.5 9 12 4.5 21.5 9 12 13.5z"/><path d="M6.5 11v5c1.5 1.5 3.5 2.2 5.5 2.2s4-.7 5.5-2.2v-5M21.5 9v5"/></symbol>
+      <symbol id="i-tree" viewBox="0 0 24 24"><path d="M12 21v-6"/><path d="M12 3c3 0 5.5 2.5 5.5 5.5 0 3.3-2.5 5.5-5.5 5.5S6.5 11.8 6.5 8.5C6.5 5.5 9 3 12 3z"/></symbol>
+      <symbol id="i-cube" viewBox="0 0 24 24"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/></symbol>
+      <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M4 12h16M12 4v16"/></symbol>
+      <symbol id="i-lights" viewBox="0 0 24 24"><rect x="7.5" y="2.5" width="9" height="19" rx="3"/><circle cx="12" cy="7.5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="16.5" r="1.5"/></symbol>
+      <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></symbol>
+      <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.5 3.5 5.5 3.5 8.5s-1 6-3.5 8.5c-2.5-2.5-3.5-5.5-3.5-8.5s1-6 3.5-8.5z"/></symbol>
+      <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20.5h7M10 17h4v3.5h-4z"/></symbol>
+      <symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4M5 4h11l-2 3.5L16 11H5"/></symbol>
+      <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></symbol>
+      <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c.9-4 3.8-6 7.5-6s6.6 2 7.5 6"/></symbol>
+      <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.5a2.5 2.5 0 1 1 3.3 2.4c-.6.2-.9.7-.9 1.3v.6M12 16.8v.2"/></symbol>
+      <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></symbol>
+      <symbol id="i-look" viewBox="0 0 24 24"><path d="M5 3.5 18.5 11l-5.8 1.7L10 18.5z"/></symbol>
+      <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V6M6.5 11.5 12 6l5.5 5.5"/><path d="M5 21h14"/></symbol>
+      <symbol id="i-clear" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13M10 11v5M14 11v5"/></symbol>
+      <symbol id="i-sound" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></symbol>
+      <symbol id="i-full" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5 10 17.5 19 7"/></symbol>
+      <symbol id="i-map" viewBox="0 0 24 24"><path d="M3.5 6.5 9 4l6 2.5L20.5 4v13.5L15 20l-6-2.5-5.5 2.5z"/><path d="M9 4v13.5M15 6.5V20"/></symbol>
+    </defs>
+  </svg>
+
+  <div id="boot" class="screen"><div class="boot-mark" aria-hidden="true"></div><p>Loading Commons…</p></div>
+
+  <!-- sign in -->
+  <section id="auth" class="screen auth hidden" aria-labelledby="auth-title">
+    <canvas id="hero" class="hero" aria-hidden="true"></canvas>
+    <div class="auth-card plate">
+      <h1 id="auth-title" class="wordmark">Commons</h1>
+      <p class="lede">Build a city on a shared map, right next to everyone else's. Keep it running, or watch it fall.</p>
+
+      <div class="seg auth-tabs" role="tablist" aria-label="Account">
+        <button type="button" role="tab" id="tab-signin" aria-selected="true">Sign in</button>
+        <button type="button" role="tab" id="tab-create" aria-selected="false">Create account</button>
+      </div>
+      <form id="email-form" class="stack" novalidate>
+        <label class="field"><span>Email</span><input id="auth-email" type="email" autocomplete="email" required></label>
+        <label class="field"><span>Password</span><input id="auth-pass" type="password" autocomplete="current-password" minlength="6" required></label>
+        <button class="btn primary wide" id="auth-submit" type="submit">Sign in</button>
+        <button class="linkbtn" id="auth-forgot" type="button">Forgot your password?</button>
+      </form>
+      <div class="or" role="presentation"><span>or</span></div>
+      <div class="stack">
+        <button class="btn wide gbtn" id="auth-google" type="button">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="#4285F4" d="M22.5 12.3c0-.8-.1-1.5-.2-2.2H12v4.2h5.9a5 5 0 01-2.2 3.3v2.7h3.5c2.1-1.9 3.3-4.7 3.3-8z"/><path fill="#34A853" d="M12 23c3 0 5.4-1 7.2-2.7l-3.5-2.7c-1 .7-2.2 1-3.7 1-2.9 0-5.3-1.9-6.2-4.5H2.2v2.8A11 11 0 0012 23z"/><path fill="#FBBC05" d="M5.8 14.1a6.6 6.6 0 010-4.2V7.1H2.2a11 11 0 000 9.8z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.1-3.1A11 11 0 002.2 7.1l3.6 2.8C6.7 7.3 9.1 5.4 12 5.4z"/></svg>
+          Continue with Google</button>
+        <button class="btn wide" id="auth-guest" type="button">Play as a guest</button>
+        <p class="fine">Guest cities live on this device. You can turn a guest into a full account later and keep your city.</p>
+      </div>
+      <p id="auth-msg" class="formmsg" role="alert"></p>
     </div>
   </section>
 
-  <section id="loading" class="screen hidden"><p>Surveying your plot…</p></section>
+  <!-- found a city -->
+  <section id="found" class="screen hidden" aria-labelledby="found-title">
+    <canvas id="hero2" class="hero" aria-hidden="true"></canvas>
+    <form id="found-form" class="auth-card plate stack">
+      <h1 id="found-title" class="title">Found your city</h1>
+      <p class="lede">You'll get a plot on the frontier of the shared map, with a town hall, three builders and three settlers.</p>
+      <label class="field"><span>Your name as mayor</span><input id="found-mayor" maxlength="20" autocomplete="nickname" required></label>
+      <label class="field"><span>City name</span><input id="found-city" maxlength="28" required></label>
+      <button class="btn primary wide" type="submit" id="found-go">Claim my plot</button>
+      <button class="linkbtn" type="button" id="found-out">Use a different account</button>
+      <p id="found-msg" class="formmsg" role="alert"></p>
+    </form>
+  </section>
 
+  <!-- game -->
   <main id="game" class="hidden">
-    <canvas id="map" aria-label="City map"></canvas>
+    <canvas id="map" tabindex="0" aria-label="City map. Arrow keys move the cursor on your plot, Enter uses the selected tool."></canvas>
+    <p id="sr" class="sr-only" aria-live="polite"></p>
 
-    <header class="cartouche">
-      <button id="city-name" class="city-name" title="Rename your city"></button>
-      <p id="clock" class="clock"></p>
-      <button id="btn-rebuild" class="btn primary hidden">Rebuild on the ruins</button>
+    <header class="top">
+      <div class="city plate">
+        <button id="city-name" class="city-name" type="button" title="Rename your city"></button>
+        <span id="clock" class="clock num"></span>
+      </div>
+      <div class="stats plate" role="group" aria-label="City at a glance">
+        <div class="stat" title="Money, and yesterday's income after upkeep"><svg class="ic"><use href="#i-coin"/></svg><div><b id="v-money" class="num">$0</b><small id="v-net" class="num">+0 a day</small></div></div>
+        <div class="stat" title="People living here"><svg class="ic"><use href="#i-people"/></svg><div><b id="v-pop" class="num">0</b><small id="v-homes" class="num">0 homes</small></div></div>
+        <div class="stat" title="Builders and the construction queue"><svg class="ic"><use href="#i-hammer"/></svg><div><b id="v-build" class="num">0</b><small id="v-queue">idle</small></div></div>
+      </div>
+      <div class="grow"></div>
+      <div id="alert" class="alert-chip hidden" role="status"></div>
+      <nav class="controls plate" aria-label="View and menus">
+        <div class="seg" role="group" aria-label="View">
+          <button type="button" id="view-3d" aria-pressed="true" title="3D view (V)"><svg class="ic"><use href="#i-cube"/></svg><span>3D</span></button>
+          <button type="button" id="view-2d" aria-pressed="false" title="2D view (V)"><svg class="ic"><use href="#i-grid"/></svg><span>2D</span></button>
+        </div>
+        <button class="cbtn" id="btn-traffic" type="button" aria-pressed="false" title="Traffic (T)" aria-label="Show traffic"><svg class="ic"><use href="#i-lights"/></svg></button>
+        <button class="cbtn" id="btn-home" type="button" title="My plot (H)" aria-label="Go to my plot"><svg class="ic"><use href="#i-target"/></svg></button>
+        <button class="cbtn" id="btn-world" type="button" title="Whole map (0)" aria-label="Show the whole map"><svg class="ic"><use href="#i-globe"/></svg></button>
+        <span class="csep" aria-hidden="true"></span>
+        <button class="cbtn" id="btn-goals" type="button" title="Goals (O)" aria-label="Goals" aria-expanded="false"><svg class="ic"><use href="#i-flag"/></svg><i id="goals-dot" class="dot num"></i></button>
+        <button class="cbtn" id="btn-board" type="button" title="Leaderboards (L)" aria-label="Leaderboards"><svg class="ic"><use href="#i-trophy"/></svg></button>
+        <button class="cbtn" id="btn-settings" type="button" title="Settings (,)" aria-label="Settings"><svg class="ic"><use href="#i-gear"/></svg></button>
+        <button class="cbtn" id="btn-account" type="button" title="Account" aria-label="Account"><svg class="ic"><use href="#i-user"/></svg></button>
+        <button class="cbtn" id="btn-help" type="button" title="How to play (?)" aria-label="How to play"><svg class="ic"><use href="#i-help"/></svg></button>
+      </nav>
     </header>
 
-    <aside class="ledger" aria-label="City status">
-      <dl id="ledger-body"></dl>
-      <p id="save-state" class="save-state">Saved</p>
+    <!-- Sims-style city pulse: mood plus needs -->
+    <aside id="pulse" class="pulse plate" aria-label="City mood and needs">
+      <button class="pulse-head" id="pulse-toggle" type="button" aria-expanded="true" aria-controls="needs">
+        <svg class="ring" viewBox="0 0 64 64" aria-hidden="true"><circle class="ring-bg" cx="32" cy="32" r="27"/><circle id="ring-fg" class="ring-fg" cx="32" cy="32" r="27"/><path id="ring-gem" class="gem" d="M32 17 39 32 32 47 25 32z"/></svg>
+        <span class="pulse-txt"><small>Mood</small><b id="v-mood" class="num">0%</b><span id="v-mood-word" class="mood-word">Settling in</span></span>
+      </button>
+      <ul id="needs" class="needs"></ul>
+      <p id="hint" class="hint"></p>
     </aside>
 
-    <nav class="views" aria-label="Map views">
-      <button id="btn-home" class="btn">My plot</button>
-      <button id="btn-world" class="btn">Whole map</button>
-      <button id="btn-traffic" class="btn" aria-pressed="false">Traffic</button>
-      <button id="btn-board" class="btn">Leaderboards</button>
-      <button id="btn-help" class="btn">Help</button>
-      <button id="btn-signout" class="btn quiet">Sign out</button>
-    </nav>
+    <aside id="inspector" class="inspector plate hidden" aria-live="polite" aria-label="Details"></aside>
+    <aside id="goals" class="goals plate hidden" aria-label="Goals"></aside>
 
-    <div id="inspector" class="inspector hidden" aria-live="polite"></div>
-    <footer id="tools" class="tools" aria-label="Build tools"></footer>
-    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <div id="minibox" class="minibox plate">
+      <canvas id="minimap" width="160" height="120" aria-label="Minimap. Click to move the view."></canvas>
+    </div>
+
+    <nav id="dock" class="dock plate" aria-label="Tools">
+      <div id="tools" class="tools" role="toolbar" aria-label="Build tools"></div>
+      <span class="csep" aria-hidden="true"></span>
+      <button class="cbtn" id="btn-undo" type="button" title="Undo last placement (Ctrl+Z)" aria-label="Undo last placement"><svg class="ic"><use href="#i-undo"/></svg></button>
+    </nav>
+    <p id="tool-tip" class="tool-tip" aria-hidden="true"></p>
+
+    <div id="toasts" class="toasts" aria-live="polite"></div>
   </main>
 
-  <dialog id="modal"><div id="modal-body"></div></dialog>
+  <dialog id="modal" aria-labelledby="modal-title"><div id="modal-body"></div></dialog>
 
   <script type="module" src="js/main.js"></script>
 </body>

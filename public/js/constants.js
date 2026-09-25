@@ -16,6 +16,8 @@ export const EDU_DAYS = 3;       // days of schooling before a citizen graduates
 export const VOLUNTEER_RATE = 0.25; // build hours an unskilled citizen contributes per hour
 export const RUBBLE_CLEAR_COST = 25;
 export const COLLAPSE_UNPAID_DAYS = 10;
+export const TAP_SHARE = 0.05;   // each tap on a building site finishes 5% of it...
+export const TAP_CAP = 0.25;     // ...up to 25% per site
 
 export const ROAD_CAP = 45;      // residents per day a road tile carries before jamming
 export const HALL_CAP = 120;
@@ -27,14 +29,37 @@ export const T = { EMPTY: 0, ROAD: 1, HOUSE: 2, WORK: 3, SHOP: 4, SCHOOL: 5, PAR
 
 // cost: money to place, work: builder-hours to finish, upkeep: money per day
 export const B = {
-  [T.ROAD]:   { key: 'road',   name: 'Road',      cost: 10,  work: 1,  upkeep: 0.3, color: '#7a8290' },
-  [T.HOUSE]:  { key: 'house',  name: 'House',     cost: 120, work: 16, upkeep: 2,   color: '#e3a34b', homes: 6 },
-  [T.WORK]:   { key: 'work',   name: 'Workplace', cost: 220, work: 30, upkeep: 4,   color: '#3f6fb5', jobs: 10 },
-  [T.SHOP]:   { key: 'shop',   name: 'Shop',      cost: 160, work: 20, upkeep: 3,   color: '#c8577e', jobs: 3, serves: 30 },
-  [T.SCHOOL]: { key: 'school', name: 'School',    cost: 320, work: 40, upkeep: 6,   color: '#e8c547', jobs: 2, seats: 8 },
-  [T.PARK]:   { key: 'park',   name: 'Park',      cost: 80,  work: 6,  upkeep: 1,   color: '#5b9e5f' },
-  [T.HALL]:   { key: 'hall',   name: 'Town hall', cost: 0,   work: 0,  upkeep: 0,   color: '#6b4fa0', homes: 6, jobs: 4, serves: 10 },
-  [T.RUBBLE]: { key: 'rubble', name: 'Rubble',    cost: 0,   work: 0,  upkeep: 0,   color: '#8a7362' },
+  [T.ROAD]:   { key: 'road',   name: 'Road',      cost: 10,  work: 1,  upkeep: 0.3, blurb: 'Connects everything. Jams above 45 trips a day.' },
+  [T.HOUSE]:  { key: 'house',  name: 'House',     cost: 120, work: 16, upkeep: 2,   homes: 6,  blurb: 'Homes for 6 people.' },
+  [T.WORK]:   { key: 'work',   name: 'Workplace', cost: 220, work: 30, upkeep: 4,   jobs: 10,  blurb: '10 jobs. Employed people pay more tax.' },
+  [T.SHOP]:   { key: 'shop',   name: 'Shop',      cost: 160, work: 20, upkeep: 3,   jobs: 3, serves: 30, blurb: 'Serves 30 people and adds 3 jobs.' },
+  [T.SCHOOL]: { key: 'school', name: 'School',    cost: 320, work: 40, upkeep: 6,   jobs: 2, seats: 8, blurb: '8 seats. Graduates become builders, teachers or professionals.' },
+  [T.PARK]:   { key: 'park',   name: 'Park',      cost: 80,  work: 6,  upkeep: 1,   blurb: 'Homes within 3 tiles are happier.' },
+  [T.HALL]:   { key: 'hall',   name: 'Town hall', cost: 0,   work: 0,  upkeep: 0,   homes: 6, jobs: 4, serves: 10 },
+  [T.RUBBLE]: { key: 'rubble', name: 'Rubble',    cost: 0,   work: 0,  upkeep: 0 },
 };
 
 export const BUILDABLE = [T.ROAD, T.HOUSE, T.WORK, T.SHOP, T.SCHOOL, T.PARK];
+export const UPGRADABLE = [T.HOUSE, T.WORK, T.SHOP, T.SCHOOL];
+export const MAX_LEVEL = 3;
+export const LEVEL = {
+  capacity: [0, 1, 1.75, 2.5],   // index by level
+  upkeep:   [0, 1, 1.6, 2.2],
+  cost:     [0, 0, 1, 1.6],      // upgrade price as a multiple of the base cost, to reach this level
+};
+
+// Milestones, checked every in-game hour. Rewards are paid once.
+export const GOALS = [
+  { id: 'roads10',  text: 'Lay 10 road tiles',              reward: 100 },
+  { id: 'houses3',  text: 'Build 3 houses',                 reward: 150 },
+  { id: 'work1',    text: 'Open a workplace',               reward: 150 },
+  { id: 'shop1',    text: 'Open a shop',                    reward: 150 },
+  { id: 'pop25',    text: 'Reach 25 people',                reward: 250 },
+  { id: 'school1',  text: 'Open a school',                  reward: 300 },
+  { id: 'upgrade1', text: 'Upgrade a building',             reward: 300 },
+  { id: 'build6',   text: 'Have 6 builders',                reward: 300 },
+  { id: 'happy75',  text: 'Keep 30+ people at 75% mood',    reward: 400 },
+  { id: 'days10',   text: 'Keep your city running 10 days', reward: 500 },
+  { id: 'pop100',   text: 'Reach 100 people',               reward: 800 },
+  { id: 'days30',   text: 'Keep your city running 30 days', reward: 1500 },
+];

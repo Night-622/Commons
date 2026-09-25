@@ -50,3 +50,32 @@ console.log('collapse record', r.collapsed);
 sim.rebuild(d);
 assert(d.status === 'alive' && d.grid.includes(T.RUBBLE));
 console.log('all tests passed');
+
+// ---- v2: upgrades, taps, undo, goals, migration
+{
+  const s = sim.newCity('Up');
+  const c = PLOT >> 1;
+  for (let x = c + 1; x <= c + 5; x++) sim.place(s, sim.idx(x, c), T.ROAD);
+  sim.place(s, sim.idx(c + 2, c - 1), T.HOUSE);
+  const u = sim.undoPlace(s, sim.idx(c + 2, c - 1));
+  assert(u.ok && s.grid[sim.idx(c + 2, c - 1)] === T.EMPTY, 'undo refunds untouched placement');
+  sim.place(s, sim.idx(c + 2, c - 1), T.HOUSE);
+  const i = sim.idx(c + 2, c - 1);
+  let taps = 0; while (sim.tapHelp(s, i).ok) taps++;
+  assert(taps === 5, 'tap cap is 25% at 5% a tap, got ' + taps);
+  for (let h = 0; h < 48; h++) sim.tick(s, rng);
+  assert.equal(s.cond[i], 100);
+  const before = sim.totals(s).homes;
+  assert(sim.upgrade(s, i).ok, 'upgrade should start');
+  assert.equal(sim.totals(s).homes, before, 'building keeps working while upgrading');
+  for (let h = 0; h < 48; h++) sim.tick(s, rng);
+  assert.equal(s.lv[i], 2);
+  assert(sim.totals(s).homes > before, 'level 2 adds homes');
+  const got = sim.checkGoals(s).map((g) => g.id);
+  assert(got.includes('upgrade1'), 'upgrade goal pays out');
+  const tr = sim.computeTraffic(s);
+  for (const k of ['jobs', 'commute', 'shops', 'homes', 'school', 'leisure']) assert(tr.needs[k] >= 0 && tr.needs[k] <= 1, k);
+  const old = JSON.parse(sim.serialize(s)); delete old.lv; delete old.goalsDone;
+  sim.migrate(old); assert(old.lv.length === PLOT * PLOT && Array.isArray(old.goalsDone));
+  console.log('v2 features ok');
+}

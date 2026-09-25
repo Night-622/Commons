@@ -1,7 +1,8 @@
 // Pure city simulation. No DOM, no Firebase — so it runs in the browser and in node tests.
 import {
-  PLOT, T, B, START_MONEY, REBUILD_MONEY, GRACE_DAYS, EDU_DAYS, VOLUNTEER_RATE,
-  RUBBLE_CLEAR_COST, COLLAPSE_UNPAID_DAYS, ROAD_CAP, HALL_CAP, TAX, JOB_ODDS, HOURS_PER_DAY,
+  PLOT, T, B, START_MONEY, REBUILD_MONEY, GRACE_DAYS, EDU_DAYS, VOLUNTEER_RATE, RUBBLE_CLEAR_COST,
+  COLLAPSE_UNPAID_DAYS, ROAD_CAP, HALL_CAP, TAX, JOB_ODDS, HOURS_PER_DAY, LEVEL, MAX_LEVEL, UPGRADABLE,
+  TAP_SHARE, TAP_CAP, GOALS,
 } from './constants.js';
 
 const N = PLOT * PLOT;
@@ -9,7 +10,7 @@ export const idx = (x, y) => y * PLOT + x;
 export const xy = (i) => ({ x: i % PLOT, y: Math.floor(i / PLOT) });
 export const HALL_INDEX = idx(PLOT >> 1, PLOT >> 1);
 
-function neighbours(i) {
+export function neighbours(i) {
   const x = i % PLOT, y = (i / PLOT) | 0, out = [];
   if (x > 0) out.push(i - 1);
   if (x < PLOT - 1) out.push(i + 1);
@@ -26,15 +27,24 @@ export function newCity(name) {
   grid[HALL_INDEX] = T.HALL;
   cond[HALL_INDEX] = 100;
   return {
-    v: 1, name, grid, cond, queue: [],
+    v: 2, name, grid, cond, lv: new Array(N).fill(1), queue: [],
     money: START_MONEY,
     pop: { unskilled: 3, builder: 3, teacher: 0, pro: 0 },
     cohorts: [],            // students: [{ n, d }] where d = days of school left
     happiness: 0.65,
     hour: 0, day: 0, peakPop: 6, unpaidDays: 0,
-    cityNo: 1, status: 'alive', lastTick: Date.now(),
+    cityNo: 1, status: 'alive', lastTick: Date.now(), goalsDone: [],
     stats: { income: 0, upkeep: 0, failedTrips: 0, arrivals: 0, departures: 0, graduates: 0 },
   };
+}
+
+// Bring older saves up to the current shape.
+export function migrate(s) {
+  if (!s.lv) s.lv = new Array(N).fill(1);
+  if (!s.goalsDone) s.goalsDone = [];
+  for (const q of s.queue) if (q.tap === undefined) q.tap = 0;
+  s.v = 2;
+  return s;
 }
 
 export function serialize(s) {
@@ -54,29 +64,34 @@ export function summary(s) {
   };
 }
 
-export const underConstruction = (s) => new Set(s.queue.map((q) => q.i));
+// New buildings are inactive until finished. Upgrades keep working while they're being built.
+export const underConstruction = (s) => new Set(s.queue.filter((q) => !q.up).map((q) => q.i));
 
-// Condition scales what a building provides: full above 40, half while decaying, nothing when abandoned.
 function condFactor(s, i) {
   if (s.grid[i] === T.HALL) return 1;
   const c = s.cond[i];
   return c >= 40 ? 1 : c > 0 ? 0.5 : 0;
 }
+const levelOf = (s, i) => (s.lv ? s.lv[i] || 1 : 1);
+export function capacity(s, i, field) {
+  const def = B[s.grid[i]];
+  return (def[field] || 0) * condFactor(s, i) * LEVEL.capacity[levelOf(s, i)];
+}
 
 export function totals(s, uc = underConstruction(s)) {
-  const t = { homes: 0, jobs: 0, serves: 0, seats: 0, schools: 0, upkeep: 0 };
+  const t = { homes: 0, jobs: 0, serves: 0, seats: 0, schools: 0, upkeep: 0, roads: 0, counts: {} };
   for (let i = 0; i < N; i++) {
     const type = s.grid[i];
     if (type === T.EMPTY || type === T.RUBBLE || uc.has(i)) continue;
     const def = B[type];
-    if (type === T.ROAD) { t.upkeep += def.upkeep; continue; }
-    const f = condFactor(s, i);
-    if (f === 0) continue; // abandoned buildings cost nothing and provide nothing
-    t.upkeep += def.upkeep;
-    t.homes += (def.homes || 0) * f;
-    t.jobs += (def.jobs || 0) * f;
-    t.serves += (def.serves || 0) * f;
-    t.seats += (def.seats || 0) * f;
+    t.counts[type] = (t.counts[type] || 0) + 1;
+    if (type === T.ROAD) { t.upkeep += def.upkeep; t.roads++; continue; }
+    if (condFactor(s, i) === 0) continue; // abandoned buildings cost nothing and provide nothing
+    t.upkeep += def.upkeep * LEVEL.upkeep[levelOf(s, i)];
+    t.homes += capacity(s, i, 'homes');
+    t.jobs += capacity(s, i, 'jobs');
+    t.serves += capacity(s, i, 'serves');
+    t.seats += capacity(s, i, 'seats');
     if (type === T.SCHOOL) t.schools++;
   }
   t.homes = Math.floor(t.homes);
@@ -101,7 +116,7 @@ class MinHeap {
 }
 
 // Every home sends its residents to the nearest job and the nearest shop along the road network.
-// Routing is congestion-aware (busy roads cost more), so parallel routes genuinely spread load —
+// Routing is congestion-aware (busy roads cost more), so parallel routes genuinely spread load,
 // but a single artery or a hall bottleneck will still jam, and jammed trips fail.
 export function computeTraffic(s, uc = underConstruction(s), tot = totals(s, uc)) {
   const pop = totalPop(s);
@@ -134,7 +149,7 @@ export function computeTraffic(s, uc = underConstruction(s), tot = totals(s, uc)
   for (let i = 0; i < N; i++) {
     const t = s.grid[i];
     if ((t === T.HOUSE && live(i)) || t === T.HALL) {
-      const c = (B[t].homes || 0) * condFactor(s, i);
+      const c = capacity(s, i, 'homes');
       if (c > 0) homes.push({ i, cap: c });
     }
   }
@@ -148,7 +163,7 @@ export function computeTraffic(s, uc = underConstruction(s), tot = totals(s, uc)
     while (h.size) {
       const [d, u] = h.pop();
       if (d > dist[u]) continue;
-      if (targets[u]) { const path = []; for (let v = u; v !== -1; v = prev[v]) path.push(v); return path; }
+      if (targets[u]) { const path = []; for (let v = u; v !== -1; v = prev[v]) path.push(v); return path.reverse(); }
       for (const v of neighbours(u)) {
         if (!isNode[v]) continue;
         const nd = d + 1 + 2 * (load[v] / cap[v]);
@@ -158,7 +173,7 @@ export function computeTraffic(s, uc = underConstruction(s), tot = totals(s, uc)
     return null;
   };
 
-  // Pass 1: route and accumulate load.
+  // Pass 1: route and accumulate load. Paths run from the home's doorstep to the destination.
   for (const home of homes) {
     home.r = home.cap * occupancy;
     const starts = s.grid[home.i] === T.HALL ? [home.i] : neighbours(home.i).filter((n) => isNode[n]);
@@ -177,16 +192,18 @@ export function computeTraffic(s, uc = underConstruction(s), tot = totals(s, uc)
   };
   const serviceRatio = pop > 0 ? Math.min(1, tot.serves / pop) : 1;
   const workforce = s.pop.unskilled + s.pop.teacher + s.pop.pro;
-  let wSum = 0, workSucc = 0, target = 0, failed = 0;
+  let wSum = 0, workSucc = 0, shopSucc = 0, parkSum = 0, target = 0, failed = 0;
   for (const home of homes) {
     const ws = success(home.workPath), ss = success(home.shopPath);
     const { x, y } = xy(home.i);
     const park = parks.some((p) => Math.abs(p.x - x) + Math.abs(p.y - y) <= 3) ? 1 : 0;
     const cond = s.grid[home.i] === T.HALL ? 1 : s.cond[home.i] / 100;
     home.happy = 0.2 + 0.35 * ws + 0.25 * ss * serviceRatio + 0.1 * park + 0.1 * cond;
-    home.workSucc = ws; home.shopSucc = ss;
+    home.workSucc = ws; home.shopSucc = ss; home.park = park;
     target += home.happy * home.cap;
     workSucc += ws * home.cap;
+    shopSucc += ss * home.cap;
+    parkSum += park * home.cap;
     wSum += home.cap;
     failed += home.r * (1 - ws) + home.r * (1 - ss);
   }
@@ -196,7 +213,20 @@ export function computeTraffic(s, uc = underConstruction(s), tot = totals(s, uc)
   target = wSum ? target / wSum : 0.5;
   target *= 0.6 + 0.4 * employmentRate;
 
-  return { load, cap, homes, target, failedTrips: Math.round(failed), employed, employmentRate, serviceRatio };
+  // Needs, Sims-style: each is 0..1 and tells the player what to fix next.
+  const learners = s.pop.unskilled + students(s);
+  const needs = {
+    jobs: workforce > 0 ? Math.min(1, tot.jobs / workforce) : 1,
+    commute: avgWorkSucc,
+    shops: (wSum ? shopSucc / wSum : 0) * serviceRatio,
+    homes: Math.max(0, Math.min(1, (tot.homes - pop) / Math.max(3, pop * 0.15))),
+    school: learners === 0 ? 1 : Math.min(1, tot.seats / learners),
+    leisure: wSum ? parkSum / wSum : 0,
+  };
+
+  return {
+    load, cap, homes, target, failedTrips: Math.round(failed), employed, employmentRate, serviceRatio, needs,
+  };
 }
 
 // ---------- player actions ----------
@@ -216,8 +246,62 @@ export function place(s, i, type) {
   s.money -= B[type].cost;
   s.grid[i] = type;
   s.cond[i] = 0;
-  s.queue.push({ i, left: B[type].work });
-  return { ok: true };
+  s.lv[i] = 1;
+  s.queue.push({ i, left: B[type].work, tap: 0 });
+  return { ok: true, cost: B[type].cost };
+}
+
+// Undo a placement that hasn't been worked on yet, for a full refund.
+export function undoPlace(s, i) {
+  const k = s.queue.findIndex((q) => q.i === i && !q.up);
+  if (k === -1) return { ok: false, reason: 'Builders have already started on that.' };
+  const t = s.grid[i];
+  if (s.queue[k].left < B[t].work) return { ok: false, reason: 'Builders have already started on that.' };
+  s.queue.splice(k, 1);
+  s.money += B[t].cost;
+  s.grid[i] = T.EMPTY;
+  s.cond[i] = 0;
+  return { ok: true, refund: B[t].cost };
+}
+
+export function upgradeCost(s, i) {
+  const t = s.grid[i];
+  const next = levelOf(s, i) + 1;
+  return Math.round(B[t].cost * LEVEL.cost[next]);
+}
+
+export function canUpgrade(s, i) {
+  const t = s.grid[i];
+  if (s.status !== 'alive') return { ok: false, reason: 'This city has fallen.' };
+  if (!UPGRADABLE.includes(t)) return { ok: false, reason: 'This can’t be upgraded.' };
+  if (s.queue.some((q) => q.i === i)) return { ok: false, reason: 'Builders are already working here.' };
+  if (levelOf(s, i) >= MAX_LEVEL) return { ok: false, reason: 'Already at the top level.' };
+  if (s.cond[i] < 60) return { ok: false, reason: 'Repair it first: condition must be 60% or more.' };
+  const cost = upgradeCost(s, i);
+  if (s.money < cost) return { ok: false, reason: `Needs $${cost}.` };
+  return { ok: true, cost };
+}
+
+export function upgrade(s, i) {
+  const check = canUpgrade(s, i);
+  if (!check.ok) return check;
+  s.money -= check.cost;
+  s.queue.push({ i, left: Math.round(B[s.grid[i]].work * 1.2), up: true, tap: 0 });
+  return { ok: true, cost: check.cost };
+}
+
+// Tap Tap-style helping hand: tapping a building site speeds it up a little, up to a cap.
+export function tapHelp(s, i) {
+  const q = s.queue.find((q) => q.i === i);
+  if (!q) return { ok: false };
+  const total = q.up ? Math.round(B[s.grid[i]].work * 1.2) : B[s.grid[i]].work;
+  if (q.tap >= total * TAP_CAP - 1e-6) return { ok: false, reason: 'Your builders have this one from here.' };
+  const step = Math.min(total * TAP_SHARE, total * TAP_CAP - q.tap, q.left);
+  q.tap += step;
+  q.left -= step;
+  const done = q.left <= 1e-6;
+  if (done) finish(s, q);
+  return { ok: true, done, progress: 1 - q.left / total };
 }
 
 export function bulldoze(s, i) {
@@ -225,22 +309,33 @@ export function bulldoze(s, i) {
   const t = s.grid[i];
   if (t === T.EMPTY) return { ok: false, reason: 'Nothing to clear.' };
   if (t === T.HALL) return { ok: false, reason: 'The town hall stays.' };
+  let refund = 0;
   if (t === T.RUBBLE) {
     if (s.money < RUBBLE_CLEAR_COST) return { ok: false, reason: `Clearing rubble needs $${RUBBLE_CLEAR_COST}.` };
     s.money -= RUBBLE_CLEAR_COST;
+    refund = -RUBBLE_CLEAR_COST;
   } else {
-    const q = s.queue.findIndex((q) => q.i === i);
-    if (q !== -1) {
-      if (s.queue[q].left === B[t].work) s.money += Math.floor(B[t].cost * 0.5); // unstarted: half back
-      s.queue.splice(q, 1);
+    const k = s.queue.findIndex((q) => q.i === i);
+    if (k !== -1) {
+      const q = s.queue[k];
+      if (!q.up && q.left === B[t].work) { refund = Math.floor(B[t].cost * 0.5); s.money += refund; }
+      s.queue.splice(k, 1);
     }
   }
   s.grid[i] = T.EMPTY;
   s.cond[i] = 0;
-  return { ok: true };
+  s.lv[i] = 1;
+  return { ok: true, refund };
 }
 
 // ---------- time ----------
+
+function finish(s, q) {
+  s.queue.splice(s.queue.indexOf(q), 1);
+  if (q.up) { s.lv[q.i] = Math.min(MAX_LEVEL, levelOf(s, q.i) + 1); s.cond[q.i] = 100; }
+  else s.cond[q.i] = 100;
+  (s._finished ||= []).push({ i: q.i, up: !!q.up });
+}
 
 function construct(s) {
   let labour = s.pop.builder + s.pop.unskilled * VOLUNTEER_RATE;
@@ -249,7 +344,7 @@ function construct(s) {
     const used = Math.min(labour, q.left);
     q.left -= used;
     labour -= used;
-    if (q.left <= 1e-6) { s.queue.shift(); s.cond[q.i] = 100; }
+    if (q.left <= 1e-6) finish(s, q);
   }
 }
 
@@ -354,6 +449,7 @@ export function collapse(s) {
   };
   for (let i = 0; i < N; i++) {
     if (s.grid[i] !== T.EMPTY) { s.grid[i] = T.RUBBLE; s.cond[i] = 0; }
+    s.lv[i] = 1;
   }
   s.queue = [];
   s.cohorts = [];
@@ -371,8 +467,36 @@ export function rebuild(s, name) {
     name: name || s.name, queue: [], money: REBUILD_MONEY,
     pop: { unskilled: 3, builder: 3, teacher: 0, pro: 0 }, cohorts: [],
     happiness: 0.65, hour: 0, day: 0, peakPop: 6, unpaidDays: 0,
-    cityNo: s.cityNo + 1, status: 'alive',
+    cityNo: s.cityNo + 1, status: 'alive', goalsDone: [],
   });
+}
+
+// ---------- goals ----------
+
+const GOAL_TESTS = {
+  roads10: (s, t) => (t.counts[T.ROAD] || 0) >= 10,
+  houses3: (s, t) => (t.counts[T.HOUSE] || 0) >= 3,
+  work1: (s, t) => (t.counts[T.WORK] || 0) >= 1,
+  shop1: (s, t) => (t.counts[T.SHOP] || 0) >= 1,
+  pop25: (s) => totalPop(s) >= 25,
+  school1: (s, t) => (t.counts[T.SCHOOL] || 0) >= 1,
+  upgrade1: (s) => s.lv.some((l) => l > 1),
+  build6: (s) => s.pop.builder >= 6,
+  happy75: (s) => totalPop(s) >= 30 && s.happiness >= 0.75,
+  days10: (s) => s.day >= 10,
+  pop100: (s) => totalPop(s) >= 100,
+  days30: (s) => s.day >= 30,
+};
+
+// Pays out any newly met goals and returns them.
+export function checkGoals(s, tot = totals(s)) {
+  if (s.status !== 'alive') return [];
+  const done = [];
+  for (const g of GOALS) {
+    if (s.goalsDone.includes(g.id)) continue;
+    if (GOAL_TESTS[g.id](s, tot)) { s.goalsDone.push(g.id); s.money += g.reward; done.push(g); }
+  }
+  return done;
 }
 
 // One in-game hour. Returns the latest traffic picture and a collapse record if the city fell.
@@ -384,7 +508,11 @@ export function tick(s, rng = Math.random) {
   const traffic = computeTraffic(s, uc, tot);
   s.happiness += (traffic.target - s.happiness) * 0.12;
   s.hour++;
-  let collapsed = null;
-  if (s.hour >= HOURS_PER_DAY) { s.hour = 0; collapsed = daily(s, tot, traffic, rng); }
-  return { traffic, collapsed, totals: tot };
+  let collapsed = null, day = null;
+  if (s.hour >= HOURS_PER_DAY) {
+    s.hour = 0;
+    collapsed = daily(s, tot, traffic, rng);
+    day = { ...s.stats };
+  }
+  return { traffic, collapsed, totals: tot, day };
 }
