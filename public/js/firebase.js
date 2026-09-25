@@ -53,34 +53,93 @@ export function authMessage(e) {
   return e?.message || 'Something went wrong.';
 }
 
+// ---------- worlds ----------
+// The public world keeps the original users/{uid} record. Private worlds use memberships/{uid}_{world}.
+const linkRef = (uid, world) => (world === 'public' ? doc(db, 'users', uid) : doc(db, 'memberships', `${uid}_${world}`));
+
+export async function getWorld(id) {
+  if (id === 'public') return { id, name: 'Public world', private: false };
+  const w = await getDoc(doc(db, 'worlds', id));
+  return w.exists() ? { id, ...w.data() } : null;
+}
+
+export async function myWorlds(user) {
+  const snap = await getDocs(query(collection(db, 'memberships'), where('uid', '==', user.uid), limit(20)));
+  const out = [{ id: 'public', name: 'Public world', private: false }];
+  for (const m of snap.docs) {
+    const w = await getWorld(m.data().world);
+    if (w) out.push(w);
+  }
+  return out;
+}
+
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+export async function createWorld(user, name) {
+  const id = 'w' + Array.from({ length: 10 }, () => 'abcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 36)]).join('');
+  const code = Array.from({ length: 6 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
+  await runTransaction(db, async (tx) => {
+    const taken = await tx.get(doc(db, 'worldCodes', code));
+    if (taken.exists()) throw new Error('Please try again.');
+    tx.set(doc(db, 'worlds', id), { name, owner: user.uid, code, private: true, nextIndex: 0, createdAt: serverTimestamp() });
+    tx.set(doc(db, 'worldCodes', code), { world: id });
+  });
+  return { id, name, code, private: true };
+}
+
+export async function findWorldByCode(code) {
+  const c = await getDoc(doc(db, 'worldCodes', code.trim().toUpperCase()));
+  if (!c.exists()) throw new Error('No world has that code. Check it and try again.');
+  return getWorld(c.data().world);
+}
+
 // ---------- plots ----------
-export async function findPlot(user) {
-  const u = await getDoc(doc(db, 'users', user.uid));
-  if (!u.exists()) return null;
-  const p = await getDoc(doc(db, 'plots', u.data().plotId));
-  return p.exists() ? { id: p.id, ...p.data() } : null;
+export async function findPlot(user, world = WORLD_ID) {
+  const link = await getDoc(linkRef(user.uid, world));
+  if (!link.exists()) return null;
+  const p = await getDoc(doc(db, 'plots', link.data().plotId));
+  return p.exists() && p.data().owner === user.uid ? { id: p.id, ...p.data() } : null;
 }
 
 // Claims the next frontier plot. A transaction keeps two players from getting the same slot.
-export async function claimPlot(user, mayor, cityName) {
-  const userRef = doc(db, 'users', user.uid);
-  const worldRef = doc(db, 'worlds', WORLD_ID);
+export async function claimPlot(user, mayor, cityName, world = WORLD_ID) {
+  const lref = linkRef(user.uid, world);
+  const worldRef = doc(db, 'worlds', world);
   return runTransaction(db, async (tx) => {
-    const world = await tx.get(worldRef);
-    const already = await tx.get(userRef);
-    if (already.exists()) throw new Error('You already have a plot. Reload the page.');
-    const n = world.exists() ? world.data().nextIndex : 0;
+    const w = await tx.get(worldRef);
+    const already = await tx.get(lref);
+    if (already.exists()) throw new Error('You already have a plot in this world. Reload the page.');
+    if (!w.exists() && world !== 'public') throw new Error('That world no longer exists.');
+    const n = w.exists() ? w.data().nextIndex : 0;
     const { x, y } = spiral(n);
-    const id = `${WORLD_ID}_${x}_${y}`;
+    const id = `${world}_${x}_${y}`;
     const state = newCity(cityName);
     const data = {
-      owner: user.uid, ownerName: mayor, world: WORLD_ID, px: x, py: y, index: n,
+      owner: user.uid, ownerName: mayor, world, px: x, py: y, index: n,
       createdAt: serverTimestamp(), updatedAt: serverTimestamp(), state: serialize(state), ...summary(state),
     };
     tx.set(doc(db, 'plots', id), data);
-    tx.set(userRef, { plotId: id, createdAt: serverTimestamp() });
-    tx.set(worldRef, { nextIndex: n + 1 });
+    if (world === 'public') tx.set(lref, { plotId: id, createdAt: serverTimestamp() });
+    else tx.set(lref, { uid: user.uid, world, plotId: id, createdAt: serverTimestamp() });
+    if (w.exists()) tx.update(worldRef, { nextIndex: n + 1 });
+    else tx.set(worldRef, { nextIndex: 1 });
     return { id, ...data };
+  });
+}
+
+// Start a new city on someone else's ruins. The rubble stays; newState is prepared by the caller.
+export async function takeOverRuins(user, mayor, targetId, newState, world = WORLD_ID) {
+  const lref = linkRef(user.uid, world);
+  const pref = doc(db, 'plots', targetId);
+  return runTransaction(db, async (tx) => {
+    const p = await tx.get(pref);
+    const link = await tx.get(lref);
+    if (!p.exists() || p.data().status !== 'ruins') throw new Error('Someone has already rebuilt there.');
+    const data = { owner: user.uid, ownerName: mayor, state: serialize(newState), ...summary(newState), updatedAt: serverTimestamp() };
+    tx.update(pref, data);
+    if (link.exists()) tx.update(lref, { plotId: targetId });
+    else if (world === 'public') tx.set(lref, { plotId: targetId, createdAt: serverTimestamp() });
+    else tx.set(lref, { uid: user.uid, world, plotId: targetId, createdAt: serverTimestamp() });
+    return { id: targetId, ...p.data(), ...data };
   });
 }
 
@@ -90,22 +149,22 @@ export function savePlot(id, state, extra = {}) {
   });
 }
 
-export async function loadWorld() {
-  const snap = await getDocs(query(collection(db, 'plots'), where('world', '==', WORLD_ID), limit(400)));
+export async function loadWorld(world = WORLD_ID) {
+  const snap = await getDocs(query(collection(db, 'plots'), where('world', '==', world), limit(400)));
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
-export function writeLegacy(user, plotId, mayor, record) {
+export function writeLegacy(user, plotId, mayor, record, world = WORLD_ID) {
   return addDoc(collection(db, 'legacy'), {
-    ...record, plotId, owner: user.uid, ownerName: mayor, endedAt: serverTimestamp(),
+    ...record, plotId, world, owner: user.uid, ownerName: mayor, endedAt: serverTimestamp(),
   });
 }
 
-export async function loadLeaderboards() {
-  const top = async (col, field) =>
-    (await getDocs(query(collection(db, col), orderBy(field, 'desc'), limit(10)))).docs.map((d) => d.data());
-  const [peak, running, fallen] = await Promise.all([
-    top('plots', 'peakPop'), top('plots', 'day'), top('legacy', 'daysSurvived'),
-  ]);
-  return { peak, running: running.filter((p) => p.status === 'alive'), fallen };
+// Leaderboards for one world. Plot boards come from the loaded world, so no extra indexes are needed.
+export async function loadLeaderboards(world, plots) {
+  const fallenSnap = await getDocs(query(collection(db, 'legacy'), orderBy('daysSurvived', 'desc'), limit(60)));
+  const fallen = fallenSnap.docs.map((d) => d.data()).filter((r) => (r.world || 'public') === world).slice(0, 10);
+  const byPeak = [...plots].sort((a, b) => (b.peakPop || 0) - (a.peakPop || 0)).slice(0, 10);
+  const running = plots.filter((p) => p.status === 'alive').sort((a, b) => (b.day || 0) - (a.day || 0)).slice(0, 10);
+  return { peak: byPeak, running, fallen };
 }

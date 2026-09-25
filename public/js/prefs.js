@@ -1,5 +1,6 @@
 // Player preferences, stored per device. Colour modes follow Junction's: same slots, different looks.
-const KEY = 'commons-prefs-v1';
+const KEY = 'commons-prefs-v2';
+const OLD_KEY = 'commons-prefs-v1';
 const mq = (q) => { try { return matchMedia(q).matches; } catch { return false; } };
 export const SYSTEM_REDUCED_MOTION = mq('(prefers-reduced-motion: reduce)');
 
@@ -19,7 +20,8 @@ export const DEFAULTS = {
   view: '3d',             // 3d | flat
   dayNight: true,
   grid: false,
-  cars: !SYSTEM_REDUCED_MOTION,
+  cars: true,
+  density: 1,             // traffic: 0.5 quiet | 1 normal | 1.6 busy
   popups: true,
   reducedMotion: SYSTEM_REDUCED_MOTION,
   colours: 'standard',
@@ -35,7 +37,11 @@ export const DEFAULTS = {
 
 export function loadPrefs() {
   try {
-    const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
+    let saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (!saved) {   // v1 turned cars off whenever the system asked for less motion; start them fresh
+      saved = JSON.parse(localStorage.getItem(OLD_KEY) || '{}');
+      delete saved.cars;
+    }
     const p = { ...DEFAULTS };
     for (const k in DEFAULTS) if (typeof saved[k] === typeof DEFAULTS[k]) p[k] = saved[k];
     if (!PALETTES[p.colours]) p.colours = 'standard';

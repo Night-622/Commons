@@ -16,7 +16,21 @@ Guests can turn their guest city into a full account later (Account menu). Linki
 
 ## Deploy
 
-Push to `main`. The GitHub Action deploys hosting. Deploy Firestore rules with `npm run deploy:rules`.
+Push to `main`. The GitHub Action deploys hosting.
+
+Firestore rules are not deployed by the Action. After changing `firestore.rules`, run `npm run deploy:rules` (needs the Firebase CLI, logged in).
+
+## Features
+
+- Isometric 3D and flat 2D views, day and night, traffic that drives real commutes
+- People: every resident has a name, household, job, mood and a thought; follow anyone's commute
+- City stats: population mix, capacity, daily budget breakdown, 30-day history charts
+- News feed with random events (festivals, visitors, storms, fires, grants)
+- Goals with cash rewards, building upgrades to level 3, tap to help builders
+- Neighbour links: roads that meet across a plot edge form a bridge, earning trade and mood
+- Rebuild on your own ruins, or move onto anyone's ruins
+- Private worlds with invite codes, and switching between worlds
+- Interactive tutorial that waits for you to do each step
 
 ## Local test
 
@@ -30,6 +44,10 @@ npm run serve     # local server
 - `public/js/sim.js` — the whole simulation (pure, testable)
 - `public/js/render.js` — isometric 3D and flat 2D renderer
 - `public/js/main.js` — game controller, HUD, input, menus
+- `public/js/panels.js` — People, Stats, News, World and Goals panels
+- `public/js/people.js` — named residents derived from the simulation
+- `public/js/cars.js` — visual traffic
+- `public/js/tutorial.js` — the interactive tour
 - `public/js/prefs.js` — accessibility and display settings, colour modes
 - `public/js/sound.js` — synthesised sound effects
 - `public/js/firebase.js` — auth and data

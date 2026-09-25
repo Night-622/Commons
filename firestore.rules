@@ -2,45 +2,92 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+    function docPath(col, id) { return /databases/$(database)/documents/$(col)/$(id); }
+    // Where a player's plot pointer lives: users/{uid} for the public world, memberships/{uid}_{world} otherwise.
+    function linkPath(world) { return world == 'public' ? docPath('users', me()) : docPath('memberships', me() + '_' + world); }
 
-    // Which plot each player owns. Written once, when the plot is claimed.
+    // Public world: which plot each player owns. Can only be repointed at a plot they now own (moving).
     match /users/{uid} {
-      allow read: if signedIn() && request.auth.uid == uid;
-      allow create: if signedIn() && request.auth.uid == uid
+      allow read: if signedIn() && me() == uid;
+      allow create: if signedIn() && me() == uid
         && request.resource.data.keys().hasOnly(['plotId', 'createdAt']);
-      allow update, delete: if false;
-    }
-
-    // Plot counter for spiral allocation. Can only ever go up by one.
-    match /worlds/{worldId} {
-      allow read: if signedIn();
-      allow create: if signedIn() && request.resource.data.nextIndex == 1;
-      allow update: if signedIn() && request.resource.data.nextIndex == resource.data.nextIndex + 1;
+      allow update: if signedIn() && me() == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['plotId'])
+        && getAfter(docPath('plots', request.resource.data.plotId)).data.owner == me();
       allow delete: if false;
     }
 
-    // Everyone can see every plot; only the owner can change theirs.
+    // Private worlds: one membership per player per world.
+    match /memberships/{mid} {
+      allow get: if signedIn() && mid.matches(me() + '_.+');
+      allow list: if signedIn() && resource.data.uid == me();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['uid', 'world', 'plotId', 'createdAt'])
+        && request.resource.data.uid == me()
+        && mid == me() + '_' + request.resource.data.world
+        && getAfter(docPath('plots', request.resource.data.plotId)).data.owner == me();
+      allow update: if signedIn() && resource.data.uid == me()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['plotId'])
+        && getAfter(docPath('plots', request.resource.data.plotId)).data.owner == me();
+      allow delete: if false;
+    }
+
+    // Worlds and their plot counters. The counter can only ever go up by one.
+    match /worlds/{worldId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && (
+        (worldId == 'public' && request.resource.data.keys().hasOnly(['nextIndex']) && request.resource.data.nextIndex == 1)
+        || (worldId != 'public'
+          && request.resource.data.keys().hasOnly(['name', 'owner', 'code', 'private', 'nextIndex', 'createdAt'])
+          && request.resource.data.owner == me()
+          && request.resource.data.nextIndex == 0
+          && request.resource.data.name is string && request.resource.data.name.size() <= 40));
+      allow update: if signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nextIndex'])
+        && request.resource.data.nextIndex == resource.data.nextIndex + 1;
+      allow delete: if false;
+    }
+
+    // Invite codes for private worlds.
+    match /worldCodes/{code} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['world'])
+        && getAfter(docPath('worlds', request.resource.data.world)).data.code == code
+        && getAfter(docPath('worlds', request.resource.data.world)).data.owner == me();
+      allow update, delete: if false;
+    }
+
+    // Everyone can see every plot; only the owner can change theirs,
+    // except that anyone may start a new city on ruins (the rubble stays).
     match /plots/{plotId} {
       allow read: if signedIn();
       allow create: if signedIn()
-        && request.resource.data.owner == request.auth.uid
+        && request.resource.data.owner == me()
         && plotId == request.resource.data.world + '_' + string(request.resource.data.px) + '_' + string(request.resource.data.py)
-        && !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && !exists(linkPath(request.resource.data.world))
+        && getAfter(linkPath(request.resource.data.world)).data.plotId == plotId
         && request.resource.data.state.size() < 200000;
       allow update: if signedIn()
-        && resource.data.owner == request.auth.uid
-        && request.resource.data.owner == resource.data.owner
         && request.resource.data.world == resource.data.world
         && request.resource.data.px == resource.data.px
         && request.resource.data.py == resource.data.py
-        && request.resource.data.state.size() < 200000;
+        && request.resource.data.state.size() < 200000
+        && (
+          (resource.data.owner == me() && request.resource.data.owner == me())
+          || (resource.data.status == 'ruins'
+            && request.resource.data.owner == me()
+            && getAfter(linkPath(resource.data.world)).data.plotId == plotId)
+        );
       allow delete: if false;
     }
 
     // Permanent records of fallen cities.
     match /legacy/{id} {
       allow read: if signedIn();
-      allow create: if signedIn() && request.resource.data.owner == request.auth.uid;
+      allow create: if signedIn() && request.resource.data.owner == me();
       allow update, delete: if false;
     }
   }

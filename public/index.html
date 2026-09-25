@@ -46,6 +46,14 @@
       <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
       <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5 10 17.5 19 7"/></symbol>
       <symbol id="i-map" viewBox="0 0 24 24"><path d="M3.5 6.5 9 4l6 2.5L20.5 4v13.5L15 20l-6-2.5-5.5 2.5z"/><path d="M9 4v13.5M15 6.5V20"/></symbol>
+      <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V4M4 20h16"/><path d="M7.5 15l4-4.5 3 3L20 7"/></symbol>
+      <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5 21.5 20h-19z"/><path d="M12 10v4.5M12 17.2v.3"/></symbol>
+      <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></symbol>
+      <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
+      <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5C6.5 4 9.5 4 12 5.5 14.5 4 17.5 4 20 5.5V19c-2.5-1.5-5.5-1.5-8 0-2.5-1.5-5.5-1.5-8 0z"/><path d="M12 5.5V19"/></symbol>
     </defs>
   </svg>
 
@@ -85,12 +93,16 @@
     <canvas id="hero2" class="hero" aria-hidden="true"></canvas>
     <form id="found-form" class="auth-card plate stack">
       <h1 id="found-title" class="title">Found your city</h1>
-      <p class="lede">You'll get a plot on the frontier of the shared map, with a town hall, three builders and three settlers.</p>
+      <p class="lede">You'll get a plot on the frontier of <b id="found-world">the public world</b>, with a town hall, three builders and three settlers.</p>
       <label class="field"><span>Your name as mayor</span><input id="found-mayor" maxlength="20" autocomplete="nickname" required></label>
       <label class="field"><span>City name</span><input id="found-city" maxlength="28" required></label>
       <button class="btn primary wide" type="submit" id="found-go">Claim my plot</button>
-      <button class="linkbtn" type="button" id="found-out">Use a different account</button>
       <p id="found-msg" class="formmsg" role="alert"></p>
+      <div id="found-ruins" class="found-ruins hidden"></div>
+      <div class="found-links">
+        <button class="linkbtn hidden" type="button" id="found-public">Play in the public world instead</button>
+        <button class="linkbtn" type="button" id="found-out">Use a different account</button>
+      </div>
     </form>
   </section>
 
@@ -103,6 +115,7 @@
       <div class="city plate">
         <button id="city-name" class="city-name" type="button" title="Rename your city"></button>
         <span id="clock" class="clock num"></span>
+        <span class="daybar" aria-hidden="true"><i id="dayfill"></i></span>
       </div>
       <div class="stats plate" role="group" aria-label="City at a glance">
         <div class="stat" title="Money, and yesterday's income after upkeep"><svg class="ic"><use href="#i-coin"/></svg><div><b id="v-money" class="num">$0</b><small id="v-net" class="num">+0 a day</small></div></div>
@@ -118,9 +131,8 @@
         </div>
         <button class="cbtn" id="btn-traffic" type="button" aria-pressed="false" title="Traffic (T)" aria-label="Show traffic"><svg class="ic"><use href="#i-lights"/></svg></button>
         <button class="cbtn" id="btn-home" type="button" title="My plot (H)" aria-label="Go to my plot"><svg class="ic"><use href="#i-target"/></svg></button>
-        <button class="cbtn" id="btn-world" type="button" title="Whole map (0)" aria-label="Show the whole map"><svg class="ic"><use href="#i-globe"/></svg></button>
+        <button class="cbtn" id="btn-world" type="button" title="Whole map (0)" aria-label="Show the whole map"><svg class="ic"><use href="#i-map"/></svg></button>
         <span class="csep" aria-hidden="true"></span>
-        <button class="cbtn" id="btn-goals" type="button" title="Goals (O)" aria-label="Goals" aria-expanded="false"><svg class="ic"><use href="#i-flag"/></svg><i id="goals-dot" class="dot num"></i></button>
         <button class="cbtn" id="btn-board" type="button" title="Leaderboards (L)" aria-label="Leaderboards"><svg class="ic"><use href="#i-trophy"/></svg></button>
         <button class="cbtn" id="btn-settings" type="button" title="Settings (,)" aria-label="Settings"><svg class="ic"><use href="#i-gear"/></svg></button>
         <button class="cbtn" id="btn-account" type="button" title="Account" aria-label="Account"><svg class="ic"><use href="#i-user"/></svg></button>
@@ -138,8 +150,16 @@
       <p id="hint" class="hint"></p>
     </aside>
 
-    <aside id="inspector" class="inspector plate hidden" aria-live="polite" aria-label="Details"></aside>
-    <aside id="goals" class="goals plate hidden" aria-label="Goals"></aside>
+    <nav id="rail" class="rail plate" aria-label="Panels">
+      <button type="button" data-panel="goals" aria-pressed="false" title="Goals (O)"><svg class="ic"><use href="#i-flag"/></svg><span>Goals</span><i id="goals-dot" class="dot num hidden"></i></button>
+      <button type="button" data-panel="people" aria-pressed="false" title="People (P)"><svg class="ic"><use href="#i-people"/></svg><span>People</span></button>
+      <button type="button" data-panel="stats" aria-pressed="false" title="City stats (C)"><svg class="ic"><use href="#i-chart"/></svg><span>Stats</span></button>
+      <button type="button" data-panel="news" aria-pressed="false" title="News (N)"><svg class="ic"><use href="#i-bell"/></svg><span>News</span><i id="news-dot" class="dot num hidden"></i></button>
+      <button type="button" data-panel="world" aria-pressed="false" title="World (J)"><svg class="ic"><use href="#i-globe"/></svg><span>World</span></button>
+    </nav>
+
+    <aside id="drawer" class="drawer plate hidden" aria-label="Panel"></aside>
+    <div id="coach" class="coach plate hidden" role="region" aria-label="Tutorial" aria-live="polite"></div>
 
     <div id="minibox" class="minibox plate">
       <canvas id="minimap" width="160" height="120" aria-label="Minimap. Click to move the view."></canvas>
@@ -153,6 +173,7 @@
     <p id="tool-tip" class="tool-tip" aria-hidden="true"></p>
 
     <div id="toasts" class="toasts" aria-live="polite"></div>
+    <div id="follow" class="follow-chip hidden" role="status"><span id="follow-text"></span><button type="button" id="follow-stop" class="linkbtn">Stop</button></div>
   </main>
 
   <dialog id="modal" aria-labelledby="modal-title"><div id="modal-body"></div></dialog>

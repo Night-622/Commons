@@ -165,8 +165,20 @@ export class Renderer {
       if (this.view === 'flat') this.flatPlot(g, plot, ox, oy);
       else if (this.cam.z < ISO_DETAIL) this.cachedIso(g, plot, ox, oy);
       else this.isoPlot(g, plot, (tx, ty, h = 0) => this.project(ox + tx, oy + ty, h), this.cam.z, true);
+      for (const b of scene.bridges?.get(plot.id) || []) {
+        if (this.view === 'flat') {
+          const s = this.cam.z * FLAT_K, [bx, by] = this.project(ox + (b.dir === 'e' ? PLOT : b.k + 0.15), oy + (b.dir === 'e' ? b.k + 0.15 : PLOT));
+          g.fillStyle = this.th.road;
+          g.fillRect(bx, by, b.dir === 'e' ? GAP * s : 0.7 * s, b.dir === 'e' ? 0.7 * s : GAP * s);
+        } else this.bridge(g, (tx, ty, h = 0) => this.project(ox + tx, oy + ty, h), b.dir, b.k, this.cam.z);
+      }
     }
     this.overlays(g, scene);
+    if (scene.pulseTile) {
+      const t = scene.pulseTile, a = 0.5 + 0.5 * Math.sin(performance.now() / 250);
+      g.lineWidth = 3;
+      this.tileOutline(g, t.px, t.py, t.tx, t.ty, `rgba(255,201,51,${0.5 + a * 0.5})`, `rgba(255,201,51,${0.15 + a * 0.2})`);
+    }
     this.night(g, scene);
     if (this.cam.z < 13) for (const plot of plots) this.label(g, plot);
     this.pops(g, scene);
@@ -236,7 +248,7 @@ export class Renderer {
       else if (plot.cond[i] <= 0) poly(g, dia, shade(th.dirt, 0, 0.6));
     }
     // Pass 2: objects, back to front along diagonals
-    const cars = live && plot.mine ? this.scene.carsByTile : null;
+    const cars = live ? this.scene.carsByPlot?.get(plot.id) : null;
     for (let s = 0; s <= 2 * (PLOT - 1); s++) {
       for (let tx = Math.max(0, s - PLOT + 1); tx <= Math.min(s, PLOT - 1); tx++) {
         const ty = s - tx, i = ty * PLOT + tx, t = grid[i];
@@ -447,8 +459,38 @@ export class Renderer {
   }
 
   car(g, P, car) {
-    const s = 0.11, x = car.lx, y = car.ly;
-    this.box(g, P, x - s, y - s, x + s, y + s, 0.02, 0.13, CAR_COLS[car.c % CAR_COLS.length]);
+    const along = Math.abs(car.dx || 1) >= Math.abs(car.dy || 0);
+    const L = 0.17, W = 0.1, x = car.lx, y = car.ly;
+    const hx = along ? L : W, hy = along ? W : L;
+    const col = car.follow ? '#ffc933' : CAR_COLS[car.c % CAR_COLS.length];
+    this.box(g, P, x - hx, y - hy, x + hx, y + hy, 0.02, 0.1, col);
+    const cx = along ? hx * 0.55 : hx * 0.8, cy = along ? hy * 0.8 : hy * 0.55;
+    this.box(g, P, x - cx, y - cy, x + cx, y + cy, 0.1, 0.17, '#cfe3ee');
+    if (this.scene.nightAmt > 0.3) {
+      const fx = x + (car.dx || 0) * hx * 1.05, fy = y + (car.dy || 0) * hy * 1.05;
+      const [lx, ly] = P(fx, fy, 0.07);
+      g.fillStyle = 'rgba(255,226,140,0.9)';
+      g.beginPath(); g.arc(lx, ly, Math.max(1.5, this.cam.z * 0.05), 0, Math.PI * 2); g.fill();
+    }
+    if (car.follow) {
+      const [mx, my] = P(x, y, 0.55);
+      const r = Math.max(5, this.cam.z * 0.16);
+      g.fillStyle = '#ffc933'; g.strokeStyle = '#17313b'; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(mx, my + r); g.lineTo(mx - r * 0.8, my - r * 0.3); g.lineTo(mx + r * 0.8, my - r * 0.3); g.closePath(); g.fill(); g.stroke();
+    }
+  }
+
+  // A road bridge across the gap between two linked plots. dir 'e' or 's', k = tile along the edge.
+  bridge(g, P, dir, k, z) {
+    const [x0, y0, x1, y1] = dir === 'e' ? [PLOT, k + 0.12, PLOT + GAP, k + 0.88] : [k + 0.12, PLOT, k + 0.88, PLOT + GAP];
+    const leg = (x, y) => this.box(g, P, x - 0.06, y - 0.06, x + 0.06, y + 0.06, -0.45, -0.08, '#9aa3ab');
+    if (dir === 'e') { leg(PLOT + 1, k + 0.3); leg(PLOT + 1, k + 0.7); } else { leg(k + 0.3, PLOT + 1); leg(k + 0.7, PLOT + 1); }
+    this.box(g, P, x0, y0, x1, y1, -0.08, 0, this.th.road);
+    if (z >= 10) {
+      g.strokeStyle = this.th.mark; g.lineWidth = Math.max(1, z / 16); g.setLineDash([z * 0.18, z * 0.16]);
+      const a = dir === 'e' ? P(x0, k + 0.5) : P(k + 0.5, y0), b = dir === 'e' ? P(x1, k + 0.5) : P(k + 0.5, y1);
+      g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke(); g.setLineDash([]);
+    }
   }
 
   // ---------- 2D ----------
@@ -504,10 +546,13 @@ export class Renderer {
     g.strokeStyle = plot.mine ? th.ink : 'rgba(0,0,0,0.12)';
     g.lineWidth = plot.mine ? 2 : 1;
     g.strokeRect(x0 + 0.5, y0 + 0.5, size - 1, size - 1);
-    if (detailed && plot.mine) for (const car of this.scene.cars || []) {
+    const byTile = detailed ? this.scene.carsByPlot?.get(plot.id) : null;
+    if (byTile) for (const list of byTile.values()) for (const car of list) {
       const [cx, cy] = this.project(ox + car.lx, oy + car.ly);
-      g.fillStyle = CAR_COLS[car.c % CAR_COLS.length];
-      g.fillRect(cx - s * 0.12, cy - s * 0.12, s * 0.24, s * 0.24);
+      const along = Math.abs(car.dx || 1) >= Math.abs(car.dy || 0);
+      g.fillStyle = car.follow ? '#ffc933' : CAR_COLS[car.c % CAR_COLS.length];
+      g.fillRect(cx - s * (along ? 0.17 : 0.1), cy - s * (along ? 0.1 : 0.17), s * (along ? 0.34 : 0.2), s * (along ? 0.2 : 0.34));
+      if (car.follow) { g.strokeStyle = '#17313b'; g.lineWidth = 2; g.strokeRect(cx - s * 0.2, cy - s * 0.2, s * 0.4, s * 0.4); }
     }
   }
 

@@ -79,3 +79,27 @@ console.log('all tests passed');
   sim.migrate(old); assert(old.lv.length === PLOT * PLOT && Array.isArray(old.goalsDone));
   console.log('v2 features ok');
 }
+
+// ---- v3: history, log, events, links, breakdown, rebuild money
+{
+  const s = sim.newCity('Log');
+  const c = PLOT >> 1;
+  for (let x = c + 1; x <= c + 6; x++) sim.place(s, sim.idx(x, c), T.ROAD);
+  for (let x = c + 1; x <= c + 5; x++) sim.place(s, sim.idx(x, c - 1), T.HOUSE);
+  sim.place(s, sim.idx(c + 2, c + 1), T.WORK);
+  sim.place(s, sim.idx(c + 3, c + 1), T.SHOP);
+  for (let h = 0; h < 24 * 12; h++) sim.tick(s, rng);
+  assert(s.history.length === 12, 'one history entry a day');
+  assert(s.log.length > 0, 'log has entries');
+  const before = s.stats.byClass.trade;
+  s.links = 2;
+  for (let h = 0; h < 24; h++) sim.tick(s, rng);
+  assert(s.stats.byClass.trade > before, 'links pay trade');
+  const sum = Object.values(s.stats.byClass).reduce((a, b) => a + b, 0);
+  assert.equal(sum, s.stats.income, 'income breakdown adds up');
+  const rec = sim.collapse(s, 'moved');
+  assert.equal(rec.outcome, 'moved');
+  sim.rebuild(s, 'Again', 999);
+  assert.equal(s.money, 999);
+  console.log('v3 features ok');
+}

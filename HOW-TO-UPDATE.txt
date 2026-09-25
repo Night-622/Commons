@@ -1,0 +1,17 @@
+Commons update: how to install
+
+1. Open C:\Users\Other user\Desktop\Commons
+2. Delete the old "public" folder and the old "test" folder.
+3. Unzip this file into the Commons folder. It puts back:
+     public\  (all the game files)
+     test\
+     firestore.rules
+     README.md
+   Say yes to replacing firestore.rules and README.md.
+   Don't touch anything else (firebase.json, .firebaserc, package.json, .github, .agents, .claude, .firebase).
+4. Commit and push to GitHub. The Action deploys the website.
+5. In a terminal in the Commons folder, run:
+     npm run deploy:rules
+   The Action doesn't deploy rules. Moving onto ruins and private worlds won't work until you do this.
+6. Firebase console > Authentication > Sign-in method: make sure Email/Password, Anonymous and Google are all enabled.
+7. Open https://commons-ww.web.app and press Ctrl+F5 to skip the old cached version.

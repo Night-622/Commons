@@ -2,7 +2,7 @@
 import {
   PLOT, T, B, START_MONEY, REBUILD_MONEY, GRACE_DAYS, EDU_DAYS, VOLUNTEER_RATE, RUBBLE_CLEAR_COST,
   COLLAPSE_UNPAID_DAYS, ROAD_CAP, HALL_CAP, TAX, JOB_ODDS, HOURS_PER_DAY, LEVEL, MAX_LEVEL, UPGRADABLE,
-  TAP_SHARE, TAP_CAP, GOALS,
+  TAP_SHARE, TAP_CAP, GOALS, TRADE_PER_LINK, LINK_MOOD, MAX_LINKS, HISTORY_DAYS, LOG_SIZE, EVENT_CHANCE,
 } from './constants.js';
 
 const N = PLOT * PLOT;
@@ -34,16 +34,27 @@ export function newCity(name) {
     happiness: 0.65,
     hour: 0, day: 0, peakPop: 6, unpaidDays: 0,
     cityNo: 1, status: 'alive', lastTick: Date.now(), goalsDone: [],
+    history: [], log: [], links: 0, flags: {},
     stats: { income: 0, upkeep: 0, failedTrips: 0, arrivals: 0, departures: 0, graduates: 0 },
   };
+}
+
+// News feed entries: kind is good | warn | info | event.
+export function note(s, kind, text) {
+  s.log.push({ d: s.day, h: s.hour, k: kind, t: text });
+  if (s.log.length > LOG_SIZE) s.log.splice(0, s.log.length - LOG_SIZE);
 }
 
 // Bring older saves up to the current shape.
 export function migrate(s) {
   if (!s.lv) s.lv = new Array(N).fill(1);
   if (!s.goalsDone) s.goalsDone = [];
+  if (!s.history) s.history = [];
+  if (!s.log) s.log = [];
+  if (!s.flags) s.flags = {};
+  s.links = s.links || 0;
   for (const q of s.queue) if (q.tap === undefined) q.tap = 0;
-  s.v = 2;
+  s.v = 3;
   return s;
 }
 
@@ -79,15 +90,17 @@ export function capacity(s, i, field) {
 }
 
 export function totals(s, uc = underConstruction(s)) {
-  const t = { homes: 0, jobs: 0, serves: 0, seats: 0, schools: 0, upkeep: 0, roads: 0, counts: {} };
+  const t = { homes: 0, jobs: 0, serves: 0, seats: 0, schools: 0, upkeep: 0, roads: 0, counts: {}, upkeepBy: {} };
   for (let i = 0; i < N; i++) {
     const type = s.grid[i];
     if (type === T.EMPTY || type === T.RUBBLE || uc.has(i)) continue;
     const def = B[type];
     t.counts[type] = (t.counts[type] || 0) + 1;
-    if (type === T.ROAD) { t.upkeep += def.upkeep; t.roads++; continue; }
+    if (type === T.ROAD) { t.upkeep += def.upkeep; t.upkeepBy[type] = (t.upkeepBy[type] || 0) + def.upkeep; t.roads++; continue; }
     if (condFactor(s, i) === 0) continue; // abandoned buildings cost nothing and provide nothing
-    t.upkeep += def.upkeep * LEVEL.upkeep[levelOf(s, i)];
+    const up = def.upkeep * LEVEL.upkeep[levelOf(s, i)];
+    t.upkeep += up;
+    t.upkeepBy[type] = (t.upkeepBy[type] || 0) + up;
     t.homes += capacity(s, i, 'homes');
     t.jobs += capacity(s, i, 'jobs');
     t.serves += capacity(s, i, 'serves');
@@ -212,6 +225,7 @@ export function computeTraffic(s, uc = underConstruction(s), tot = totals(s, uc)
   const employmentRate = workforce > 0 ? employed / workforce : 1;
   target = wSum ? target / wSum : 0.5;
   target *= 0.6 + 0.4 * employmentRate;
+  target = Math.min(1, target + LINK_MOOD * Math.min(MAX_LINKS, s.links || 0));
 
   // Needs, Sims-style: each is 0..1 and tells the player what to fix next.
   const learners = s.pop.unskilled + students(s);
@@ -392,10 +406,16 @@ function daily(s, tot, traffic, rng) {
   const p = s.pop;
   const workforce = p.unskilled + p.teacher + p.pro;
   const e = traffic.employmentRate;
-  const gross = e * (p.unskilled * TAX.unskilled + p.teacher * TAX.teacher + p.pro * TAX.pro)
-    + p.builder * TAX.builder + (1 - e) * workforce * TAX.unemployed;
   const mood = Math.min(1, Math.max(0, (s.happiness - 0.15) / 0.7));
-  st.income = Math.round(gross * mood);
+  const by = {
+    unskilled: e * p.unskilled * TAX.unskilled * mood, teacher: e * p.teacher * TAX.teacher * mood,
+    pro: e * p.pro * TAX.pro * mood, builder: p.builder * TAX.builder * mood, unemployed: (1 - e) * workforce * TAX.unemployed * mood,
+  };
+  for (const k in by) by[k] = Math.round(by[k]);
+  by.trade = Math.round(TRADE_PER_LINK * Math.min(MAX_LINKS, s.links || 0) * Math.min(1, totalPop(s) / 30));
+  st.byClass = by;
+  st.upkeepBy = Object.fromEntries(Object.entries(tot.upkeepBy).map(([k, v]) => [k, Math.round(v)]));
+  st.income = Object.values(by).reduce((a, b) => a + b, 0);
   st.upkeep = Math.round(tot.upkeep);
   s.money += st.income - st.upkeep;
 
@@ -412,12 +432,15 @@ function daily(s, tot, traffic, rng) {
     for (const i of buildings) s.cond[i] = Math.max(0, s.cond[i] - decay);
     s.money = 0;
     s.unpaidDays++;
+    note(s, 'warn', `Couldn’t pay upkeep. Buildings are decaying (day ${s.unpaidDays} unpaid).`);
   } else {
     s.unpaidDays = 0;
     for (const i of buildings) s.cond[i] = Math.min(100, s.cond[i] + 5);
   }
 
   st.graduates = educate(s, tot, rng);
+  if (st.graduates) note(s, 'good', `${st.graduates} graduate${st.graduates > 1 ? 's' : ''} joined the workforce.`);
+  st.event = s.day >= 2 && rng() < EVENT_CHANCE ? randomEvent(s, rng) : null;
 
   // Migration: homeless leave, unhappy leave, happy cities attract newcomers.
   const after = totals(s);
@@ -431,10 +454,14 @@ function daily(s, tot, traffic, rng) {
     st.arrivals = Math.min(room, Math.max(1, Math.round(room * 0.3 * s.happiness)));
     s.pop.unskilled += st.arrivals;
   }
+  if (st.departures) note(s, 'warn', `${st.departures} ${st.departures > 1 ? 'people' : 'person'} left ${pop > after.homes ? 'because there weren’t enough homes' : 'because they were unhappy'}.`);
+  if (st.arrivals) note(s, 'good', `${st.arrivals} ${st.arrivals > 1 ? 'people' : 'person'} moved in.`);
 
   s.day++;
   s.peakPop = Math.max(s.peakPop, totalPop(s));
   s.stats = st;
+  s.history.push({ d: s.day, pop: totalPop(s), money: Math.floor(s.money), mood: Math.round(s.happiness * 100), net: st.income - st.upkeep });
+  if (s.history.length > HISTORY_DAYS) s.history.splice(0, s.history.length - HISTORY_DAYS);
 
   const broke = s.money < B[T.HOUSE].cost;
   if ((totalPop(s) === 0 && broke && s.day > GRACE_DAYS) || s.unpaidDays >= COLLAPSE_UNPAID_DAYS) {
@@ -443,9 +470,9 @@ function daily(s, tot, traffic, rng) {
   return null;
 }
 
-export function collapse(s) {
+export function collapse(s, outcome = 'collapsed') {
   const record = {
-    name: s.name, cityNo: s.cityNo, peakPop: s.peakPop, daysSurvived: s.day, outcome: 'collapsed',
+    name: s.name, cityNo: s.cityNo, peakPop: s.peakPop, daysSurvived: s.day, outcome,
   };
   for (let i = 0; i < N; i++) {
     if (s.grid[i] !== T.EMPTY) { s.grid[i] = T.RUBBLE; s.cond[i] = 0; }
@@ -460,15 +487,51 @@ export function collapse(s) {
 }
 
 // Start a new city on the ruins: rubble stays and costs money to clear.
-export function rebuild(s, name) {
+export function rebuild(s, name, money = REBUILD_MONEY) {
   s.grid[HALL_INDEX] = T.HALL;
   s.cond[HALL_INDEX] = 100;
   Object.assign(s, {
-    name: name || s.name, queue: [], money: REBUILD_MONEY,
+    name: name || s.name, queue: [], money, history: [], log: [], flags: {},
     pop: { unskilled: 3, builder: 3, teacher: 0, pro: 0 }, cohorts: [],
     happiness: 0.65, hour: 0, day: 0, peakPop: 6, unpaidDays: 0,
     cityNo: s.cityNo + 1, status: 'alive', goalsDone: [],
   });
+}
+
+// ---------- random events ----------
+
+const EVENTS = [
+  { w: 3, ok: (s) => totalPop(s) >= 15, run: (s) => { s.happiness = Math.min(1, s.happiness + 0.06); return 'A street festival lifted everyone’s mood.'; } },
+  { w: 3, ok: (s) => (s.links || 0) > 0 || totalPop(s) >= 30, run: (s) => {
+    const g = 20 + Math.round(totalPop(s) * 0.6) + 15 * Math.min(MAX_LINKS, s.links || 0);
+    s.money += g; return `Visitors came through town and spent $${g}.`; } },
+  { w: 2, ok: () => true, run: (s) => { s.money += 100; return 'A former resident sent a $100 donation.'; } },
+  { w: 1, ok: (s) => s.happiness >= 0.7 && totalPop(s) >= 20, run: (s) => { s.money += 250; return 'The regional council sent a $250 grant for running a happy city.'; } },
+  { w: 2, ok: (s) => builtBuildings(s).length >= 4, run: (s, rng) => {
+    const list = builtBuildings(s), n = 1 + Math.floor(rng() * 3);
+    for (let k = 0; k < n; k++) { const i = list[Math.floor(rng() * list.length)]; s.cond[i] = Math.max(1, s.cond[i] - 20); }
+    return `A storm damaged ${n} building${n > 1 ? 's' : ''}. They repair as upkeep is paid.`; } },
+  { w: 1, ok: (s) => totalPop(s) >= 40 && builtBuildings(s).length >= 6, run: (s, rng) => {
+    const list = builtBuildings(s), i = list[Math.floor(rng() * list.length)];
+    s.cond[i] = Math.max(1, s.cond[i] - 50); return `A fire damaged a ${B[s.grid[i]].name.toLowerCase()}. It needs time and paid upkeep to recover.`; } },
+  { w: 2, ok: (s) => s.happiness >= 0.6 && totals(s).homes > totalPop(s) + 1, run: (s) => { s.pop.unskilled += 2; return 'Two relatives of residents moved in.'; } },
+];
+function builtBuildings(s) {
+  const out = [];
+  for (let i = 0; i < N; i++) {
+    const t = s.grid[i];
+    if (t !== T.EMPTY && t !== T.ROAD && t !== T.HALL && t !== T.RUBBLE && s.cond[i] > 0 && !s.queue.some((q) => q.i === i && !q.up)) out.push(i);
+  }
+  return out;
+}
+function randomEvent(s, rng) {
+  const ok = EVENTS.filter((e) => e.ok(s));
+  if (!ok.length) return null;
+  let r = rng() * ok.reduce((a, e) => a + e.w, 0);
+  const ev = ok.find((e) => (r -= e.w) < 0) || ok[0];
+  const text = ev.run(s, rng);
+  note(s, 'event', text);
+  return text;
 }
 
 // ---------- goals ----------
@@ -494,7 +557,7 @@ export function checkGoals(s, tot = totals(s)) {
   const done = [];
   for (const g of GOALS) {
     if (s.goalsDone.includes(g.id)) continue;
-    if (GOAL_TESTS[g.id](s, tot)) { s.goalsDone.push(g.id); s.money += g.reward; done.push(g); }
+    if (GOAL_TESTS[g.id](s, tot)) { s.goalsDone.push(g.id); s.money += g.reward; done.push(g); note(s, 'good', `Goal complete: ${g.text}. +$${g.reward}.`); }
   }
   return done;
 }

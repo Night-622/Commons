@@ -63,3 +63,14 @@ export const GOALS = [
   { id: 'pop100',   text: 'Reach 100 people',               reward: 800 },
   { id: 'days30',   text: 'Keep your city running 30 days', reward: 1500 },
 ];
+
+// Neighbour links: a road on your plot's edge that meets a neighbour's road on theirs.
+export const TRADE_PER_LINK = 30;   // money a day per link, scaled by population
+export const LINK_MOOD = 0.03;      // mood bonus per link
+export const MAX_LINKS = 4;         // links beyond this add nothing
+
+export const HISTORY_DAYS = 30;
+export const LOG_SIZE = 50;
+export const EVENT_CHANCE = 0.3;    // chance of a random event each day
+export const TUTORIAL_REWARD = 300;
+export const MOVE_KEEP = 0.5;       // share of your money you take when moving to another plot

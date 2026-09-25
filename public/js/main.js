@@ -1,40 +1,45 @@
 import * as sim from './sim.js';
 import {
-  T, B, BUILDABLE, PLOT, TICK_MS, MAX_OFFLINE_DAYS, HOURS_PER_DAY, SAVE_EVERY_MS, RUBBLE_CLEAR_COST, GOALS,
-  MAX_LEVEL, LEVEL, UPGRADABLE,
+  T, B, BUILDABLE, PLOT, TICK_MS, MAX_OFFLINE_DAYS, HOURS_PER_DAY, SAVE_EVERY_MS, RUBBLE_CLEAR_COST,
+  MAX_LEVEL, LEVEL, UPGRADABLE, REBUILD_MONEY, MOVE_KEEP, TUTORIAL_REWARD, GOALS,
 } from './constants.js';
 import { Renderer, STRIDE, thumbnail, modelHeight } from './render.js';
 import { loadPrefs, savePrefs, applyPrefs, resolvedTheme, palette, PALETTES } from './prefs.js';
 import { play, setSound } from './sound.js';
 import { firebaseConfig } from './config.js';
+import { roster, ROLES } from './people.js';
+import { CarSim } from './cars.js';
+import { createTutorial } from './tutorial.js';
+import * as panels from './panels.js';
 import * as fb from './firebase.js';
 
+const { esc, icon, money, pct, bar, avatar } = panels;
 const $ = (id) => document.getElementById(id);
-const money = (n) => `${n < 0 ? '−' : ''}$${Math.abs(Math.floor(n)).toLocaleString()}`;
-const pct = (n) => `${Math.round(n * 100)}%`;
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const hourLabel = (h) => (h === 0 ? 'midnight' : h === 12 ? 'noon' : `${h % 12} ${h < 12 ? 'am' : 'pm'}`);
-const icon = (id, cls = 'ic') => `<svg class="${cls}" aria-hidden="true"><use href="#${id}"/></svg>`;
 
 // ---------- state ----------
 let prefs = loadPrefs();
 let user = null, plotId = null, me = null, state = null, mayor = '';
+let world = { id: localStorage.getItem('commons-world') || 'public', name: 'Public world' }, worlds = [];
 let traffic = null, totalsNow = null;
 let tool = 'look', overlay = null, hover = null, cursor = null, selected = null;
-let pops = [], cars = [], routes = [], undoStack = [];
-let saveTimer = null, lastSave = Date.now(), loopTimer = null, worldTimer = null;
+let drawer = null, peopleFilter = 'all', peopleQuery = '', statsTab = 'overview', focusPerson = null, fromPeople = false;
+let pops = [], undoStack = [], bridges = new Map(), neighbourInfo = [], pulseTile = null, taps = 0, followCam = false;
+let saveTimer = null, lastSave = Date.now(), loopTimer = null, worldTimer = null, lastHour = -1;
 let spaceHeld = false, dirty = true, lastFrame = performance.now(), warnedDay = -1;
+let rosterCache = null, rosterKey = '';
 const plots = new Map();
 const byXY = new Map();
+const carSim = new CarSim();
 
 const canvas = $('map');
 const renderer = new Renderer(canvas);
 
 const TOOLS = [
-  { id: 'look', name: 'Look', key: '1', icon: 'i-look', desc: 'Inspect anything. Tap a building site to help your builders.' },
-  ...BUILDABLE.map((t, k) => ({ id: B[t].key, type: t, name: B[t].name, cost: B[t].cost, key: String(k + 2), desc: B[t].blurb })),
+  { id: 'look', name: 'Look', key: '1', icon: 'i-look', desc: 'Inspect anything. Click a building site to help your builders.' },
+  ...BUILDABLE.map((t, k) => ({ id: B[t].key, type: t, name: B[t].name, cost: B[t].cost, key: String(k + 2), desc: `${B[t].blurb} Drag to place several.` })),
   { id: 'upgrade', name: 'Upgrade', key: '8', icon: 'i-up', desc: 'Raise a building a level: more room and jobs, more upkeep.' },
-  { id: 'bulldoze', name: 'Clear', key: '9', icon: 'i-clear', desc: `Remove a building or road. Rubble costs $${RUBBLE_CLEAR_COST} to clear.` },
+  { id: 'bulldoze', name: 'Clear', key: '9', icon: 'i-clear', desc: `Remove buildings or roads. Drag to clear several. Rubble costs $${RUBBLE_CLEAR_COST}.` },
 ];
 const toolDef = (id) => TOOLS.find((t) => t.id === id);
 
@@ -46,10 +51,8 @@ const NEEDS = [
   { k: 'school', icon: 'i-school', label: 'Schooling', fix: 'Build or upgrade a school to train builders and professionals.' },
   { k: 'leisure', icon: 'i-tree', label: 'Leisure', fix: 'Put parks within 3 tiles of homes.' },
 ];
-const SURNAMES = ['Nguyen', 'Okafor', 'Papadopoulos', 'Smith', 'Kowalski', 'García', 'Chen', 'Haddad', 'Ivanova', 'Silva', 'Kaur', 'Tanaka',
-  'Murphy', 'Rossi', 'Mensah', 'Kim', 'Novak', 'Ali', 'Jensen', 'Costa', 'Walker', 'Fernando', 'Nakamura', 'Petrov', 'Obi', 'Laurent', 'Doyle',
-  'Sato', 'Horvat', 'Tran', 'Kelly', 'Moreau', 'Ahmed', 'Lindqvist', 'Reyes', 'Sharma'];
 const CITY_NAMES = ['Maple Bay', 'Riverside', 'Kingsford', 'Ashgrove', 'Bellhaven', 'Coral Point', 'Elm Hollow', 'Fernvale', 'Glenmore', 'Harbourview', 'Oakridge', 'Wattle Creek'];
+const SIDES = [[1, 0, 'East'], [-1, 0, 'West'], [0, 1, 'South'], [0, -1, 'North']];
 
 // ---------- preferences ----------
 function applyAll() {
@@ -59,7 +62,6 @@ function applyAll() {
   $('view-3d').setAttribute('aria-pressed', prefs.view === '3d');
   $('view-2d').setAttribute('aria-pressed', prefs.view === 'flat');
   $('minibox').classList.toggle('hidden', !prefs.minimap);
-  if (!prefs.cars || prefs.reducedMotion) cars = [];
   drawThumbs();
   drawHeroes();
   drawMinimap();
@@ -109,7 +111,7 @@ function drawHeroes() {
     const r = new Renderer(c);
     r.view = '3d';
     r.cam = { x: 12.5, y: 12.5, z: Math.max(12, Math.min(34, Math.min(r.w / 44, r.h / 20))) };
-    if (r.w > 900) { const d = 250 / (2 * r.cam.z); r.cam.x += d; r.cam.y -= d; }   // shift the city left of the card
+    if (r.w > 900) { const d = 250 / (2 * r.cam.z); r.cam.x += d; r.cam.y -= d; }
     const p = plotFrom('demo', 0, 0, demo, { ownerName: '' });
     r.draw({ plots: new Map([['demo', p]]), theme: resolvedTheme(prefs), palette: palette(prefs), paletteKey: prefs.colours,
       prefs, pops: [], nightAmt: 0, shapes: false });
@@ -133,9 +135,8 @@ $('tab-create').onclick = () => setAuthMode('create');
 
 async function busy(btn, fn, msgEl = $('auth-msg')) {
   if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); }
-  msgEl.textContent = '';
-  msgEl.classList.remove('ok');
-  try { await fn(); } catch (e) { console.error(e); msgEl.textContent = fb.authMessage(e); play('error'); }
+  if (msgEl) { msgEl.textContent = ''; msgEl.classList.remove('ok'); }
+  try { await fn(); } catch (e) { console.error(e); if (msgEl) msgEl.textContent = fb.authMessage(e); play('error'); }
   finally { if (btn) { btn.disabled = false; btn.removeAttribute('aria-busy'); } }
 }
 
@@ -155,17 +156,53 @@ $('auth-google').onclick = () => busy($('auth-google'), fb.signInGoogle);
 $('auth-guest').onclick = () => busy($('auth-guest'), fb.signInGuest);
 
 // ---------- found a city ----------
+function setWorld(w) {
+  world = w;
+  try { localStorage.setItem('commons-world', w.id); } catch { /* private mode */ }
+}
 $('found-form').onsubmit = (e) => {
   e.preventDefault();
   const m = $('found-mayor').value.trim(), c = $('found-city').value.trim();
   if (!m || !c) { $('found-msg').textContent = 'Give yourself and your city a name.'; return; }
   busy($('found-go'), async () => {
-    const doc = await fb.claimPlot(user, m, c);
+    const doc = await fb.claimPlot(user, m, c, world.id);
     if (!user.isAnonymous && !user.displayName) fb.setDisplayName(m).catch(() => {});
     startGame(doc);
   }, $('found-msg'));
 };
 $('found-out').onclick = () => fb.signOutUser();
+$('found-public').onclick = () => { setWorld({ id: 'public', name: 'Public world' }); enter(user); };
+
+async function showFound() {
+  const base = user.displayName || (user.email ? user.email.split('@')[0] : '');
+  $('found-mayor').value = base.slice(0, 20);
+  $('found-city').value = CITY_NAMES[Math.floor(Math.random() * CITY_NAMES.length)];
+  $('found-msg').textContent = '';
+  $('found-world').textContent = world.id === 'public' ? 'the public world' : world.name;
+  $('found-public').classList.toggle('hidden', world.id === 'public');
+  $('found-ruins').classList.add('hidden');
+  show('found');
+  (base ? $('found-city') : $('found-mayor')).focus();
+  try {
+    const ruins = (await fb.loadWorld(world.id)).filter((p) => p.status === 'ruins').slice(0, 4);
+    if (!ruins.length) return;
+    $('found-ruins').innerHTML = `<p class="or"><span>or start on ruins</span></p>${ruins.map((r) => `
+      <div class="ruin-row"><span><b>Ruins of ${esc(r.name)}</b><small>Reached ${r.peakPop} people. The rubble stays.</small></span>
+      <button class="btn" type="button" data-ruin="${r.id}">Rebuild here</button></div>`).join('')}`;
+    $('found-ruins').classList.remove('hidden');
+    $('found-ruins').querySelectorAll('[data-ruin]').forEach((b) => {
+      b.onclick = () => busy(b, async () => {
+        const r = ruins.find((x) => x.id === b.dataset.ruin);
+        const m = $('found-mayor').value.trim(), c = $('found-city').value.trim();
+        if (!m || !c) throw new Error('Give yourself and your city a name first.');
+        const st = sim.migrate(JSON.parse(r.state));
+        sim.rebuild(st, c, REBUILD_MONEY);
+        st.lastTick = Date.now();
+        startGame(await fb.takeOverRuins(user, m, r.id, st, world.id));
+      }, $('found-msg'));
+    });
+  } catch (e) { console.error(e); }
+}
 
 // ---------- routing ----------
 if (firebaseConfig.apiKey === 'REPLACE_ME') {
@@ -173,32 +210,34 @@ if (firebaseConfig.apiKey === 'REPLACE_ME') {
   $('auth-msg').textContent = 'Add your Firebase web config to public/js/config.js, then reload.';
 }
 
-fb.onAuth(async (u) => {
+async function enter(u) {
   stopLoops();
-  user = u;
-  if (!u) { state = null; closeModal(); show('auth'); return; }
+  tut.stop();
   show('boot');
   try {
-    const doc = await fb.findPlot(u);
-    if (doc) { startGame(doc); return; }
-    const base = u.displayName || (u.email ? u.email.split('@')[0] : '');
-    $('found-mayor').value = base.slice(0, 20);
-    $('found-city').value = CITY_NAMES[Math.floor(Math.random() * CITY_NAMES.length)];
-    $('found-msg').textContent = '';
-    show('found');
-    (base ? $('found-city') : $('found-mayor')).focus();
+    const w = await fb.getWorld(world.id);
+    setWorld(w || { id: 'public', name: 'Public world' });
+    const doc = await fb.findPlot(u, world.id);
+    if (doc) startGame(doc);
+    else showFound();
   } catch (e) {
     console.error(e);
     show('auth');
     $('auth-msg').textContent = `Couldn't reach your city: ${fb.authMessage(e)}`;
   }
+}
+fb.onAuth((u) => {
+  user = u;
+  if (!u) { stopLoops(); state = null; closeModal(); tut.stop(); show('auth'); return; }
+  enter(u);
 });
 
 function startGame(doc) {
   plotId = doc.id;
   mayor = doc.ownerName || 'Mayor';
   state = sim.migrate(JSON.parse(doc.state));
-  plots.clear(); byXY.clear();
+  plots.clear(); byXY.clear(); carSim.clear(); bridges.clear();
+  selected = null; drawer = null; followCam = false; rosterCache = null; lastHour = -1;
   me = toPlot(doc);
   addPlot(me);
   refreshDerived();
@@ -209,20 +248,21 @@ function startGame(doc) {
   buildTools();
   fitHome();
   updateHud();
-  renderGoals();
+  renderDrawer();
   startLoops();
   refreshWorld();
   if (innerWidth < 860) { $('pulse').classList.add('closed'); $('pulse-toggle').setAttribute('aria-expanded', 'false'); }
+  canvas.focus({ preventScroll: true });
   if (state.status === 'ruins') showRuins();
   else if (report) showAway(report);
-  else if (!localStorage.getItem('commons-seen-help')) { showHelp(); toggleGoals(true); }
-  canvas.focus({ preventScroll: true });
+  else if (!localStorage.getItem('commons-seen-help')) showWelcome();
+  else tut.resume();
 }
 
 // ---------- plots ----------
 function plotFrom(id, px, py, st, meta) {
   return {
-    id, px, py, name: st.name, ownerName: meta.ownerName, status: st.status,
+    id, px, py, st, name: st.name, ownerName: meta.ownerName, status: st.status,
     pop: sim.totalPop(st), peakPop: st.peakPop, day: st.day, happiness: st.happiness, cityNo: st.cityNo,
     grid: st.grid, cond: st.cond, lv: st.lv, uc: sim.underConstruction(st),
     queueMap: new Map(st.queue.map((q) => [q.i, q])), version: meta.version ?? 0, mine: !!meta.mine,
@@ -235,33 +275,70 @@ function toPlot(d) {
 }
 function addPlot(p) {
   if (!p) return;
+  const old = plots.get(p.id);
+  if (old && old.version !== p.version && !p.mine) carSim.plots.delete(p.id);
   plots.set(p.id, p);
   byXY.set(`${p.px},${p.py}`, p.id);
 }
+const plotAt = (px, py) => plots.get(byXY.get(`${px},${py}`));
 function syncMine() {
   Object.assign(me, plotFrom(me.id, me.px, me.py, state, { ownerName: mayor, mine: true, version: (me.version || 0) + 1 }));
   dirty = true;
 }
 async function refreshWorld() {
   try {
-    for (const d of await fb.loadWorld()) if (d.id !== plotId) addPlot(toPlot(d));
+    for (const d of await fb.loadWorld(world.id)) if (d.id !== plotId) addPlot(toPlot(d));
+    computeLinks();
     drawMinimap();
+    if (drawer === 'world') renderDrawer();
     dirty = true;
   } catch (e) { console.error('World load failed', e); }
+}
+
+// Roads that meet across the gap between two plots form a link (and a bridge).
+const roadDone = (p, i) => p.grid[i] === T.ROAD && !p.uc.has(i);
+function computeLinks() {
+  bridges = new Map();
+  const linksWith = new Map();
+  for (const p of plots.values()) {
+    for (const [dx, dy, dir] of [[1, 0, 'e'], [0, 1, 's']]) {
+      const q = plotAt(p.px + dx, p.py + dy);
+      if (!q) continue;
+      const list = [];
+      for (let k = 0; k < PLOT; k++) {
+        const a = dir === 'e' ? k * PLOT + PLOT - 1 : (PLOT - 1) * PLOT + k;
+        const b = dir === 'e' ? k * PLOT : k;
+        if (roadDone(p, a) && roadDone(q, b)) list.push({ dir, k });
+      }
+      if (!list.length) continue;
+      bridges.set(p.id, [...(bridges.get(p.id) || []), ...list]);
+      if (p.mine) linksWith.set(q.id, list.length);
+      if (q.mine) linksWith.set(p.id, list.length);
+    }
+  }
+  const before = state.links;
+  state.links = [...linksWith.values()].reduce((a, b) => a + b, 0);
+  neighbourInfo = SIDES.map(([dx, dy, side]) => {
+    const q = plotAt(me.px + dx, me.py + dy);
+    return q && { side, px: q.px, py: q.py, name: q.name, ownerName: q.ownerName, pop: q.pop, status: q.status, links: linksWith.get(q.id) || 0 };
+  }).filter(Boolean);
+  if (state.links > before) { notify(`Linked with a neighbour. Trade income and mood go up.`, 'good'); sim.note(state, 'good', 'A road link to a neighbouring city opened.'); play('goal'); }
+  dirty = true;
 }
 
 // ---------- time ----------
 function refreshDerived() {
   totalsNow = sim.totals(state);
   traffic = sim.computeTraffic(state, undefined, totalsNow);
-  rebuildRoutes();
+  carSim.set(me?.id || plotId, state, traffic);
+  rosterCache = null;
 }
 
 function advance() {
   const due = Math.floor((Date.now() - state.lastTick) / TICK_MS);
   if (due <= 0) return null;
   const cap = MAX_OFFLINE_DAYS * HOURS_PER_DAY;
-  const before = { day: state.day, money: state.money, pop: sim.totalPop(state) };
+  const before = { day: state.day, money: state.money, pop: sim.totalPop(state), log: state.log.length };
   const n = Math.min(due, cap);
   let lastDay = null;
   for (let k = 0; k < n; k++) {
@@ -271,7 +348,8 @@ function advance() {
     if (r.collapsed) { onCollapse(r.collapsed); break; }
   }
   state.lastTick = due > cap || state.status !== 'alive' ? Date.now() : state.lastTick + n * TICK_MS;
-  rebuildRoutes();
+  carSim.set(plotId, state, traffic);
+  rosterCache = null;
   if (n >= HOURS_PER_DAY) { state._finished = []; return { ...before, capped: due > cap, days: state.day - before.day }; }
   if (lastDay) onNewDay(lastDay);
   return null;
@@ -280,6 +358,7 @@ function advance() {
 function onNewDay(st) {
   const hall = sim.xy(sim.HALL_INDEX);
   if (st.income > 0) { addPop(hall.x, hall.y, 1.8, `+${money(st.income)}`, '#ffd24a'); play('coin'); }
+  if (st.event) notify(st.event, 'info');
   if (state.day === warnedDay) return;
   warnedDay = state.day;
   const pop = sim.totalPop(state);
@@ -299,7 +378,7 @@ function drainFinished() {
     if (f.up) { addPop(x, y, modelHeight(t, state.lv[f.i]) + 0.4, `Level ${state.lv[f.i]}`, '#ffffff'); play('level'); announce(`${B[t].name} reached level ${state.lv[f.i]}.`); }
     else { addPop(x, y, modelHeight(t) + 0.4, 'Built', '#ffffff'); play('done'); }
   }
-  if (list.length) refreshDerived();
+  if (list.length) { refreshDerived(); computeLinks(); }
 }
 
 function checkGoals() {
@@ -309,7 +388,7 @@ function checkGoals() {
   addPop(hall.x, hall.y, 2, `+${money(sum)}`, '#ffd24a');
   notify(got.length === 1 ? `Goal complete: ${got[0].text}. You earned ${money(sum)}.` : `${got.length} goals complete. You earned ${money(sum)}.`, 'good');
   play('goal');
-  renderGoals();
+  if (drawer === 'goals') renderDrawer();
   scheduleSave();
 }
 
@@ -323,10 +402,12 @@ function startLoops() {
     syncMine();
     updateHud();
     drawMinimap();
-    if (selected) refreshInspector();
+    if (drawer === 'inspect') renderDrawer();
+    else if (drawer && drawer !== 'world' && state.hour !== lastHour) renderDrawer();
+    lastHour = state.hour;
     if (Date.now() - lastSave > SAVE_EVERY_MS) save();
   }, 500);
-  worldTimer = setInterval(refreshWorld, 5 * 60 * 1000);
+  worldTimer = setInterval(refreshWorld, 3 * 60 * 1000);
 }
 function stopLoops() { clearInterval(loopTimer); clearInterval(worldTimer); }
 
@@ -350,17 +431,19 @@ async function save(extra) {
 function afterChange() {
   refreshDerived();
   syncMine();
+  computeLinks();
   updateHud();
-  if (selected) refreshInspector();
+  if (drawer) renderDrawer();
   scheduleSave();
 }
 const isMine = (h) => !!h && !!me && h.px === me.px && h.py === me.py;
 
 function act(h, quiet) {
-  if (!isMine(h)) return;
+  if (!isMine(h)) return false;
   const { x, y } = sim.xy(h.i);
   let r;
   if (tool === 'bulldoze') {
+    if (quiet && state.grid[h.i] === T.EMPTY) return false;
     r = sim.bulldoze(state, h.i);
     if (r.ok) { play('clear'); if (r.refund) addPop(x, y, 0.6, `${r.refund > 0 ? '+' : ''}${money(r.refund)}`, r.refund > 0 ? '#ffd24a' : '#ffffff'); }
   } else if (tool === 'upgrade') {
@@ -372,19 +455,21 @@ function act(h, quiet) {
     if (r.ok) {
       play('place');
       undoStack.push(h.i);
-      if (undoStack.length > 30) undoStack.shift();
+      if (undoStack.length > 40) undoStack.shift();
       if (def.type !== T.ROAD) addPop(x, y, 0.8, `−$${r.cost}`, '#ffffff');
       announce(`${def.name} placed at ${x + 1}, ${y + 1}. ${money(state.money)} left.`);
     }
   }
   if (r.ok) afterChange();
   else if (!quiet || r.reason.startsWith('Needs')) { notify(r.reason, 'act'); play('error'); }
+  return r.ok;
 }
 
 function tap(i) {
   const r = sim.tapHelp(state, i);
   const { x, y } = sim.xy(i);
   if (r.ok) {
+    taps++;
     play(r.done ? 'done' : 'tap');
     addPop(x, y, 1.2, r.done ? 'Built' : pct(r.progress), '#ffffff');
     afterChange();
@@ -392,13 +477,14 @@ function tap(i) {
 }
 
 function click(h) {
-  if (!h) { select(null); return; }
+  if (!h) { closeDrawer(); return; }
   if (tool === 'look' || !isMine(h)) {
     if (!isMine(h) && tool !== 'look') {
-      const p = plots.get(byXY.get(`${h.px},${h.py}`));
+      const p = plotAt(h.px, h.py);
       notify(p ? `That plot belongs to ${p.ownerName}.` : 'Nobody has claimed that land yet.', 'act');
     }
     if (isMine(h) && state.queue.some((q) => q.i === h.i)) tap(h.i);
+    fromPeople = false; focusPerson = null;
     select(h);
     return;
   }
@@ -427,52 +513,11 @@ function hoverInfo(h) {
 function onCollapse(record) {
   syncMine();
   save();
-  fb.writeLegacy(user, plotId, mayor, record).catch((e) => console.error('Legacy write failed', e));
+  fb.writeLegacy(user, plotId, mayor, record, world.id).catch((e) => console.error('Legacy write failed', e));
   play('warn');
   showRuins(record);
 }
 
-// ---------- cars and floating numbers ----------
-function rebuildRoutes() {
-  routes = [];
-  if (traffic) for (const h of traffic.homes) {
-    if (h.workPath?.length > 1) routes.push(h.workPath);
-    if (h.shopPath?.length > 1) routes.push(h.shopPath);
-  }
-}
-function spawnCar(car = {}) {
-  const path = routes[Math.floor(Math.random() * routes.length)];
-  car.path = Math.random() < 0.5 ? [...path].reverse() : path;
-  car.s = car.s === undefined ? Math.random() * (path.length - 1) : 0;
-  car.v = 1.1 + Math.random() * 0.8;
-  car.c = Math.floor(Math.random() * 6);
-  return car;
-}
-const drivable = (i) => state.grid[i] === T.ROAD || state.grid[i] === T.HALL;
-function updateCars(dt) {
-  const want = state && prefs.cars && !prefs.reducedMotion && state.status === 'alive' && routes.length
-    ? Math.min(42, Math.round(sim.totalPop(state) / 4)) : 0;
-  while (cars.length < want) cars.push(spawnCar());
-  if (cars.length > want) cars.length = want;
-  const byTile = new Map();
-  for (const car of cars) {
-    const tile = car.path[Math.floor(car.s)];
-    if (!drivable(tile)) { spawnCar(car); continue; }
-    const ratio = traffic && traffic.cap[tile] ? traffic.load[tile] / traffic.cap[tile] : 0;
-    car.s += dt * car.v * (ratio > 1 ? 0.35 / ratio : 1);
-    if (car.s >= car.path.length - 1) spawnCar(car);
-    const a = Math.floor(car.s), f = car.s - a;
-    const p = car.path[a], q = car.path[Math.min(a + 1, car.path.length - 1)];
-    const ax = (p % PLOT) + 0.5, ay = Math.floor(p / PLOT) + 0.5, bx = (q % PLOT) + 0.5, by = Math.floor(q / PLOT) + 0.5;
-    const dx = bx - ax, dy = by - ay;
-    car.lx = ax + dx * f - dy * 0.2;
-    car.ly = ay + dy * f + dx * 0.2;
-    const t = f < 0.5 ? p : q;
-    if (!byTile.has(t)) byTile.set(t, []);
-    byTile.get(t).push(car);
-  }
-  return byTile;
-}
 function addPop(tx, ty, h, text, col) {
   if (!prefs.popups || !me) return;
   pops.push({ wx: me.px * STRIDE + tx + 0.5, wy: me.py * STRIDE + ty + 0.5, h, text, col, t0: performance.now(), dur: 1400 });
@@ -487,10 +532,35 @@ function nightAmt() {
   return 0;
 }
 
+// ---------- people ----------
+function getRoster() {
+  const key = `${state.day}|${state.hour}|${sim.totalPop(state)}|${state.queue.length}`;
+  if (!rosterCache || key !== rosterKey) { rosterCache = roster(state, traffic, me.px * 7919 + me.py * 104729 + 17); rosterKey = key; }
+  return rosterCache;
+}
+function followCommute(p, hh) {
+  const path = p.role === 'student' || p.role === 'teacher' ? hh.workPath : p.employed ? hh.workPath : hh.shopPath;
+  const car = carSim.follow(plotId, path?.length > 1 ? path : hh.shopPath);
+  if (!car) { notify(`${p.first} doesn't drive anywhere yet. Their home needs a road that reaches ${p.employed ? 'work' : 'the shops'}.`, 'act'); return; }
+  followCam = true;
+  $('follow-text').textContent = `Following ${p.first} ${p.last}`;
+  $('follow').classList.remove('hidden');
+  if (renderer.cam.z < 18) renderer.cam.z = 22;
+  announce(`Following ${p.first} ${p.last}'s commute.`);
+}
+function stopFollow() {
+  carSim.unfollow();
+  followCam = false;
+  $('follow').classList.add('hidden');
+  dirty = true;
+}
+$('follow-stop').onclick = stopFollow;
+
 // ---------- input ----------
 const pointers = new Map();
 let drag = null, pinch = null;
 const gap = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
 
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 canvas.addEventListener('pointerdown', (e) => {
@@ -499,13 +569,15 @@ canvas.addEventListener('pointerdown', (e) => {
   cursor = null;
   if (pointers.size === 2) {
     const [a, b] = [...pointers.values()];
-    pinch = { d: gap(a, b), z: renderer.cam.z };
+    const m = mid(a, b);
+    pinch = { d: gap(a, b), z: renderer.cam.z, w: renderer.toWorld(m.x, m.y) };
     drag = null;
+    followCam = false;
     return;
   }
   const panOnly = e.button !== 0 || spaceHeld || e.shiftKey;
   const h = renderer.hit(e.offsetX, e.offsetY);
-  const paints = !panOnly && (tool === 'road' || tool === 'bulldoze') && isMine(h);
+  const paints = !panOnly && tool !== 'look' && isMine(h);
   drag = { x: e.offsetX, y: e.offsetY, cx: renderer.cam.x, cy: renderer.cam.y, moved: false, paints, last: null, button: e.button };
   if (paints) { act(h, false); drag.last = h.i; }
 });
@@ -513,7 +585,11 @@ canvas.addEventListener('pointermove', (e) => {
   if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
   if (pinch && pointers.size === 2) {
     const [a, b] = [...pointers.values()];
-    renderer.zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, (pinch.z * gap(a, b) / pinch.d) / renderer.cam.z);
+    const m = mid(a, b);
+    renderer.cam.z = Math.min(64, Math.max(1.6, pinch.z * gap(a, b) / pinch.d));
+    const w = renderer.toWorld(m.x, m.y);
+    renderer.cam.x += pinch.w.x - w.x;
+    renderer.cam.y += pinch.w.y - w.y;
     dirty = true;
     return;
   }
@@ -523,6 +599,7 @@ canvas.addEventListener('pointermove', (e) => {
     if (drag.paints) {
       if (isMine(h) && h.i !== drag.last) { act(h, true); drag.last = h.i; }
     } else if (drag.moved) {
+      followCam = false;
       renderer.cam.x = drag.cx; renderer.cam.y = drag.cy;
       const a = renderer.toWorld(drag.x, drag.y), b = renderer.toWorld(e.offsetX, e.offsetY);
       renderer.cam.x = drag.cx - (b.x - a.x);
@@ -578,7 +655,7 @@ window.addEventListener('keydown', (e) => {
   if (onMap && arrows[k]) { e.preventDefault(); moveCursor(...arrows[k]); return; }
   if (onMap && (k === 'Enter' || k === ' ') && cursor) { e.preventDefault(); click(cursor); return; }
   const pan = { w: [0, -60], a: [-60, 0], s: [0, 60], d: [60, 0] }[lk];
-  if (pan) { renderer.panBy(-pan[0], -pan[1]); dirty = true; return; }
+  if (pan) { followCam = false; renderer.panBy(-pan[0], -pan[1]); dirty = true; return; }
   if (k === '+' || k === '=') { renderer.zoomAt(renderer.w / 2, renderer.h / 2, 1.2); dirty = true; return; }
   if (k === '-' || k === '_') { renderer.zoomAt(renderer.w / 2, renderer.h / 2, 1 / 1.2); dirty = true; return; }
   const t = TOOLS.find((t) => t.key === k);
@@ -586,23 +663,44 @@ window.addEventListener('keydown', (e) => {
   const actions = {
     '0': fitWorld, t: toggleTraffic, v: toggleView, h: fitHome, g: () => setPref('grid', !prefs.grid),
     m: () => { setPref('sound', !prefs.sound); notify(prefs.sound ? 'Sound on' : 'Sound off', 'act'); },
-    o: () => toggleGoals(), l: showBoard, ',': showSettings, '?': showHelp,
-    escape: () => { selectTool('look'); select(null); cursor = null; hover = null; toggleGoals(false); },
+    o: () => openPanel('goals'), p: () => openPanel('people'), c: () => openPanel('stats'), n: () => openPanel('news'), j: () => openPanel('world'),
+    l: showBoard, ',': showSettings, '?': showHelp,
+    escape: () => { if (followCam || carSim.followed) stopFollow(); selectTool('look'); closeDrawer(); cursor = null; hover = null; },
   };
   if (actions[lk]) { e.preventDefault(); actions[lk](); }
 });
 window.addEventListener('keyup', (e) => { if (e.code === 'Space') spaceHeld = false; });
 
 // ---------- frame ----------
+function visiblePlotIds() {
+  const detailed = prefs.view === 'flat' ? renderer.cam.z * 1.3 >= 9 : renderer.cam.z >= 7;
+  if (!detailed) return [];
+  const bd = renderer.bounds(), out = [];
+  for (const p of plots.values()) {
+    if (p.px * STRIDE < bd.x1 && (p.px + 1) * STRIDE > bd.x0 && p.py * STRIDE < bd.y1 && (p.py + 1) * STRIDE > bd.y0) {
+      if (!carSim.has(p.id)) carSim.set(p.id, p.st);
+      out.push(p.id);
+    }
+  }
+  return out;
+}
+
 function frame(now) {
   const dt = Math.min(0.1, (now - lastFrame) / 1000);
   lastFrame = now;
   if (state && !$('game').classList.contains('hidden')) {
     pops = pops.filter((p) => now - p.t0 < p.dur);
-    const carsByTile = updateCars(dt);
-    if (dirty || cars.length || pops.length) {
+    const moving = prefs.cars;
+    const carsByPlot = moving ? carSim.update(dt, visiblePlotIds(), prefs.density) : new Map();
+    if (followCam && carSim.followed) {
+      const c = carSim.followed;
+      const tx = me.px * STRIDE + c.lx, ty = me.py * STRIDE + c.ly;
+      renderer.cam.x += (tx - renderer.cam.x) * Math.min(1, dt * 4);
+      renderer.cam.y += (ty - renderer.cam.y) * Math.min(1, dt * 4);
+    }
+    if (dirty || carsByPlot.size || pops.length || pulseTile) {
       renderer.draw({
-        plots, hover, cursor, selected, overlay, traffic, cars, carsByTile, pops, prefs,
+        plots, hover, cursor, selected, overlay, traffic, carsByPlot, pops, prefs, bridges, pulseTile,
         theme: resolvedTheme(prefs), palette: palette(prefs), paletteKey: prefs.colours, shapes: prefs.shapes, nightAmt: nightAmt(),
       });
       dirty = false;
@@ -615,8 +713,9 @@ requestAnimationFrame(frame);
 // ---------- camera ----------
 function fitHome() {
   if (!me) return;
+  followCam = false;
   renderer.centerOnPlot(me.px, me.py);
-  const w = renderer.w, h = renderer.h - 170, span = w < 600 ? 10 : 17;   // frame the middle of the plot, where cities start
+  const w = renderer.w, h = renderer.h - 170, span = w < 600 ? 10 : 17;
   renderer.cam.z = prefs.view === 'flat'
     ? Math.max(9, Math.min(44, Math.min(w, h) * 0.92 / (span * 1.3)))
     : Math.max(9, Math.min(44, Math.min(w * 0.92 / (2 * span), h * 0.95 / (span + 2))));
@@ -626,6 +725,7 @@ function fitHome() {
 function fitWorld() {
   const all = [...plots.values()];
   if (!all.length) return;
+  followCam = false;
   const xs = all.map((p) => p.px), ys = all.map((p) => p.py);
   const minX = Math.min(...xs), maxX = Math.max(...xs) + 1, minY = Math.min(...ys), maxY = Math.max(...ys) + 1;
   renderer.centerOn(((minX + maxX) / 2) * STRIDE, ((minY + maxY) / 2) * STRIDE);
@@ -635,6 +735,12 @@ function fitWorld() {
     : Math.max(1.6, Math.min(8, Math.min(renderer.w / (2 * span), renderer.h / span) * 0.9));
   dirty = true;
   refreshWorld();
+}
+function goToPlot(px, py) {
+  followCam = false;
+  renderer.centerOnPlot(px, py);
+  if (renderer.cam.z < 9) renderer.cam.z = 12;
+  dirty = true;
 }
 function toggleTraffic() {
   overlay = overlay === 'traffic' ? null : 'traffic';
@@ -653,13 +759,13 @@ $('view-2d').onclick = () => prefs.view !== 'flat' && toggleView();
 $('btn-traffic').onclick = toggleTraffic;
 $('btn-home').onclick = fitHome;
 $('btn-world').onclick = fitWorld;
-$('btn-goals').onclick = () => toggleGoals();
 $('btn-board').onclick = showBoard;
 $('btn-settings').onclick = showSettings;
 $('btn-account').onclick = showAccount;
 $('btn-help').onclick = showHelp;
 $('btn-undo').onclick = undo;
 $('city-name').onclick = showRename;
+$('rail').onclick = (e) => { const b = e.target.closest('[data-panel]'); if (b) openPanel(b.dataset.panel); };
 $('pulse-toggle').onclick = () => {
   const open = $('pulse-toggle').getAttribute('aria-expanded') !== 'true';
   $('pulse-toggle').setAttribute('aria-expanded', open);
@@ -679,6 +785,7 @@ function buildTools() {
   $('tools').onclick = (e) => { const b = e.target.closest('.tool'); if (b) selectTool(b.dataset.tool); };
   drawThumbs();
   selectTool(tool);
+  tut.refresh();
 }
 function drawThumbs() {
   for (const c of document.querySelectorAll('canvas.thumb')) thumbnail(c, +c.dataset.type, palette(prefs), resolvedTheme(prefs));
@@ -701,6 +808,17 @@ function moodWord(h) {
   if (state.status === 'ruins') return 'Fallen';
   return h >= 0.8 ? 'Thriving' : h >= 0.6 ? 'Content' : h >= 0.4 ? 'Uneasy' : 'Unhappy';
 }
+const newsKey = () => `commons-news-${plotId}`;
+function unseenFrom() {
+  const seen = localStorage.getItem(newsKey());
+  if (!seen) return 0;
+  const k = state.log.findIndex((e) => `${e.d}|${e.t}` === seen);
+  return k === -1 ? 0 : k + 1;
+}
+function markNewsSeen() {
+  const last = state.log.at(-1);
+  if (last) try { localStorage.setItem(newsKey(), `${last.d}|${last.t}`); } catch { /* ignore */ }
+}
 
 function updateHud() {
   if (!state) return;
@@ -709,6 +827,7 @@ function updateHud() {
   const net = st.income - st.upkeep;
   $('city-name').textContent = state.name;
   $('clock').textContent = state.status === 'ruins' ? `Fell on day ${state.day}` : `Day ${state.day}, ${hourLabel(state.hour)}`;
+  $('dayfill').style.width = `${((state.hour + Math.min(1, (Date.now() - state.lastTick) / TICK_MS)) / 24) * 100}%`;
   $('v-money').textContent = money(state.money);
   $('v-net').textContent = `${net >= 0 ? '+' : '−'}$${Math.abs(net)} a day`;
   $('v-net').classList.toggle('neg', net < 0);
@@ -725,21 +844,17 @@ function updateHud() {
   $('v-mood-word').textContent = moodWord(h);
 
   const needs = traffic?.needs || {};
-  $('needs').innerHTML = NEEDS.map((n) => {
-    const v = needs[n.k] ?? 1, lvl = v >= 0.7 ? 'ok' : v >= 0.4 ? 'mid' : 'bad';
-    return `<li title="${esc(n.fix)}">${icon(n.icon)}<span class="nlabel">${n.label}</span>
-      <span class="bar" role="meter" aria-label="${n.label}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(v * 100)}"><i data-l="${lvl}" style="width:${Math.max(4, v * 100)}%"></i></span></li>`;
-  }).join('');
+  $('needs').innerHTML = NEEDS.map((n) => `<li title="${esc(n.fix)}">${icon(n.icon)}<span class="nlabel">${n.label}</span>${bar(n.label, needs[n.k] ?? 1)}</li>`).join('');
   const worst = NEEDS.map((n) => [n, needs[n.k] ?? 1]).sort((a, b) => a[1] - b[1])[0];
   $('hint').textContent = state.status === 'ruins' ? 'This city has fallen. Rebuild on the ruins to start again.'
-    : worst && worst[1] < 0.7 ? worst[0].fix : 'Everything is covered. Grow the city and upgrade buildings.';
+    : worst && worst[1] < 0.7 ? worst[0].fix : state.links ? 'Everything is covered. Grow the city and upgrade buildings.' : 'Everything is covered. Try linking a road to a neighbour for trade.';
 
   const alert = $('alert');
   const jam = st.failedTrips > pop * 0.25 && pop > 10;
   const msg = state.status === 'ruins' ? 'City fallen' : state.unpaidDays ? `Upkeep unpaid for ${state.unpaidDays}d` : jam ? 'Traffic jams' : '';
   alert.textContent = msg;
   alert.classList.toggle('hidden', !msg);
-  alert.onclick = state.status === 'ruins' ? () => showRuins() : jam ? () => { if (!overlay) toggleTraffic(); } : null;
+  alert.onclick = state.status === 'ruins' ? () => showRuins() : jam ? () => { if (!overlay) toggleTraffic(); } : () => openPanel('stats');
 
   for (const b of document.querySelectorAll('.tool')) {
     const t = toolDef(b.dataset.tool);
@@ -748,26 +863,9 @@ function updateHud() {
   const left = GOALS.length - state.goalsDone.length;
   $('goals-dot').textContent = left ? String(Math.min(9, left)) : '';
   $('goals-dot').classList.toggle('hidden', !left);
-}
-
-function toggleGoals(force) {
-  const panel = $('goals');
-  const open = force ?? panel.classList.contains('hidden');
-  panel.classList.toggle('hidden', !open);
-  $('btn-goals').setAttribute('aria-expanded', open);
-  if (open) { renderGoals(); if (selected) select(null); }
-}
-function renderGoals() {
-  if (!state) return;
-  const done = state.goalsDone.length;
-  $('goals').innerHTML = `<div class="phead"><h2>Goals</h2><span class="soft num">${done} of ${GOALS.length}</span>
-    <button class="iconbtn" type="button" data-close-goals aria-label="Close goals">${icon('i-close')}</button></div>
-    <div class="progress"><i style="width:${(done / GOALS.length) * 100}%"></i></div>
-    <ul class="goal-list">${GOALS.map((g) => {
-      const ok = state.goalsDone.includes(g.id);
-      return `<li class="${ok ? 'done' : ''}"><span class="tick">${ok ? icon('i-check') : ''}</span><span>${g.text}${ok ? '<span class="sr-only"> (done)</span>' : ''}</span><b class="num">${money(g.reward)}</b></li>`;
-    }).join('')}</ul>`;
-  $('goals').querySelector('[data-close-goals]').onclick = () => toggleGoals(false);
+  const unread = drawer === 'news' ? 0 : state.log.length - unseenFrom();
+  $('news-dot').textContent = unread ? String(Math.min(9, unread)) : '';
+  $('news-dot').classList.toggle('hidden', !unread);
 }
 
 // ---------- minimap ----------
@@ -790,49 +888,171 @@ function drawMinimap() {
     g.fillStyle = dark ? 'rgba(255,255,255,0.4)' : 'rgba(23,49,59,0.4)';
     g.fillRect(x + 2, y + s - 5, Math.max(0, (s - 6) * fill), 2);
   }
+  g.strokeStyle = '#2f9e5a'; g.lineWidth = 2;
+  for (const [id, list] of bridges) {
+    const p = plots.get(id);
+    for (const dir of new Set(list.map((b) => b.dir))) {
+      const x = ox + (p.px - minX + 0.5) * s, y = oy + (p.py - minY + 0.5) * s;
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + (dir === 'e' ? s : 0), y + (dir === 's' ? s : 0)); g.stroke();
+    }
+  }
   const cx = ox + (renderer.cam.x / STRIDE - minX) * s, cy = oy + (renderer.cam.y / STRIDE - minY) * s;
   g.strokeStyle = dark ? '#fff' : '#17313b'; g.lineWidth = 2;
   g.beginPath(); g.arc(cx, cy, 4, 0, Math.PI * 2); g.stroke();
   c.onclick = (e) => {
     const r = c.getBoundingClientRect();
     const mx = (e.clientX - r.left) * (c.width / r.width), my = (e.clientY - r.top) * (c.height / r.height);
+    followCam = false;
     renderer.centerOn(((mx - ox) / s + minX) * STRIDE, ((my - oy) / s + minY) * STRIDE);
     dirty = true;
     drawMinimap();
   };
 }
 
-// ---------- inspector ----------
-function select(h) {
-  selected = h ? { px: h.px, py: h.py, tx: h.tx, ty: h.ty, i: h.i } : null;
-  if (!selected) { $('inspector').classList.add('hidden'); dirty = true; return; }
-  refreshInspector();
-  toggleGoals(false);
-  $('inspector').classList.remove('hidden');
+// ---------- drawer ----------
+function openPanel(mode) {
+  if (drawer === mode) { closeDrawer(); return; }
+  drawer = mode;
+  selected = null;
+  if (mode === 'world') loadWorlds();
+  renderDrawer();
+  if (mode === 'news') { markNewsSeen(); updateHud(); }
+  $('drawer').querySelector('h2')?.setAttribute('tabindex', '-1');
   dirty = true;
 }
-function refreshInspector() {
-  if (!selected || !state) return;
-  const box = $('inspector');
-  const had = document.activeElement && box.contains(document.activeElement) ? document.activeElement.dataset.do : null;
-  const body = isMine(selected) ? ownTile(selected.i) : otherPlot(selected);
-  box.innerHTML = `<button class="iconbtn close" type="button" aria-label="Close details">${icon('i-close')}</button>${body}`;
-  box.querySelector('.close').onclick = () => select(null);
-  box.querySelectorAll('[data-do]').forEach((b) => { b.onclick = () => inspectorAction(b.dataset.do); });
-  if (had) box.querySelector(`[data-do="${had}"]`)?.focus();
+function closeDrawer() {
+  drawer = null; selected = null; focusPerson = null; fromPeople = false;
+  renderDrawer();
+  dirty = true;
+  if (state) canvas.focus({ preventScroll: true });
 }
-function inspectorAction(what) {
-  const i = selected.i, was = tool;
+function select(h) {
+  if (!h) { closeDrawer(); return; }
+  selected = { px: h.px, py: h.py, tx: h.tx, ty: h.ty, i: h.i };
+  drawer = 'inspect';
+  renderDrawer();
+  dirty = true;
+}
+
+function renderDrawer() {
+  const box = $('drawer');
+  for (const b of document.querySelectorAll('#rail [data-panel]')) b.setAttribute('aria-pressed', b.dataset.panel === drawer);
+  if (!drawer || !state) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+  const scroll = box.scrollTop;
+  const active = document.activeElement && box.contains(document.activeElement) ? document.activeElement : null;
+  const focusKey = active && (active.id || active.dataset.do || active.dataset.person || active.dataset.filter);
+  const caret = active?.selectionStart;
+  let html = '';
+  if (drawer === 'inspect') html = inspectorHtml();
+  else if (drawer === 'goals') html = panels.goalsPanel(state);
+  else if (drawer === 'people') html = panels.peoplePanel(getRoster(), peopleFilter, peopleQuery);
+  else if (drawer === 'stats') html = panels.statsPanel({ state, totals: totalsNow || sim.totals(state), traffic, pop: sim.totalPop(state), students: sim.students(state) }, statsTab);
+  else if (drawer === 'news') html = panels.newsPanel(state, unseenFrom());
+  else if (drawer === 'world') html = panels.worldPanel(worldCtx());
+  box.innerHTML = html;
+  box.classList.remove('hidden');
+  box.dataset.mode = drawer;
+  wireDrawer(box);
+  box.scrollTop = scroll;
+  if (focusKey) {
+    const el = box.querySelector(`#${CSS.escape(focusKey)}`) || box.querySelector(`[data-do="${focusKey}"],[data-person="${focusKey}"],[data-filter="${focusKey}"]`);
+    if (el) { el.focus({ preventScroll: true }); if (caret != null && el.setSelectionRange) el.setSelectionRange(caret, caret); }
+  }
+}
+
+function wireDrawer(box) {
+  box.querySelectorAll('[data-close-drawer]').forEach((b) => { b.onclick = closeDrawer; });
+  box.querySelectorAll('[data-do]').forEach((b) => { b.onclick = () => inspectorAction(b.dataset.do, b.dataset.arg); });
+  box.querySelectorAll('[data-filter]').forEach((b) => { b.onclick = () => { peopleFilter = b.dataset.filter; renderDrawer(); }; });
+  box.querySelectorAll('[data-stats-tab]').forEach((b) => { b.onclick = () => { statsTab = b.dataset.statsTab; renderDrawer(); }; });
+  const q = box.querySelector('#people-q');
+  if (q) q.oninput = () => { peopleQuery = q.value; renderDrawer(); };
+  box.querySelectorAll('[data-person]').forEach((b) => { b.onclick = () => showPerson(b.dataset.person); });
+  box.querySelectorAll('[data-goto]').forEach((b) => { b.onclick = () => { const [x, y] = b.dataset.goto.split(',').map(Number); goToPlot(x, y); }; });
+  box.querySelectorAll('[data-move]').forEach((b) => { b.onclick = () => confirmMove(b.dataset.move); });
+  box.querySelectorAll('[data-world]').forEach((b) => { b.onclick = () => switchWorld(b.dataset.world); });
+  box.querySelectorAll('[data-copy]').forEach((b) => {
+    b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); notify('Invite code copied.', 'act'); } catch { notify(`Code: ${b.dataset.copy}`, 'act'); } };
+  });
+  const create = box.querySelector('#world-create');
+  if (create) create.onsubmit = (e) => {
+    e.preventDefault();
+    busy(create.querySelector('button'), async () => {
+      const name = $('world-name').value.trim();
+      if (!name) throw new Error('Give the world a name.');
+      await save();
+      const w = await fb.createWorld(user, name);
+      notify(`Created ${w.name}. Invite code ${w.code}.`, 'act');
+      setWorld(w);
+      enter(user);
+    }, $('world-msg'));
+  };
+  const join = box.querySelector('#world-join');
+  if (join) join.onsubmit = (e) => {
+    e.preventDefault();
+    busy(join.querySelector('button'), async () => {
+      const w = await fb.findWorldByCode($('world-code').value);
+      if (w.id === world.id) throw new Error('You’re already playing in that world.');
+      await save();
+      setWorld(w);
+      enter(user);
+    }, $('world-msg'));
+  };
+}
+
+function showPerson(id) {
+  const r = getRoster();
+  const p = r.people.find((x) => x.id === id);
+  if (!p) return;
+  focusPerson = id;
+  fromPeople = true;
+  const { x, y } = sim.xy(p.home);
+  selected = { px: me.px, py: me.py, tx: x, ty: y, i: p.home };
+  drawer = 'inspect';
+  renderer.centerOn(me.px * STRIDE + x + 0.5, me.py * STRIDE + y + 0.5);
+  if (renderer.cam.z < 18) renderer.cam.z = 22;
+  followCam = false;
+  renderDrawer();
+  dirty = true;
+}
+
+// ---------- inspector ----------
+function inspectorAction(what, arg) {
+  const i = selected?.i, was = tool;
   if (what === 'tap') tap(i);
   if (what === 'upgrade') { tool = 'upgrade'; act(selected, false); tool = was; }
   if (what === 'clear') { tool = 'bulldoze'; act(selected, false); tool = was; }
-  refreshInspector();
+  if (what === 'people') { openPanel('people'); return; }
+  if (what === 'follow') {
+    const r = getRoster(), hh = r.households.find((h) => h.i === i), p = hh?.members.find((m) => m.id === arg) || hh?.members[0];
+    if (p) followCommute(p, hh);
+    return;
+  }
+  if (what === 'person') { focusPerson = arg; }
+  if (what === 'move') { confirmMove(arg); return; }
+  if (what === 'goto') { const p = plots.get(arg); if (p) goToPlot(p.px, p.py); return; }
+  renderDrawer();
 }
-const household = (i) => SURNAMES[((i * 2654435761) >>> 0) % SURNAMES.length];
 const row = (label, value) => `<div class="kv"><span>${label}</span><b class="num">${value}</b></div>`;
-function meter(label, v) {
-  const lvl = v >= 0.7 ? 'ok' : v >= 0.4 ? 'mid' : 'bad';
-  return `<div class="kv"><span>${label}</span><span class="bar small" role="meter" aria-label="${label}" aria-valuenow="${Math.round(v * 100)}" aria-valuemin="0" aria-valuemax="100"><i data-l="${lvl}" style="width:${Math.max(4, v * 100)}%"></i></span></div>`;
+const meter = (label, v) => `<div class="kv"><span>${label}</span>${bar(label, v, 'small')}</div>`;
+
+function inspectorHtml() {
+  const close = `<button class="iconbtn close" type="button" data-close-drawer aria-label="Close details">${icon('i-close')}</button>`;
+  const back = fromPeople ? `<button class="linkbtn backlink" type="button" data-do="people">← All people</button>` : '';
+  return `${close}${back}${isMine(selected) ? ownTile(selected.i) : otherPlot(selected)}`;
+}
+
+function householdHtml(i) {
+  const hh = getRoster().households.find((h) => h.i === i);
+  if (!hh || !hh.members.length) return '<p class="soft">Nobody lives here yet. New people arrive when the city is happy.</p>';
+  return `<ul class="members">${hh.members.map((p) => `
+    <li class="${p.id === focusPerson ? 'focus' : ''}">
+      <button type="button" class="member" data-do="person" data-arg="${p.id}" aria-expanded="${p.id === focusPerson}">
+        ${avatar(p)}<span class="pmain"><b>${esc(p.first)} ${esc(p.last)}</b><small>${ROLES[p.role].label}, ${p.age}. ${esc(p.jobName)}</small></span>${bar(`${p.first}'s mood`, p.mood, 'tiny')}
+      </button>
+      ${p.id === focusPerson ? `<div class="pdetail"><em>“${esc(p.thought)}”</em>
+        <button class="btn" type="button" data-do="follow" data-arg="${p.id}">${icon('i-car')}Follow their commute</button></div>` : ''}
+    </li>`).join('')}</ul>`;
 }
 
 function ownTile(i) {
@@ -846,8 +1066,10 @@ function ownTile(i) {
     <div class="actions"><button class="btn" data-do="clear">${icon('i-clear')}Clear for $${RUBBLE_CLEAR_COST}</button></div>`;
   if (t === T.ROAD && !q) {
     const load = traffic?.load[i] ?? 0, cap = traffic?.cap[i] || 45;
+    const edge = x === 0 || y === 0 || x === PLOT - 1 || y === PLOT - 1;
     return `<h2>Road</h2>${where}${meter('Traffic', Math.min(1, load / cap))}${row('Trips a day', `${Math.round(load)} of ${cap}`)}
       ${load > cap ? '<p class="warn">Jammed. Add another route, or move jobs and shops closer to homes.</p>' : ''}
+      ${edge ? '<p class="soft small">On the plot edge. If a neighbour builds a road at the same spot, the cities link up.</p>' : ''}
       <div class="actions"><button class="btn" data-do="clear">${icon('i-clear')}Remove</button></div>`;
   }
   if (q && !q.up) {
@@ -863,20 +1085,21 @@ function ownTile(i) {
   let body = '';
   if (t === T.HOUSE) body += row('Homes', Math.round(sim.capacity(state, i, 'homes')));
   if (t === T.HOUSE || t === T.HALL) {
-    const residents = home ? Math.round(home.r) : 0;
-    body += `<p class="family">${t === T.HALL ? 'Living above the hall' : `The ${household(i + me.px * 31 + me.py * 17)} household`}: ${residents} ${residents === 1 ? 'person' : 'people'}</p>`;
     if (home && (home.workPath || t === T.HALL)) body += meter('Getting to work', home.workSucc) + meter('Getting to shops', home.shopSucc) + row('Park nearby', home.park ? 'Yes' : 'No');
     else body += '<p class="warn">Not connected. A house needs a road on one side.</p>';
+    body += `<h3 class="sub">${t === T.HALL ? 'Living above the hall' : `The ${esc(getRoster().households.find((h) => h.i === i)?.surname || '')} household`}</h3>${householdHtml(i)}`;
   }
   if (t === T.WORK || t === T.SHOP || t === T.SCHOOL) {
     body += row('Jobs', Math.round(sim.capacity(state, i, 'jobs')));
     if (t === T.SHOP) body += row('Serves', `${Math.round(sim.capacity(state, i, 'serves'))} people`);
     if (t === T.SCHOOL) body += row('Seats', Math.round(sim.capacity(state, i, 'seats')));
+    const staff = getRoster().people.filter((p) => p.job === i);
+    if (staff.length) body += `<h3 class="sub">${t === T.SCHOOL ? 'Teachers and students' : 'Who works here'}</h3><div class="faces">${staff.slice(0, 18).map((p) => `<button type="button" class="face" data-person="${p.id}" title="${esc(p.first)} ${esc(p.last)}, ${ROLES[p.role].label}">${avatar(p)}</button>`).join('')}${staff.length > 18 ? `<span class="soft small">+${staff.length - 18}</span>` : ''}</div>`;
     const linked = sim.neighbours(i).some((n) => state.grid[n] === T.ROAD || state.grid[n] === T.HALL);
     if (!linked) body += '<p class="warn">Not connected. It needs a road on one side.</p>';
   }
   if (t === T.PARK) body += '<p>Homes within 3 tiles are happier.</p>';
-  if (t === T.HALL) body += '<p>Homes, jobs and a small shop in one. It never decays.</p>';
+  if (t === T.HALL) body = '<p>Homes, jobs and a small shop in one. It never decays.</p>' + body;
   const condTxt = cond <= 0 ? '<p class="warn">Abandoned. Clear it and build again.</p>'
     : cond < 40 ? '<p class="warn">Decaying: works at half capacity until upkeep is paid.</p>' : '';
   let actions = '';
@@ -897,13 +1120,18 @@ function ownTile(i) {
 }
 
 function otherPlot(h) {
-  const p = plots.get(byXY.get(`${h.px},${h.py}`));
+  const p = plotAt(h.px, h.py);
   if (!p) return '<h2>Unclaimed land</h2><p>New players get plots out here on the frontier.</p>';
   if (p.status === 'ruins') {
-    return `<div class="plaque"><h2>Ruins of ${esc(p.name)}</h2><p>Built by ${esc(p.ownerName)}. It reached ${p.peakPop} people and lasted ${p.day} days.</p></div>`;
+    return `<div class="plaque"><h2>Ruins of ${esc(p.name)}</h2><p>Built by ${esc(p.ownerName)}. It reached ${p.peakPop} people and lasted ${p.day} days.</p></div>
+      <p class="soft small">You can start a new city here. Your current city would become ruins, and you'd bring half your money.</p>
+      <div class="actions"><button class="btn primary" data-do="move" data-arg="${p.id}">${icon('i-flag')}Move here and rebuild</button></div>`;
   }
+  const n = neighbourInfo.find((x) => x.px === p.px && x.py === p.py);
   return `<h2>${esc(p.name)}</h2><p class="soft">Mayor ${esc(p.ownerName)}${p.cityNo > 1 ? `, city number ${p.cityNo} on this plot` : ''}</p>
-    ${row('People', p.pop)}${row('Peak', p.peakPop)}${row('Days running', p.day)}${meter('Mood', p.happiness || 0)}`;
+    ${row('People', p.pop)}${row('Peak', p.peakPop)}${row('Days running', p.day)}${meter('Mood', p.happiness || 0)}
+    ${n ? row('Road links with you', n.links || 'None yet') : ''}
+    ${n && !n.links ? '<p class="soft small">Build a road on your shared edge where theirs meets it to link your cities.</p>' : ''}`;
 }
 
 function describeTile(i) {
@@ -918,6 +1146,71 @@ function describeTile(i) {
   return `Tile ${x + 1}, ${y + 1}: ${d}${verb}.`;
 }
 
+// ---------- worlds ----------
+function worldCtx() {
+  const all = [...plots.values()];
+  return {
+    world, worlds: worlds.length ? worlds : [world], neighbours: neighbourInfo, state, plotCount: all.length,
+    isOwnerOfWorld: world.owner === user.uid,
+    ruins: all.filter((p) => p.status === 'ruins' && !p.mine).sort((a, b) => b.peakPop - a.peakPop).slice(0, 6),
+  };
+}
+async function loadWorlds() {
+  try { worlds = await fb.myWorlds(user); if (drawer === 'world') renderDrawer(); } catch (e) { console.error(e); }
+}
+async function switchWorld(id) {
+  const w = worlds.find((x) => x.id === id);
+  if (!w) return;
+  await save();
+  stopFollow();
+  setWorld(w);
+  enter(user);
+}
+function confirmMove(targetId) {
+  const p = plots.get(targetId);
+  if (!p || p.status !== 'ruins') return;
+  const keep = Math.floor(Math.max(0, state.money) * MOVE_KEEP);
+  openModal(`${closeX}<h2 id="modal-title">Move to the ruins of ${esc(p.name)}?</h2>
+    <p>${esc(state.name)} will be abandoned and fall into ruins, with its record kept on the map. You start fresh on the new plot with ${money(REBUILD_MONEY + keep)}: the usual $${REBUILD_MONEY} plus half your money. The rubble there stays.</p>
+    <label class="field"><span>New city name</span><input id="move-name" maxlength="28" value="New ${esc(p.name)}"></label>
+    <p id="move-msg" class="formmsg" role="alert"></p>
+    <div class="mfoot"><button class="btn" data-close>Stay here</button><button class="btn danger" id="do-move">Abandon ${esc(state.name)} and move</button></div>`);
+  $('do-move').onclick = () => busy($('do-move'), async () => {
+    const name = $('move-name').value.trim() || `New ${p.name}`;
+    const fresh = sim.migrate(JSON.parse(sim.serialize(p.st)));
+    sim.rebuild(fresh, name, REBUILD_MONEY + keep);
+    fresh.lastTick = Date.now();
+    const doc = await fb.takeOverRuins(user, mayor, p.id, fresh, world.id);
+    const oldId = plotId, record = sim.collapse(state, 'moved');
+    await fb.savePlot(oldId, state).catch((e) => console.error(e));
+    fb.writeLegacy(user, oldId, mayor, record, world.id).catch((e) => console.error(e));
+    closeModal();
+    stopLoops();
+    startGame(doc);
+    notify(`Welcome to ${name}.`, 'act');
+  }, $('move-msg'));
+}
+
+// ---------- tutorial ----------
+const tut = createTutorial({
+  state: () => state, tool: () => tool, panel: () => drawer, overlay: () => overlay,
+  selected: () => selected, selectedMine: () => isMine(selected), taps: () => taps,
+  camKey: () => `${renderer.cam.x.toFixed(1)},${renderer.cam.y.toFixed(1)},${renderer.cam.z.toFixed(1)}`,
+  hallTile: () => ({ px: me.px, py: me.py, tx: PLOT >> 1, ty: PLOT >> 1 }),
+  setPulseTile: (t) => { pulseTile = t; dirty = true; },
+  play, announce,
+  reward: () => {
+    if (state.flags.tutorial) { notify('Tour finished. You can replay it any time from Help.', 'act'); return; }
+    state.flags.tutorial = true;
+    state.money += TUTORIAL_REWARD;
+    const hall = sim.xy(sim.HALL_INDEX);
+    addPop(hall.x, hall.y, 2, `+${money(TUTORIAL_REWARD)}`, '#ffd24a');
+    play('goal');
+    notify(`Tour complete. ${money(TUTORIAL_REWARD)} added to your city.`, 'good');
+    afterChange();
+  },
+});
+
 // ---------- modals ----------
 const modal = $('modal');
 function openModal(html, cls = '') {
@@ -929,31 +1222,48 @@ function openModal(html, cls = '') {
 }
 function closeModal() { if (modal.open) modal.close(); }
 modal.addEventListener('click', (e) => { if (e.target === modal) modal.close(); });
-modal.addEventListener('close', () => { if (state) canvas.focus({ preventScroll: true }); });
+modal.addEventListener('close', () => { if (state && !$('game').classList.contains('hidden')) canvas.focus({ preventScroll: true }); });
 const closeX = `<button class="iconbtn mclose" type="button" data-close aria-label="Close">${icon('i-close')}</button>`;
 
-function showHelp() {
+function showWelcome() {
   try { localStorage.setItem('commons-seen-help', '1'); } catch { /* private mode */ }
+  openModal(`<h2 id="modal-title">Welcome to ${esc(state.name)}</h2>
+    <p>You're the mayor. Build roads, homes and jobs, keep people happy, and don't run out of money. Your city keeps going when you close the game.</p>
+    <div class="welcome-choices">
+      <button class="choice" type="button" id="w-tour">${icon('i-book')}<b>Take the tour</b><small>About 3 minutes. You build as you learn, and earn $${TUTORIAL_REWARD}.</small></button>
+      <button class="choice" type="button" id="w-skip">${icon('i-look')}<b>I'll explore</b><small>You can start the tour any time from Help.</small></button>
+    </div>`);
+  $('w-tour').onclick = () => { closeModal(); tut.start(0); };
+  $('w-skip').onclick = () => { closeModal(); openPanel('goals'); };
+  $('w-tour').focus();
+}
+
+function showHelp() {
   openModal(`${closeX}<h2 id="modal-title">How Commons works</h2>
+    <button class="choice wide-choice" type="button" id="h-tour">${icon('i-book')}<b>${tut.active() ? 'Restart the tour' : 'Take the interactive tour'}</b><small>Learn by building, step by step.</small></button>
     <div class="help">
-      <section><h3>${icon('i-map')}Your plot</h3><p>You own a plot on a shared map. The plots around you belong to real players. Your city keeps running when you leave, for up to ${MAX_OFFLINE_DAYS} days.</p></section>
-      <section><h3>${icon('i-hammer')}Build</h3><p>Lay roads out from the town hall. Homes, workplaces, shops and schools need a road on one side. Building takes time: more builders finish faster, and you can tap a building site to lend a hand.</p></section>
-      <section><h3>${icon('i-mood')}Keep people happy</h3><p>The mood ring shows how people feel. The needs under it tell you what's missing. People who can't get to work or the shops get unhappy, pay less tax and eventually leave.</p></section>
-      <section><h3>${icon('i-lights')}Traffic</h3><p>Every home sends people to the nearest job and shop. One road carries about 45 trips a day before it jams. Turn on traffic to see where, then give busy areas a second route.</p></section>
-      <section><h3>${icon('i-coin')}Money</h3><p>Tax comes in every day and upkeep goes out. Upkeep doesn't shrink when people leave, so a struggling city can spiral. Unpaid upkeep makes buildings decay, and a city with no people and no money falls into ruin.</p></section>
-      <section><h3>${icon('i-up')}Grow</h3><p>Schools turn newcomers into builders, teachers and professionals. Upgrade buildings for more room and jobs. Goals pay out cash as you go.</p></section>
+      <section><h3>${icon('i-map')}Your plot</h3><p>A 24 by 24 plot on a shared map. Your city keeps running for up to ${MAX_OFFLINE_DAYS} days while you're away.</p></section>
+      <section><h3>${icon('i-hammer')}Build</h3><p>Roads start at the hall. Everything needs a road beside it. Drag to place several. Click a building site to help.</p></section>
+      <section><h3>${icon('i-mood')}Mood and needs</h3><p>The ring is mood; the bars are needs. Unhappy people pay less tax and eventually leave.</p></section>
+      <section><h3>${icon('i-lights')}Traffic</h3><p>A road carries about 45 trips a day. Turn on traffic to find jams, then add another route.</p></section>
+      <section><h3>${icon('i-coin')}Money</h3><p>Tax in, upkeep out, every day. Upkeep doesn't shrink when people leave. Unpaid upkeep decays buildings.</p></section>
+      <section><h3>${icon('i-people')}People</h3><p>Every resident has a name, home, job and opinion. Open People to find who's unhappy and why.</p></section>
+      <section><h3>${icon('i-link')}Neighbours</h3><p>Roads that meet across a plot edge link two cities for trade income and a mood boost.</p></section>
+      <section><h3>${icon('i-flag')}Ruins</h3><p>Cities with no people and no money fall. You can rebuild on your ruins, or move to someone else's.</p></section>
     </div>
     <h3 class="keys-h">Keys</h3>
-    <p class="keys"><kbd>1</kbd>–<kbd>9</kbd> tools, <kbd>Ctrl</kbd> <kbd>Z</kbd> undo, <kbd>T</kbd> traffic, <kbd>V</kbd> 3D or 2D, <kbd>H</kbd> my plot, <kbd>0</kbd> whole map, <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> pan, <kbd>+</kbd> <kbd>−</kbd> zoom, <kbd>O</kbd> goals, <kbd>G</kbd> grid, <kbd>M</kbd> sound, <kbd>Esc</kbd> cancel. Click the map, then use the arrow keys and <kbd>Enter</kbd> to build without a mouse.</p>
-    <div class="mfoot"><button class="btn primary" data-close autofocus>Start building</button></div>`, 'wide');
+    <p class="keys"><kbd>1</kbd>–<kbd>9</kbd> tools, <kbd>Ctrl</kbd> <kbd>Z</kbd> undo, <kbd>T</kbd> traffic, <kbd>V</kbd> 3D or 2D, <kbd>H</kbd> home, <kbd>0</kbd> whole map, <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> pan, <kbd>+</kbd> <kbd>−</kbd> zoom, <kbd>O</kbd> goals, <kbd>P</kbd> people, <kbd>C</kbd> stats, <kbd>N</kbd> news, <kbd>J</kbd> world, <kbd>G</kbd> grid, <kbd>M</kbd> sound, <kbd>Esc</kbd> cancel. Click the map, then use the arrow keys and <kbd>Enter</kbd> to play without a mouse.</p>`, 'wide');
+  $('h-tour').onclick = () => { closeModal(); tut.start(0); };
 }
 
 function showAway(r) {
   const pop = sim.totalPop(state);
+  const news = state.log.slice(r.log).slice(-5);
   openModal(`<h2 id="modal-title">${r.days} day${r.days === 1 ? '' : 's'} passed while you were away</h2>
     ${r.capped ? `<p>Time only runs for ${MAX_OFFLINE_DAYS} days without you, so your city waited for the rest.</p>` : ''}
     <div class="compare"><div><small>Money</small><b class="num">${money(r.money)} → ${money(state.money)}</b></div>
     <div><small>People</small><b class="num">${r.pop} → ${pop}</b></div></div>
+    ${news.length ? `<h3 class="sub">What happened</h3><ul class="news compact">${news.map((e) => `<li class="n-${e.k}"><span class="ntext">${esc(e.t)}<small>Day ${e.d}</small></span></li>`).join('')}</ul>` : ''}
     <div class="mfoot"><button class="btn primary" data-close autofocus>Back to the city</button></div>`);
 }
 
@@ -961,14 +1271,14 @@ function showRuins(record) {
   const r = record || { name: state.name, peakPop: state.peakPop, daysSurvived: state.day };
   openModal(`<div class="plaque big"><h2 id="modal-title">${esc(r.name)} has fallen</h2>
     <p>It reached ${r.peakPop} people and lasted ${r.daysSurvived} days. Its ruins stay on the map with this record.</p></div>
-    <p>You can start again on the same land. The rubble stays, and each tile costs $${RUBBLE_CLEAR_COST} to clear.</p>
+    <p>Start again on the same land (the rubble stays, and each tile costs $${RUBBLE_CLEAR_COST} to clear), or move to other ruins from the World panel.</p>
     <label class="field"><span>New city name</span><input id="rebuild-name" maxlength="28" value="New ${esc(r.name)}"></label>
-    <div class="mfoot"><button class="btn" data-close>Look at the ruins</button><button class="btn primary" id="do-rebuild">Rebuild on the ruins</button></div>`);
+    <div class="mfoot"><button class="btn" id="ruins-world">See other ruins</button><button class="btn primary" id="do-rebuild">Rebuild here</button></div>`);
+  $('ruins-world').onclick = () => { closeModal(); openPanel('world'); };
   $('do-rebuild').onclick = () => {
     sim.rebuild(state, $('rebuild-name').value.trim() || state.name);
     state.lastTick = Date.now();
     afterChange();
-    renderGoals();
     save();
     closeModal();
     play('level');
@@ -988,12 +1298,12 @@ function showRename() {
 async function showBoard() {
   openModal(`${closeX}<h2 id="modal-title">Leaderboards</h2><p class="soft">Loading…</p>`, 'wide');
   try {
-    const b = await fb.loadLeaderboards();
+    const b = await fb.loadLeaderboards(world.id, [...plots.values()]);
     const list = (rows, val) => rows.length
-      ? `<ol>${rows.map((r) => `<li class="${r.plotId === plotId || (r.name === state.name && r.ownerName === mayor) ? 'me' : ''}"><span><b>${esc(r.name)}</b><small>${esc(r.ownerName)}</small></span><em class="num">${val(r)}</em></li>`).join('')}</ol>`
+      ? `<ol>${rows.map((r) => `<li class="${r.mine || r.plotId === plotId ? 'me' : ''}"><span><b>${esc(r.name)}</b><small>${esc(r.ownerName)}</small></span><em class="num">${val(r)}</em></li>`).join('')}</ol>`
       : '<p class="soft">No cities yet.</p>';
     if (!modal.open) return;
-    openModal(`${closeX}<h2 id="modal-title">Leaderboards</h2><div class="boards">
+    openModal(`${closeX}<h2 id="modal-title">Leaderboards</h2><p class="soft small">${esc(world.name)}</p><div class="boards">
       <section><h3>${icon('i-people')}Biggest ever</h3>${list(b.peak, (r) => `${r.peakPop}`)}</section>
       <section><h3>${icon('i-clock')}Longest running</h3>${list(b.running, (r) => `${r.day} days`)}</section>
       <section><h3>${icon('i-flag')}Fallen cities</h3>${list(b.fallen, (r) => `${r.daysSurvived} days`)}</section>
@@ -1013,11 +1323,12 @@ function showSettings() {
   const panes = {
     display: `<div class="srow"><span>Theme</span>${seg('theme', [['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']])}</div>
       <div class="srow"><span>View</span>${seg('view', [['3d', '3D'], ['flat', '2D']])}</div>
-      ${tgl('dayNight', 'Day and night', 'The map dims in the evening and windows light up')}
+      <div class="srow"><span>Traffic</span>${seg('density', [[0.5, 'Quiet'], [1, 'Normal'], [1.6, 'Busy']])}</div>
+      ${tgl('cars', 'Moving cars', 'Turn off to save battery on slower devices')}
+      ${tgl('dayNight', 'Day and night', 'The map dims in the evening; windows and headlights come on')}
       ${tgl('grid', 'Tile grid', 'Shortcut: G')}
-      ${tgl('cars', 'Moving cars')}
       ${tgl('popups', 'Floating numbers', 'Money and progress rising from buildings')}
-      ${tgl('reducedMotion', 'Reduce motion', 'Stops moving cars and rising numbers')}`,
+      ${tgl('reducedMotion', 'Reduce motion', 'Numbers stay still and panels stop animating')}`,
     colours: `<p class="soft">Each building type has its own colour. Pick the set that's easiest for you to tell apart. Buildings also have different shapes, so colour is never the only clue.</p>
       <div class="palettes" role="radiogroup" aria-label="Colour mode">${Object.entries(PALETTES).map(([k, p]) => `
         <button type="button" role="radio" aria-checked="${prefs.colours === k}" data-pref="colours" data-val='"${k}"' class="palcard">
@@ -1060,7 +1371,7 @@ function showAccount() {
   const google = user.providerData.some((p) => p.providerId === 'google.com');
   const head = `${closeX}<h2 id="modal-title">Account</h2>
     <div class="acct"><span class="avatar" aria-hidden="true">${esc((mayor[0] || 'M').toUpperCase())}</span>
-    <div><b>Mayor ${esc(mayor)}</b><small>${guest ? 'Guest on this device' : esc(user.email || 'Signed in with Google')}</small></div></div>
+    <div><b>Mayor ${esc(mayor)}</b><small>${guest ? 'Guest on this device' : esc(user.email || 'Signed in with Google')}. Playing in ${esc(world.name)}.</small></div></div>
     <label class="field"><span>Mayor name</span><span class="inline"><input id="acct-mayor" maxlength="20" value="${esc(mayor)}"><button class="btn" id="acct-mayor-save" type="button">Save</button></span></label>`;
   const body = guest ? `
     <div class="callout"><h3>Keep your city safe</h3><p>Guest cities live only in this browser. Make it an account to play on any device. Your city comes with you.</p>
@@ -1117,7 +1428,7 @@ function notify(msg, kind = 'info') {
   el.textContent = msg;
   box.appendChild(el);
   while (box.children.length > 3) box.firstChild.remove();
-  const life = kind === 'warn' ? 5200 : 3200;
+  const life = kind === 'warn' ? 5200 : 3400;
   setTimeout(() => el.classList.add('out'), life);
   setTimeout(() => el.remove(), life + 400);
   if (kind === 'warn') play('warn');
