@@ -97,6 +97,19 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Families moving from one linked city to another. Only the sending mayor can create one;
+    // only the receiving mayor can read it and remove it once the family has moved in.
+    match /worlds/{worldId}/moves/{moveId} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['from', 'fromName', 'fromOwner', 'to', 'toOwner', 'people', 'createdAt'])
+        && request.resource.data.fromOwner == me()
+        && get(docPath('plots', request.resource.data.from)).data.owner == me()
+        && request.resource.data.people is list && request.resource.data.people.size() <= 8
+        && request.resource.data.createdAt == request.time;
+      allow read, delete: if signedIn() && resource.data.toOwner == me();
+      allow update: if false;
+    }
+
     // Each player's lifetime stats and achievements. Private to them.
     match /profiles/{uid} {
       allow read, delete: if signedIn() && me() == uid;

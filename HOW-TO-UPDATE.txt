@@ -12,7 +12,7 @@ Commons update: how to install
 4. Commit and push to GitHub. The Action deploys the website.
 5. In a terminal in the Commons folder, run:
      npm run deploy:rules
-   This is required: chat, profiles, achievements and account deletion won't work until the new rules are live.
+   This is required: chat, profiles, achievements, account deletion and families moving between cities won't work until the new rules are live.
 6. Firebase console > Authentication > Sign-in method: make sure Email/Password, Anonymous and Google are all enabled.
 7. Open https://commons-ww.web.app and press Ctrl+F5 to skip the old cached version.
 

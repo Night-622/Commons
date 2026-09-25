@@ -29,6 +29,7 @@ let drawer = null, personId = null, peopleFilter = 'all', peopleQuery = '', stat
 let pops = [], undoStack = [], bridges = new Map(), neighbourInfo = [], pulseTile = null, taps = 0, followCam = false;
 let saveTimer = null, lastSave = Date.now(), loopTimer = null, worldTimer = null, lastHour = -1;
 let spaceHeld = false, dirty = true, lastFrame = performance.now(), warnedDay = -1;
+let worldUnsub = null, movesUnsub = null, lastSaved = '', offerCache = new Map(), live = false;
 let profile = null, profileDirty = false, chatUnsub = null, chatMessages = [], chatUnread = 0, chatDraft = '', lastChat = 0;
 const plots = new Map();
 const byXY = new Map();
@@ -203,6 +204,7 @@ if (firebaseConfig.apiKey === 'REPLACE_ME') {
 }
 async function enter(u) {
   stopLoops();
+  worldUnsub?.(); movesUnsub?.(); worldUnsub = movesUnsub = null;
   tut.stop();
   show('boot');
   try {
@@ -219,7 +221,7 @@ async function enter(u) {
 }
 fb.onAuth((u) => {
   user = u;
-  if (!u) { stopLoops(); chatUnsub?.(); state = null; closeModal(); tut.stop(); show('auth'); return; }
+  if (!u) { stopLoops(); chatUnsub?.(); worldUnsub?.(); movesUnsub?.(); worldUnsub = movesUnsub = null; state = null; closeModal(); tut.stop(); show('auth'); return; }
   enter(u);
 });
 
@@ -242,7 +244,7 @@ async function startGame(doc) {
   updateHud();
   renderDrawer();
   startLoops();
-  refreshWorld();
+  startLive();
   startChat();
   loadProfile();
   if (innerWidth < 860) { $('pulse').classList.add('closed'); $('pulse-toggle').setAttribute('aria-expanded', 'false'); }
@@ -259,13 +261,13 @@ function plotFrom(id, px, py, st, meta) {
     id, px, py, st, name: st.name, ownerName: meta.ownerName, status: st.status,
     pop: st.people.length, peakPop: st.peakPop, day: st.day, happiness: st.happiness, cityNo: st.cityNo,
     grid: st.grid, cond: st.cond, lv: st.lv, land: st.land, uc: sim.underConstruction(st),
-    queueMap: new Map(st.queue.map((q) => [q.i, q])), version: meta.version ?? 0, mine: !!meta.mine,
+    queueMap: new Map(st.queue.map((q) => [q.i, q])), version: meta.version ?? 0, mine: !!meta.mine, owner: meta.owner, out: meta.out || {},
   };
 }
 function toPlot(d) {
   let st;
   try { st = sim.migrate(JSON.parse(d.state)); } catch { return null; }
-  return plotFrom(d.id, d.px, d.py, st, { ownerName: d.ownerName, version: d.updatedAt?.toMillis?.() ?? 0, mine: d.owner === user.uid });
+  return plotFrom(d.id, d.px, d.py, st, { ownerName: d.ownerName, version: d.updatedAt?.toMillis?.() ?? Date.now(), mine: d.owner === user.uid, owner: d.owner, out: d.out });
 }
 function addPlot(p) {
   if (!p) return;
@@ -276,18 +278,33 @@ function addPlot(p) {
 }
 const plotAt = (px, py) => plots.get(byXY.get(`${px},${py}`));
 function syncMine() {
-  Object.assign(me, plotFrom(me.id, me.px, me.py, state, { ownerName: mayor, mine: true, version: (me.version || 0) + 1 }));
+  Object.assign(me, plotFrom(me.id, me.px, me.py, state, { ownerName: mayor, mine: true, version: (me.version || 0) + 1, owner: user.uid, out: plan?.out }));
   dirty = true;
 }
-async function refreshWorld() {
-  try {
-    for (const d of await fb.loadWorld(world.id)) if (d.id !== plotId) addPlot(toPlot(d));
+// Live: every save by any player in this world arrives here within a second or two.
+function startLive() {
+  worldUnsub?.(); movesUnsub?.();
+  live = false;
+  worldUnsub = fb.listenWorld(world.id, (docs) => {
+    live = true;
+    for (const d of docs) if (d.id !== plotId) addPlot(toPlot(d));
     computeLinks();
+    refreshDerived();
     drawMinimap();
+    updateHud();
     if (drawer === 'world') renderDrawer();
     dirty = true;
-  } catch (e) { console.error('World load failed', e); }
+  });
+  movesUnsub = fb.listenMoves(world.id, user.uid, async (moves) => {
+    for (const m of moves) {
+      if (m.to !== plotId || !state) continue;
+      const n = sim.welcome(state, m.people || [], m.fromName || 'a nearby city');
+      if (n) { notify(`A family of ${n} moved here from ${m.fromName}.`, 'good'); play('coin'); afterChange(); }
+      fb.finishMove(world.id, m.id).catch((e) => console.error(e));
+    }
+  });
 }
+function refreshWorld() { if (!worldUnsub) startLive(); }
 
 // Roads that meet across the gap between two plots form a link (and a bridge).
 const roadDone = (p, i) => p.grid[i] === T.ROAD && !p.uc.has(i);
@@ -325,6 +342,32 @@ function computeLinks() {
       if ((p.mine || q.mine) && !roads) linksWith.set(p.mine ? q.id : p.id, list.length);
     }
   }
+  // Which neighbours are linked, how, and where your side of the crossing is. Their spare capacity
+  // is open to your residents; what their residents use here comes from their saved 'out'.
+  const abroad = [], visitorsFrom = [], incoming = { fun: 0, care: 0, shop: 0, school: 0, tourists: 0 };
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const q = plotAt(me.px + dx, me.py + dy);
+    if (!q || q.status !== 'alive') continue;
+    let edge = -1, via = null;
+    for (let k = 0; k < PLOT && via !== 'rail'; k++) {
+      const mine = dx === 1 ? k * PLOT + PLOT - 1 : dx === -1 ? k * PLOT : dy === 1 ? (PLOT - 1) * PLOT + k : k;
+      const theirs = dx === 1 ? k * PLOT : dx === -1 ? k * PLOT + PLOT - 1 : dy === 1 ? k : (PLOT - 1) * PLOT + k;
+      if (railDone(me, mine) && railDone(q, theirs)) { edge = mine; via = 'rail'; }
+      else if (!via && roadDone(me, mine) && roadDone(q, theirs)) { edge = mine; via = 'road'; }
+    }
+    if (!via) continue;
+    const key = `${q.id}|${q.version}`;
+    if (!offerCache.has(key)) offerCache.set(key, sim.offer(q.st));
+    abroad.push({ id: q.id, name: q.name, via, edge, ...offerCache.get(key) });
+    const theirUse = q.out?.[plotId];
+    if (theirUse) {
+      for (const k in incoming) incoming[k] += theirUse[k] || 0;
+      visitorsFrom.push({ name: q.name, edge, via, ...theirUse });
+    }
+  }
+  state._abroad = abroad;
+  state._incoming = incoming;
+  state._visitorsFrom = visitorsFrom;
   const before = (state.links || 0) + (state.railLinks || 0);
   const railWas = state.railLinks || 0;
   state.railLinks = rail;
@@ -356,7 +399,7 @@ function advance() {
   for (let k = 0; k < n; k++) {
     const r = sim.tick(state);
     if (r.plan) { plan = r.plan; totalsNow = r.totals; }
-    if (r.day) { lastDay = r.day; newDay = true; }
+    if (r.day) { lastDay = r.day; newDay = true; sendEmigrants(r.day.emigrants); }
     if (r.collapsed) { onCollapse(r.collapsed); break; }
   }
   state.lastTick = due > cap || state.status !== 'alive' ? Date.now() : state.lastTick + n * TICK_MS;
@@ -364,6 +407,15 @@ function advance() {
   if (n >= HOURS_PER_DAY) { state._finished = []; return { ...before, capped: due > cap, days: state.day - before.day }; }
   if (lastDay) onNewDay(lastDay);
   return null;
+}
+
+function sendEmigrants(list) {
+  for (const e of list || []) {
+    const q = plots.get(e.to);
+    if (!q?.owner) continue;
+    fb.sendMove(world.id, { from: plotId, fromName: state.name, fromOwner: user.uid, to: e.to, toOwner: q.owner, people: e.people.slice(0, 8) })
+      .catch((err) => console.error('Move failed', err));
+  }
 }
 
 function onNewDay(st) {
@@ -430,7 +482,6 @@ function startLoops() {
     lastHour = state.hour;
     if (Date.now() - lastSave > SAVE_EVERY_MS) save();
   }, 500);
-  worldTimer = setInterval(refreshWorld, 3 * 60 * 1000);
 }
 function stopLoops() { clearInterval(loopTimer); clearInterval(worldTimer); }
 
@@ -442,12 +493,16 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('pagehide', () => state && save());
 
 // ---------- saving ----------
-function scheduleSave(ms = 2500) { clearTimeout(saveTimer); saveTimer = setTimeout(save, ms); }
+function scheduleSave(ms = 1500) { clearTimeout(saveTimer); saveTimer = setTimeout(save, ms); }
 async function save(extra) {
   if (!state || !plotId || !user) return;
   clearTimeout(saveTimer);
   lastSave = Date.now();
-  try { await fb.savePlot(plotId, state, extra); } catch (e) { console.error(e); notify('Couldn’t save just now. Your city is safe here and will retry.', 'warn'); }
+  const out = plan?.out || {};
+  const snap = sim.serialize(state) + JSON.stringify(out);
+  if (!extra && snap === lastSaved) return;
+  lastSaved = snap;
+  try { await fb.savePlot(plotId, state, { ...(extra || {}), out }); } catch (e) { console.error(e); notify('Couldn’t save just now. Your city is safe here and will retry.', 'warn'); }
   if (profile && profileDirty) { profileDirty = false; fb.saveProfile(user.uid, profile).catch((e) => console.error('Profile', e)); }
 }
 async function loadProfile() {
@@ -603,6 +658,7 @@ function click(h, sx, sy) {
     notify(who.vehicle === 'bus' ? `A bus. ${plan.drivers} driver${plan.drivers === 1 ? '' : 's'} carry ${n} of ${plan.busCap} possible riders today.` : `A train. ${n} people ride the trains today.`, 'act');
     return;
   }
+  if (who && who.visitor) { notify(`A visitor from ${who.visitor}, here for the evening.`, 'act'); return; }
   if (who && !who.vehicle && mode !== 'build' && !(mode === 'move' && moveFrom >= 0)) { showPerson(who.p, who.plot); return; }
   if (!h) { closeDrawer(); closeCatalog(); return; }
   if (!isMine(h)) {
@@ -711,7 +767,7 @@ function agentAt(sx, sy) {
       if (a.vehicle && id !== plotId) continue;
       const [x, y] = renderer.project(p.px * STRIDE + a.lx, p.py * STRIDE + a.ly, 0.1);
       const d = Math.hypot(x - sx, y - sy);
-      if (d < bd) { bd = d; best = { p: a.p, plot: id, vehicle: a.vehicle && a.mode }; }
+      if (d < bd) { bd = d; best = { p: a.p, plot: id, vehicle: a.vehicle && a.mode, visitor: a.visitor, abroad: a.trip?.city }; }
     }
   }
   return best;
@@ -933,7 +989,6 @@ function fitWorld() {
     ? Math.max(1.6, Math.min(8, Math.min(renderer.w, renderer.h) * 0.85 / (span * 1.3)))
     : Math.max(1.6, Math.min(8, Math.min(renderer.w / (2 * span), renderer.h / span) * 0.9));
   dirty = true;
-  refreshWorld();
 }
 function goTo(px, py, tx = PLOT / 2, ty = PLOT / 2, z = 12) {
   followCam = false;
@@ -1000,6 +1055,8 @@ function updateHud() {
   $('city-name').textContent = state.name;
   $('clock').textContent = state.status === 'ruins' ? `Fell on day ${state.day}` : `Day ${state.day}, ${hourLabel(state.hour)}`;
   $('dayfill').style.width = `${(clockNow() / 24) * 100}%`;
+  $('live').classList.toggle('on', live);
+  $('live').title = live ? 'Live: other players’ changes appear as they happen' : 'Connecting…';
   $('v-money').textContent = money(state.money);
   $('v-net').textContent = `${net >= 0 ? '+' : '−'}$${Math.abs(net)} a day`;
   $('v-net').classList.toggle('neg', net < 0);
@@ -1330,7 +1387,7 @@ function describeTile(i) {
 function worldCtx() {
   const all = [...plots.values()];
   return {
-    world, worlds: worlds.length ? worlds : [world], neighbours: neighbourInfo, state, plotCount: all.length,
+    world, worlds: worlds.length ? worlds : [world], neighbours: neighbourInfo, state, plotCount: all.length, plan, abroad: state._abroad || [], incoming: state._incoming || {},
     isOwnerOfWorld: world.owner === user.uid,
     ruins: all.filter((p) => p.status === 'ruins' && !p.mine).sort((a, b) => b.peakPop - a.peakPop).slice(0, 6),
   };

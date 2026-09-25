@@ -13,7 +13,7 @@ export const MOVE_FEE = 0.25;    // moving a building costs a quarter of its pri
 export const TICK_MS = 2500;     // 1 tick = 1 in-game hour, so 1 in-game day = 60 real seconds
 export const HOURS_PER_DAY = 24;
 export const MAX_OFFLINE_DAYS = 3;
-export const SAVE_EVERY_MS = 30000;
+export const SAVE_EVERY_MS = 12000;   // others see your city update this often (and straight after you build)
 
 export const START_MONEY = 3000;
 export const REBUILD_MONEY = 1500;

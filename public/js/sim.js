@@ -316,6 +316,15 @@ export function plan(s, rng = Math.random) {
 
   // Homes: anyone whose home is gone is homeless until rehoused.
   const homeOk = (h) => active(s, h, uc) && isHome(s.grid[h]);
+  const away = (p) => p.hol > 0;
+  const abroad = s._abroad || [], incoming = s._incoming || {};
+  const out = {};
+  const spare = Object.fromEntries(abroad.map((a) => [a.id, { fun: a.fun, care: a.care, shop: a.shop, school: a.school }]));
+  const useAbroad = (kind, n = 1) => {
+    for (const a of abroad) if (spare[a.id][kind] >= n) { spare[a.id][kind] -= n; (out[a.id] ||= { fun: 0, care: 0, shop: 0, school: 0, tourists: 0 })[kind] += n; return a; }
+    return null;
+  };
+  for (const p of s.people) { p.fa = null; p.as = null; }
   const byHome = new Map();
   for (const p of s.people) { if (!byHome.has(p.h)) byHome.set(p.h, []); byHome.get(p.h).push(p); }
 
@@ -346,6 +355,7 @@ export function plan(s, rng = Math.random) {
     if (!stage || !homeOk(p.h)) continue;
     const sc = nearest(p.h, all((d) => d.school?.stage === stage), 16, hasSeat);
     if (sc >= 0) { p.sc = sc; seatsUsed.set(sc, (seatsUsed.get(sc) || 0) + 1); if (stage === 'uni') p.j = -1; }
+    else if ((stage === 'primary' || stage === 'high') && p.a >= 8) { const a = useAbroad('school'); if (a) p.as = a.id; }
   }
   for (const p of s.people) {
     p.tu = -1;
@@ -434,36 +444,44 @@ export function plan(s, rng = Math.random) {
   // Shopping: each household needs a grocer (or the hall's little shop) with room.
   const served = new Map(), shopFor = new Map();
   const shops = all((d) => !!d.serves);
+  const shopTotal = shops.reduce((a, i) => a + capacity(s, i, 'serves'), 0);
+  const shopScale = shopTotal ? Math.max(0, 1 - (incoming.shop || 0) / shopTotal) : 1;
   for (const [h, members] of byHome) {
     if (!homeOk(h)) continue;
-    const sh = nearest(h, shops, 14, (i) => (served.get(i) || 0) + members.length <= capacity(s, i, 'serves') * (staffing(s, i) > 0 ? 1 : 0));
+    const sh = nearest(h, shops, 14, (i) => (served.get(i) || 0) + members.length <= capacity(s, i, 'serves') * (staffing(s, i) > 0 ? 1 : 0) * shopScale);
     if (sh >= 0) { served.set(sh, (served.get(sh) || 0) + members.length); shopFor.set(h, sh); }
+    else { const a = useAbroad('shop', members.length); if (a) shopFor.set(h, -2); }
   }
 
   // Care: sick people go to a clinic, serious cases and injuries to a hospital.
   const careUsed = new Map(), careFor = new Map();
-  const careHas = (i) => (careUsed.get(i) || 0) < Math.floor(capacity(s, i, 'care') * staffing(s, i));
+  const careTotal = all((d) => !!d.care).reduce((a, i) => a + capacity(s, i, 'care'), 0);
+  const careScale = careTotal ? Math.max(0, 1 - (incoming.care || 0) / careTotal) : 1;
+  const careHas = (i) => (careUsed.get(i) || 0) < Math.floor(capacity(s, i, 'care') * staffing(s, i) * careScale);
   for (const p of s.people.filter((x) => x.ill)) {
-    if (!homeOk(p.h)) continue;
+    if (!homeOk(p.h) || away(p)) continue;
     const kinds = p.ill === 1 ? ['clinic', 'hospital'] : ['hospital', 'clinic'];
     for (const kind of kinds) {
       const c = nearest(p.h, all((d) => d.care?.kind === kind), 20, careHas);
       if (c >= 0 && !(p.ill === 3 && kind === 'clinic')) { careFor.set(p.i, c); careUsed.set(c, (careUsed.get(c) || 0) + 1); break; }
     }
+    if (!careFor.has(p.i) && useAbroad('care')) careFor.set(p.i, -2);
   }
 
   // Evenings out: everyone who's well picks somewhere with room.
   const funUsed = new Map();
-  const funHas = (i) => (funUsed.get(i) || 0) < Math.floor(capacity(s, i, 'visits') * staffing(s, i));
+  const funTotal = all((d) => !!d.visits).reduce((a, i) => a + capacity(s, i, 'visits'), 0);
+  const funScale = funTotal ? Math.max(0, 1 - (incoming.fun || 0) / funTotal) : 1;
+  const funHas = (i) => (funUsed.get(i) || 0) < Math.floor(capacity(s, i, 'visits') * staffing(s, i) * funScale);
   const funFor = (p) => all((d) => {
     const w = d.visits?.who;
     return w === 'all' || (w === 'kids' && p.a < 13) || (w === 'adults' && p.a >= ADULT) || (w === 'active' && p.a >= 6 && p.a < 60);
   });
   for (const p of s.people) {
     p.fun = -1;
-    if (p.ill >= 2 || p.a < 3 || !homeOk(p.h) || rng() < 0.25) continue;
+    if (p.ill >= 2 || p.a < 3 || !homeOk(p.h) || away(p) || rng() < 0.25) continue;
     const options = funFor(p).filter(funHas).map((i) => [i, mapFor(p.h).d(i)]).filter(([, d]) => d >= 0 && d <= 12);
-    if (!options.length) continue;
+    if (!options.length) { const a = p.a >= 6 && useAbroad('fun'); if (a) p.fa = a.id; continue; }
     let r = rng() * options.reduce((a, [, d]) => a + 1 / (1 + d), 0);
     const [f] = options.find(([, d]) => (r -= 1 / (1 + d)) < 0) || options[0];
     p.fun = f;
@@ -516,15 +534,30 @@ export function plan(s, rng = Math.random) {
     trips.push(trip);
     return trip;
   };
+  // Trips out of town go to the border crossing with that neighbour and over the bridge.
+  const edgeMaps = new Map();
+  const edgeTrip = (p, a, kind, dep, ret) => {
+    if (!a?.edge && a?.edge !== 0) return;
+    const m = mapFor(p.h), car = carNet[a.edge];
+    const map = car ? m.c : m.w;
+    if (map.dist[a.edge] < 0) return;
+    const path = []; for (let v = a.edge; v !== -1; v = map.prev[v]) path.push(v);
+    trips.push({ p: p.i, to: a.edge, kind, dep, ret, path: path.reverse(), mode: a.via === 'rail' ? 'train' : car ? 'car' : 'bike', with: [], ok: 1, abroad: a.id, city: a.name });
+  };
+  const byId = Object.fromEntries(abroad.map((a) => [a.id, a]));
   for (const [h, members] of byHome) {
     if (!homeOk(h)) continue;
-    const parent = members.find((p) => p.a >= ADULT && p.ill < 2) || null;
+    const parent = members.find((p) => p.a >= ADULT && p.ill < 2 && !away(p)) || null;
     for (const p of members) {
-      if (p.j >= 0) {
+      if (away(p)) continue;
+      if (p.fa) edgeTrip(p, byId[p.fa], 'fun', time(17.5, 19, p.i + 4), time(21, 22.5, p.i + 5));
+      if (p.as) edgeTrip(p, byId[p.as], 'school', time(7, 7.8, p.i), time(15.2, 16, p.i + 1));
+      if (careFor.get(p.i) === -2) edgeTrip(p, abroad.find((a) => out[a.id]?.care), 'care', time(9, 11, p.i + 6), time(13, 15, p.i + 7));
+      if (p.j >= 0 && !away(p)) {
         const shift = !p.oj && ['Doctor', 'Nurse', 'Officer', 'Firefighter', 'Bus driver'].includes(B[s.grid[p.j]].jobs?.[p.jt]?.[0]);
         addTrip(p, p.j, 'work', shift ? time(5, 9, p.i) : time(6.8, 8.6, p.i), shift ? time(15, 19, p.i + 1) : time(16.6, 18.4, p.i + 1));
       }
-      if (p.sc >= 0) {
+      if (p.sc >= 0 && !away(p)) {
         const stage = B[s.grid[p.sc]].school.stage;
         const driven = p.a < 10 && parent && parent !== p;
         const t = addTrip(driven ? parent : p, p.sc, stage === 'uni' ? 'uni' : 'school', stage === 'uni' ? time(8, 9.5, p.i) : time(7.3, 8.1, p.i),
@@ -532,10 +565,29 @@ export function plan(s, rng = Math.random) {
         if (t && driven) { t.kind = 'drop'; t.kid = p.i; }
         if (p.tu >= 0) addTrip(p, p.tu, 'tutor', time(15.6, 16.2, p.i + 2), time(17.4, 18, p.i + 3));
       }
-      if (p.fun >= 0) addTrip(p, p.fun, 'fun', p.a < 13 ? time(15.8, 17, p.i + 4) : time(18, 19.6, p.i + 4), p.a < 13 ? time(18, 19, p.i + 5) : time(20.5, 22, p.i + 5));
-      if (careFor.has(p.i)) addTrip(p, careFor.get(p.i), 'care', time(9, 11, p.i + 6), time(12, 13.5, p.i + 7));
+      if (p.fun >= 0 && !away(p)) addTrip(p, p.fun, 'fun', p.a < 13 ? time(15.8, 17, p.i + 4) : time(18, 19.6, p.i + 4), p.a < 13 ? time(18, 19, p.i + 5) : time(20.5, 22, p.i + 5));
+      if (careFor.get(p.i) >= 0) addTrip(p, careFor.get(p.i), 'care', time(9, 11, p.i + 6), time(12, 13.5, p.i + 7));
     }
-    if (shopFor.has(h) && parent) addTrip(parent, shopFor.get(h), 'shop', time(10, 16, h), time(11.5, 17.5, h + 1));
+    if (shopFor.get(h) >= 0 && parent) addTrip(parent, shopFor.get(h), 'shop', time(10, 16, h), time(11.5, 17.5, h + 1));
+    else if (shopFor.get(h) === -2 && parent) edgeTrip(parent, abroad.find((a) => out[a.id]?.shop), 'shop', time(10, 15, h), time(12.5, 17.5, h + 1));
+  }
+  // Visitors from linked neighbours drive in over the bridge to your venues, clinics and shops.
+  for (const v of s._visitorsFrom || []) {
+    const dests = { fun: all((d) => !!d.visits), care: all((d) => !!d.care), shop: shops, school: all((d) => d.school && d.school.stage !== 'uni') };
+    let k = 0;
+    for (const kind of ['fun', 'care', 'shop', 'school']) {
+      for (let n = 0; n < Math.min(12, v[kind] || 0); n++, k++) {
+        const list = dests[kind];
+        if (!list.length) break;
+        const to = list[Math.floor(h32(k, s.day + 3) * list.length)];
+        const map = edgeMaps.get(v.edge) || bfs(carNet[v.edge] ? carNet : walkNet, [v.edge]);
+        edgeMaps.set(v.edge, map);
+        const path = route(map, carNet[v.edge] ? carNet : walkNet, s, to);
+        if (!path) continue;
+        const dep = kind === 'fun' ? time(17.5, 19.5, k + 900) : kind === 'school' ? time(7.2, 8, k + 900) : time(9.5, 15, k + 900);
+        trips.push({ p: -(k + 1), visitor: v.name, to, kind, dep, ret: dep + (kind === 'school' ? 7.5 : 2.5), path, mode: v.via === 'rail' ? 'train' : 'car', with: [], ok: 1 });
+      }
+    }
   }
 
   // A trip succeeds in proportion to how jammed its worst road is. Jammed drivers can be late.
@@ -564,11 +616,13 @@ export function plan(s, rng = Math.random) {
     commute: carTrips ? carOk / carTrips : 1,
     shops: pop ? [...byHome].reduce((a, [h, m]) => a + (shopFor.has(h) ? m.length : 0), 0) / pop : 1,
     homes: clamp((homes - pop) / Math.max(3, pop * 0.15)),
-    school: kids.length ? kids.filter((p) => p.sc >= 0).length / kids.length : 1,
+    school: kids.some((p) => p.a >= 5) ? kids.filter((p) => p.a >= 5 && (p.sc >= 0 || p.as)).length / kids.filter((p) => p.a >= 5).length : 1,
     health: sick.length ? clamp(1 - (sick.filter((p) => !careFor.has(p.i)).length / Math.max(1, pop)) * 8) : 1,
     safety: clamp(1 - (s.stats.crimes || 0) / Math.max(1, pop * 0.03) * 0.5 - (s.cases > 3 ? 0.2 : 0)),
-    leisure: pop ? s.people.filter((p) => p.fun >= 0).length / pop : 1,
+    leisure: pop ? s.people.filter((p) => p.fun >= 0 || p.fa || away(p)).length / pop : 1,
   };
+  for (const p of s.people) if (away(p) && p.hto && byId[p.hto]) (out[p.hto] ||= { fun: 0, care: 0, shop: 0, school: 0, tourists: 0 }).tourists++;
+
   // Routes the vehicles drive: trains between stations and out to the plot edge; one bus loop through every stop.
   const railEnds = [...stations];
   for (let i = 0; i < N; i++) {
@@ -595,7 +649,7 @@ export function plan(s, rng = Math.random) {
   const p = {
     load, cap, trips, needs, careFor, shopFor, pollution, parks, police, byHome, served,
     employmentRate: needs.jobs, failedTrips: Math.round(carTrips - carOk), day: s.day,
-    riders, stopUse, stations, trainLines, busLoop, drivers, busCap, outCap, outUsed,
+    riders, stopUse, stations, trainLines, busLoop, drivers, busCap, outCap, outUsed, out,
   };
   s._plan = p;
   return p;
@@ -824,6 +878,7 @@ function daily(s, plan, rng) {
         if (p.us >= 3) { p.e = 3; p.sc = -1; p.us = 0; p.jy = 3; st.graduates++; note(s, 'good', `${name(p)} graduated from university.`); }
       } else if (stage !== 'daycare') p.sp += boost;
     }
+    if (p.as) p.sp += 1;
     if (p.a === ADULT) {
       p.e = Math.max(p.e, p.sp >= 10 ? 2 : p.sp >= 5 ? 1 : 0);
       if (p.sp < 5) note(s, 'warn', `${name(p)} turned 18 without finishing school.`);
@@ -902,6 +957,8 @@ function daily(s, plan, rng) {
     } else if (p.j < 0 && canWork(p)) by.benefits += 0.5 * moodK;
   }
   by.trade = TRADE_PER_LINK * Math.min(MAX_LINKS * 2, (s.links || 0) + 2 * (s.railLinks || 0)) * Math.min(1, pop / 30);
+  const inc = s._incoming || {};
+  by.visitors = (inc.fun || 0) * 2 + (inc.care || 0) * 4 + (inc.shop || 0) * 1 + (inc.school || 0) * 2 + (inc.tourists || 0) * 8;
   for (const k in by) by[k] = Math.round(by[k]);
   st.byClass = by;
   st.upkeepBy = Object.fromEntries(Object.entries(tot.upkeepBy).map(([k, v]) => [k, Math.round(v)]));
@@ -928,7 +985,7 @@ function daily(s, plan, rng) {
 
   // Mood, person by person. Everything they experienced today counts.
   const fireCover = s.grid.some((t, i) => t === T.FIRE && active(s, i, uc) && staffing(s, i) > 0);
-  const kidsNoSchool = new Set(s.people.filter((p) => p.a >= 5 && p.a < ADULT && p.sc < 0).map((p) => p.h));
+  const kidsNoSchool = new Set(s.people.filter((p) => p.a >= 5 && p.a < ADULT && p.sc < 0 && !p.as).map((p) => p.h));
   const courtBacklog = s.cases > 3 ? 0.04 : 0;
   const tripsBy = new Map();
   for (const t of plan.trips) { if (!tripsBy.has(t.p)) tripsBy.set(t.p, []); tripsBy.get(t.p).push(t); }
@@ -944,7 +1001,7 @@ function daily(s, plan, rng) {
     if (mine.some((x) => x.mode === 'train' || x.mode === 'bus')) m += 0.02;
     if (lateTrips.has(p.i)) m -= 0.05;
     m += plan.shopFor.has(p.h) ? 0.06 : -0.05;
-    m += p.fun >= 0 ? 0.1 : 0;
+    m += p.fun >= 0 || p.fa ? 0.1 : p.hol ? 0.15 : 0;
     m += plan.parks.has(p.h) ? 0.04 : 0;
     m -= plan.pollution.has(p.h) ? 0.08 : 0;
     m -= p.ill === 3 ? 0.25 : p.ill ? 0.12 : 0;
@@ -956,6 +1013,34 @@ function daily(s, plan, rng) {
     m += LINK_MOOD * Math.min(MAX_LINKS, (s.links || 0) + (s.railLinks || 0));
     p.m += (clamp(m) - p.m) * 0.4;
     for (const k of ['vt', 'gr', 'jy']) if (p[k]) p[k]--;
+  }
+
+  // Holidays in linked cities, and families moving to a happier one.
+  const abroad = s._abroad || [];
+  st.emigrants = [];
+  st.holidays = 0;
+  homes = byHome();
+  for (const [, members] of homes) {
+    const back = members.filter((p) => p.hol > 0 && --p.hol === 0);
+    if (back.length) { for (const p of back) p.jy = 2; note(s, 'good', `The ${SURNAMES[back[0].l]} family came home from a holiday in ${back[0].hcity || 'the next city'}.`); }
+  }
+  if (abroad.length && s.day >= 2) {
+    for (const [, members] of homes) {
+      if (members.some((p) => p.hol > 0 || p.ill)) continue;
+      const avg = members.reduce((a, p) => a + p.m, 0) / members.length;
+      const dest = abroad[Math.floor(rng() * abroad.length)];
+      if (avg >= 0.55 && rng() < 0.03) {
+        const days = 1 + Math.floor(rng() * 3);
+        for (const p of members) { p.hol = days; p.hto = dest.id; p.hcity = dest.name; }
+        st.holidays += members.length;
+        note(s, 'info', `The ${SURNAMES[members[0].l]} family went on holiday to ${dest.name} for ${days} day${days > 1 ? 's' : ''}.`);
+      } else if (s.day >= GRACE_DAYS && avg < 0.45 && dest.homesFree >= members.length && dest.happiness > s.happiness + 0.05 && rng() < 0.25) {
+        st.emigrants.push({ to: dest.id, name: dest.name, people: members.map((p) => ({ f: p.f, l: p.l, a: p.a, e: p.e, sp: p.sp, hp: p.hp, m: p.m })) });
+        for (const p of members) removePerson(s, p);
+        note(s, 'warn', `The ${SURNAMES[members[0].l]} family moved to ${dest.name}, where life looked better.`);
+      }
+    }
+    homes = byHome();
   }
 
   // Moving in and out.
@@ -996,7 +1081,8 @@ function daily(s, plan, rng) {
   st.event = s.day >= 2 && rng() < EVENT_CHANCE ? randomEvent(s, rng, fireCover) : null;
   s.day++;
   s.peakPop = Math.max(s.peakPop, s.people.length);
-  for (const k of ['births', 'deaths', 'graduates', 'crimes', 'cases', 'treated', 'arrivals', 'departures']) s.counters[k] += st[k] || 0;
+  st.emigrated = st.emigrants.reduce((a, e) => a + e.people.length, 0);
+  for (const k of ['births', 'deaths', 'graduates', 'crimes', 'cases', 'treated', 'arrivals', 'departures', 'emigrated', 'holidays']) s.counters[k] = (s.counters[k] || 0) + (st[k] || 0);
   s.stats = st;
   s.history.push({ d: s.day, pop: s.people.length, money: Math.floor(s.money), mood: Math.round(s.happiness * 100), net: st.income - st.upkeep });
   if (s.history.length > HISTORY_DAYS) s.history.splice(0, s.history.length - HISTORY_DAYS);
@@ -1113,4 +1199,43 @@ export function tick(s, rng = Math.random) {
     if (!collapsed) plan(s, rng);
   }
   return { plan: s._plan, totals: totals(s), collapsed, day };
+}
+
+// What a city can spare for visitors from linked neighbours (half its free capacity).
+export function offer(st) {
+  if (st.status !== 'alive') return { fun: 0, care: 0, shop: 0, school: 0, homesFree: 0, happiness: 0 };
+  const uc = underConstruction(st);
+  let fun = 0, care = 0, shop = 0, school = 0;
+  for (let i = 0; i < N; i++) {
+    if (!active(st, i, uc)) continue;
+    const d = B[st.grid[i]], k = staffing(st, i);
+    if (d.visits) fun += capacity(st, i, 'visits') * k;
+    if (d.care) care += capacity(st, i, 'care') * k;
+    if (d.serves) shop += capacity(st, i, 'serves') * (k > 0 ? 1 : 0);
+    if (d.school && (d.school.stage === 'primary' || d.school.stage === 'high')) school += capacity(st, i, 'seats') * (k > 0 ? 1 : 0);
+  }
+  const pop = st.people.length;
+  fun -= st.people.filter((p) => p.fun >= 0).length;
+  care -= st.people.filter((p) => p.ill).length;
+  shop -= pop;
+  school -= st.people.filter((p) => p.sc >= 0 && p.a >= 5 && p.a < ADULT).length;
+  const half = (v) => Math.max(0, Math.floor(v / 2));
+  return { fun: half(fun), care: half(care), shop: half(shop), school: half(school), homesFree: Math.max(0, totals(st, uc).homes - pop), happiness: st.happiness };
+}
+
+// A family arriving from a linked city. Returns how many found a home.
+export function welcome(s, people, from) {
+  const homes = new Map();
+  for (const p of s.people) homes.set(p.h, (homes.get(p.h) || 0) + 1);
+  let home = -1;
+  for (let i = 0; i < N; i++) if (isHome(s.grid[i]) && active(s, i) && homeCap(s, i) - (homes.get(i) || 0) >= people.length) { home = i; break; }
+  if (home < 0 || s.status !== 'alive') return 0;
+  const made = people.map((o) => person(s, { f: o.f, l: o.l, a: o.a, e: o.e, sp: o.sp, hp: o.hp ?? 100, m: Math.max(0.55, o.m ?? 0.6), h: home }));
+  const adults = made.filter((p) => p.a >= ADULT);
+  if (adults.length >= 2) { adults[0].pt = adults[1].i; adults[1].pt = adults[0].i; }
+  for (const k of made.filter((p) => p.a < ADULT)) k.pa = adults[0]?.i || 0;
+  s.counters.immigrated = (s.counters.immigrated || 0) + made.length;
+  note(s, 'good', `The ${SURNAMES[made[0].l]} family moved here from ${from}.`);
+  s._plan = null;
+  return made.length;
 }

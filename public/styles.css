@@ -630,3 +630,10 @@ dialog::backdrop { background: rgba(12, 28, 33, .45); backdrop-filter: blur(3px)
   .stat-tiles { grid-template-columns: 1fr 1fr; }
   .ach { grid-template-columns: 1fr; }
 }
+
+.clockrow { display: flex; align-items: center; gap: 8px; }
+.live { display: inline-flex; align-items: center; gap: 4px; font-size: .72em; font-weight: 800; color: var(--soft); }
+.live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+.live.on { color: var(--good); }
+.live.on::before { background: var(--good); box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 25%, transparent); }
+.nlist small + small { margin-top: 2px; }

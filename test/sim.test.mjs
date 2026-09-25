@@ -116,4 +116,36 @@ const finishAll = (s) => { for (const q of [...s.queue]) { while (s.queue.includ
   sim.plan(s, rng);
   console.log('transit ok:', JSON.stringify(modes), 'commuters', s.people.filter((p) => p.oj).length);
 }
+
+// ---- linked cities share facilities, holidays and migration
+{
+  seed = 21;
+  const mk = (name, fun) => {
+    const s = sim.newCity(name, rng); s.money = 50000; s.land.fill(1);
+    for (let x = 6; x <= 23; x++) put(s, x, c + 1, T.ROAD);
+    for (const x of [6, 7, 8, 9, 10, 11]) put(s, x, c + 2, T.HOUSE);
+    put(s, 14, c + 2, T.SHOP); put(s, 15, c + 2, T.FACTORY);
+    if (fun) { put(s, 16, c + 2, T.PARK); put(s, 17, c + 2, T.PARK); put(s, 18, c + 2, T.CLINIC); put(s, 19, c + 2, T.PLAYGROUND); }
+    for (let h = 0; h < 24 * 10; h++) sim.tick(s, rng);
+    return s;
+  };
+  const A = mk('Aville', false), Bt = mk('Btown', true);
+  const edge = sim.idx(23, c + 1);
+  A._abroad = [{ id: 'B', name: 'Btown', via: 'road', edge, ...sim.offer(Bt) }];
+  const plan = sim.plan(A, rng);
+  assert(sim.offer(Bt).fun > 0, 'Btown has spare leisure');
+  assert(plan.out.B && plan.out.B.fun > 0, 'Aville residents go out in Btown: ' + JSON.stringify(plan.out));
+  assert(plan.trips.some((t) => t.abroad === 'B' && t.path.at(-1) === edge), 'trips head to the border');
+  Bt._incoming = plan.out.B;
+  Bt._visitorsFrom = [{ name: 'Aville', edge: sim.idx(23, c + 1), via: 'road', ...plan.out.B }];
+  const bp = sim.plan(Bt, rng);
+  assert(bp.trips.some((t) => t.visitor === 'Aville'), 'visitors arrive in Btown');
+  for (let h = 0; h < 24; h++) sim.tick(Bt, rng);
+  assert(Bt.stats.byClass.visitors > 0, 'Btown earns from visitors');
+  put(Bt, 12, c + 2, T.HOUSE); for (const q of [...Bt.queue]) { Bt.cond[q.i] = 100; } Bt.queue = [];
+  const before = Bt.people.length;
+  const got = sim.welcome(Bt, [{ f: 1, l: 2, a: 30, e: 2, sp: 10 }, { f: 3, l: 2, a: 29, e: 1, sp: 10 }, { f: 4, l: 2, a: 5, e: 0, sp: 1 }], 'Aville');
+  assert(got === 3 && Bt.people.length === before + 3, 'a migrating family is welcomed');
+  console.log('linked cities ok:', JSON.stringify(plan.out.B), 'visitor income', Bt.stats.byClass.visitors);
+}
 console.log('all tests passed');

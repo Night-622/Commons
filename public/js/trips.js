@@ -38,12 +38,12 @@ export class TripSim {
     if (e.agents.length > 150 || trip.mode === 'bus' || trip.mode === 'train') return;   // riders are inside the vehicles
     const path = back ? [...trip.path].reverse() : trip.path;
     if (path.length < 2) return;
-    const who = e.st.people.find((p) => p.i === trip.p);
+    const who = trip.visitor || e.st.people.find((p) => p.i === trip.p);
     if (!who) return;
     e.agents.push({
       trip, back, path, mode: trip.mode, s: progress * (path.length - 1), p: trip.p,
       shirt: SHIRTS[Math.floor(h32(trip.p, 2) * SHIRTS.length)], c: Math.floor(h32(trip.p, 5) * 6),
-      follow: this.followed && this.followed.person === trip.p,
+      follow: this.followed && this.followed.person === trip.p, visitor: trip.visitor,
     });
   }
 
@@ -131,12 +131,16 @@ export class TripSim {
 // Where someone is right now, in words: "At work (Office)", "Driving to Primary school".
 export function whereabouts(st, plan, person, t, agent) {
   if (agent) {
+    if (agent.trip.abroad) return `${agent.mode === 'train' ? 'On the train' : 'Heading'} ${agent.back ? 'home' : `to ${agent.trip.city}`}`;
     const dest = agent.back ? 'home' : B[st.grid[agent.trip.to]]?.name || 'town';
     const how = agent.mode === 'car' ? 'Driving' : agent.mode === 'bike' ? 'Cycling' : 'Walking';
     const kid = agent.trip.kid && st.people.find((p) => p.i === agent.trip.kid);
     return `${how} ${agent.back ? 'home' : `to the ${dest.toLowerCase()}`}${kid && !agent.back ? ` with ${personName(kid).split(' ')[0]}` : ''}`;
   }
+  if (person.hol > 0) return `On holiday in ${person.hcity || 'the next city'}`;
   const mine = plan.trips.filter((x) => x.p === person.i || x.with?.includes(person.i));
+  const out = mine.find((x) => x.abroad && x.dep <= t && t < x.ret);
+  if (out) return { fun: `Out for the evening in ${out.city}`, school: `At school in ${out.city}`, care: `Seeing a doctor in ${out.city}`, shop: `Shopping in ${out.city}` }[out.kind] || `In ${out.city}`;
   for (const x of mine) {
     if (x.mode !== 'bus' && x.mode !== 'train') continue;
     const hours = x.path.length / SPEED[x.mode] / HOUR_S + 0.3;

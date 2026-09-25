@@ -190,3 +190,21 @@ export function listenChat(world, cb) {
 export function sendChat(world, user, name, city, text) {
   return addDoc(collection(db, 'worlds', world, 'chat'), { uid: user.uid, name, city, text, createdAt: serverTimestamp() });
 }
+
+// ---------- live world ----------
+// Every plot in the world, pushed the moment anyone saves. cb gets changed plot docs.
+export function listenWorld(world, cb) {
+  const q = query(collection(db, 'plots'), where('world', '==', world), limit(400));
+  return onSnapshot(q, (snap) => cb(snap.docChanges().filter((c) => c.type !== 'removed').map((c) => ({ id: c.doc.id, ...c.doc.data() }))),
+    (e) => console.error('World listener', e));
+}
+
+// Families moving between linked cities. The sender writes; the receiving mayor's game takes them in.
+export function sendMove(world, move) {
+  return addDoc(collection(db, 'worlds', world, 'moves'), { ...move, createdAt: serverTimestamp() });
+}
+export function listenMoves(world, uid, cb) {
+  const q = query(collection(db, 'worlds', world, 'moves'), where('toOwner', '==', uid), limit(20));
+  return onSnapshot(q, (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), (e) => console.error('Moves listener', e));
+}
+export const finishMove = (world, id) => deleteDoc(doc(db, 'worlds', world, 'moves', id));

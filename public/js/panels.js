@@ -124,7 +124,8 @@ export function statsPanel(ctx, tab) {
   } else if (tab === 'budget') {
     const st = s.stats, by = st.byClass || {}, up = st.upkeepBy || {};
     const inRows = [['Basic jobs', by.basic, `$${WAGE[0]} a worker`], ['Skilled jobs', by.skilled, `$${WAGE[1]} a worker`], ['Degree jobs', by.degree, `$${WAGE[2]} a worker`],
-      ['Unemployed', by.benefits, ''], ['Trade with neighbours', by.trade, `$${TRADE_PER_LINK} a link, up to ${MAX_LINKS}`]];
+      ['Unemployed', by.benefits, ''], ['Trade with neighbours', by.trade, `$${TRADE_PER_LINK} a road link, double for rail`],
+      ['Visitors from neighbours', by.visitors, 'Evenings out, doctors, shopping, school and holidays']];
     const outRows = Object.entries(up).sort((a, b) => b[1] - a[1]).map(([t, v]) => [B[t].name, v]);
     const net = (st.income || 0) - (st.upkeep || 0);
     body = `<p class="soft small">Yesterday. Tax is scaled by mood: at ${pct(s.happiness)} mood you collect ${pct(Math.min(1, Math.max(0, (s.happiness - 0.15) / 0.7)))} of full tax. Sick people don't work or pay.</p>
@@ -183,6 +184,17 @@ export function worldPanel(ctx) {
       <span class="dir">${n.side}</span><span class="pmain"><b>${esc(n.name)}</b><small>${n.status === 'ruins' ? 'Ruins' : `Mayor ${esc(n.ownerName)}, ${n.pop} people`}</small></span>
       <span class="links ${n.links ? 'on' : ''}">${n.links ? `${n.links} link${n.links > 1 ? 's' : ''}` : 'Not linked'}</span></button></li>`).join('')}</ul>`
       : '<p class="empty small">No neighbours yet. New players will settle next to you.</p>'}
+    <h3 class="sub">${icon('i-people')}Between cities</h3>
+    ${ctx.abroad.length ? `<p class="soft small">Linked cities share spare places: your residents can go out, shop, see a doctor or go to school there, and theirs come here. Families take holidays in each other's cities, and unhappy ones may move.</p>
+      <ul class="nlist">${ctx.abroad.map((a) => { const o = ctx.plan?.out?.[a.id] || {};
+        return `<li><span class="pmain"><b>${esc(a.name)}</b><small>Linked by ${a.via}. Room for ${a.fun} evenings out, ${a.care} patients, ${a.school} pupils, ${a.homesFree} newcomers.</small>
+        <small>Your residents there today: ${o.fun || 0} out, ${o.care || 0} at the doctor, ${o.shop || 0} shopping, ${o.school || 0} at school, ${o.tourists || 0} on holiday.</small></span></li>`; }).join('')}</ul>
+      <div class="grid2"><div class="kv"><span>Visitors here today</span><b class="num">${(ctx.incoming.fun || 0) + (ctx.incoming.care || 0) + (ctx.incoming.shop || 0) + (ctx.incoming.school || 0) + (ctx.incoming.tourists || 0)}</b></div>
+        <div class="kv"><span>Moved away, all time</span><b class="num">${state.counters.emigrated || 0}</b></div>
+        <div class="kv"><span>Moved in from neighbours</span><b class="num">${state.counters.immigrated || 0}</b></div>
+        <div class="kv"><span>Holidays taken</span><b class="num">${state.counters.holidays || 0}</b></div></div>`
+      : '<p class="empty small">Link a road or railway with a neighbour to share facilities, visitors and residents.</p>'}
+
     <h3 class="sub">${icon('i-flag')}Ruins you could move to</h3>
     <p class="soft small">Start again on a fallen city's land. Your current city becomes ruins and you take half your money.</p>
     ${ruins.length ? `<ul class="nlist">${ruins.map((r) => `<li class="ruin"><span class="pmain"><b>Ruins of ${esc(r.name)}</b><small>Reached ${r.peakPop} people, lasted ${r.day} days</small></span>

@@ -32,6 +32,9 @@ Firestore rules are not deployed by the Action. After changing `firestore.rules`
 - Roads with pavements, footpaths for walkers and bikes.
 - Buses and trains: a bus depot runs buses between your stops; stations beside a railway carry people on long trips. Riders leave their cars at home.
 - Railways or roads that cross into a neighbour's city link the two: trade, mood, and out-of-town jobs your residents reach by train or bus.
+- Linked cities share spare facilities (leisure, clinics, shops, schools): residents cross over and visitors come back, earning the host money.
+- Holidays in linked cities, and unhappy families migrating to a happier linked city (sent through `worlds/{world}/moves`).
+- Live: every plot in the world is streamed with Firestore listeners, so changes appear within a second or two. Cities save every 12 seconds and right after building.
 - World chat, neighbour links, moving onto ruins, private worlds.
 - Account: profile, lifetime stats, 25 achievements, delete account (the city becomes ruins).
 - Interactive tutorial, 3D and 2D views, colour-blind modes and other accessibility options.
