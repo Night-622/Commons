@@ -9,6 +9,25 @@ service cloud.firestore {
     function isAdmin() { return signedIn() && exists(docPath('admins', me())); }
     function nameOk(d) { return (!('ownerName' in d) || (d.ownerName is string && d.ownerName.size() <= 24)) && (!('name' in d) || (d.name is string && d.name.size() <= 40)); }
     function linkPath(world) { return world == 'public' ? docPath('users', me()) : docPath('memberships', me() + '_' + world); }
+    // Every write to a plot is stamped with the server's clock, so the limits below can trust the time between saves.
+    function stamped(d) { return d.updatedAt == request.time; }
+    function counts(d) { return d.money is number && d.pop is number && d.peakPop is number && d.day is number; }
+    // A fresh city: the starting money (or a rebuild's, plus half of what a mover brings), a handful of settlers, day 0.
+    function freshCity(d, maxMoney) { return counts(d) && d.money <= maxMoney && d.pop <= 12 && d.peakPop <= 12 && d.day <= 1; }
+    // Between two saves a city can't grow faster than a busy city could: a flat allowance plus a rate per second.
+    // A city day is 60 real seconds and there is no speed-up, so days can't pass faster than that.
+    function riseOk(after, before) {
+      let secs = before.get('updatedAt', null) is timestamp ? (request.time.toMillis() - before.updatedAt.toMillis()) / 1000 : 0;
+      return counts(after)
+        && after.money <= before.get('money', 0) + 10000 + secs * 100
+        && after.pop <= before.get('pop', 0) + 200 + secs
+        && after.peakPop <= before.get('peakPop', 0) + 200 + secs
+        && after.day <= before.get('day', 0) + 2 + secs / 60;
+    }
+    // Moving onto ruins keeps half the money of the city being left (see MOVE_KEEP and REBUILD_MONEY).
+    function rebuildMoney(world) {
+      return 3500 + (exists(linkPath(world)) ? get(docPath('plots', get(linkPath(world)).data.plotId)).data.get('money', 0) / 2 : 0);
+    }
 
     // Public world: which plot each player owns. Can only be repointed at a plot they now own (moving).
     match /users/{uid} {
@@ -76,23 +95,25 @@ service cloud.firestore {
         && !exists(linkPath(request.resource.data.world))
         && getAfter(linkPath(request.resource.data.world)).data.plotId == plotId
         && !('state' in request.resource.data)
-        && nameOk(request.resource.data);
+        && nameOk(request.resource.data)
+        && stamped(request.resource.data)
+        && freshCity(request.resource.data, 3000);
       allow update: if signedIn()
         && request.resource.data.world == resource.data.world
         && request.resource.data.px == resource.data.px
         && request.resource.data.py == resource.data.py
         && (!('state' in request.resource.data) || request.resource.data.state.size() < 200000)
         && nameOk(request.resource.data)
+        && stamped(request.resource.data)
         && (
-          // The owner saving. Money can't jump faster than a busy city could earn it (a cheap guard against edits).
-          // The flat allowance covers undo refunds, goal rewards and grants landing in the same save.
+          // The owner saving. Money, people and days can't jump faster than a busy city could manage (a cheap
+          // guard against edits). The flat allowance covers undo refunds, goal rewards and grants in the same save.
           (resource.data.owner == me() && request.resource.data.owner == me()
-            && request.resource.data.money is number
-            && (!('money' in resource.data) || !(resource.data.money is number) || !('updatedAt' in resource.data) || !(resource.data.updatedAt is timestamp)
-              || request.resource.data.money <= resource.data.money + 10000 + (request.time.toMillis() - resource.data.updatedAt.toMillis()) / 10))
+            && riseOk(request.resource.data, resource.data))
           || (resource.data.status == 'ruins'
             && request.resource.data.owner == me()
-            && getAfter(linkPath(resource.data.world)).data.plotId == plotId)
+            && getAfter(linkPath(resource.data.world)).data.plotId == plotId
+            && freshCity(request.resource.data, rebuildMoney(resource.data.world)))
         );
       allow delete: if false;
     }
@@ -100,8 +121,10 @@ service cloud.firestore {
     // The full save for each plot. Anyone can read it; only the plot's owner can write it.
     match /plotState/{plotId} {
       allow read: if signedIn();
+      // Only in the same write as the plot's summary, so the summary's limits apply to it too.
       allow create, update: if signedIn()
         && getAfter(docPath('plots', plotId)).data.owner == me()
+        && getAfter(docPath('plots', plotId)).data.updatedAt == request.time
         && request.resource.data.keys().hasOnly(['state'])
         && request.resource.data.state is string && request.resource.data.state.size() < 900000;
       allow delete: if false;
@@ -200,6 +223,7 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.keys().hasOnly(['from', 'fromName', 'fromOwner', 'to', 'toOwner', 'amount', 'note', 'createdAt'])
         && request.resource.data.fromOwner == me() && request.resource.data.toOwner != me()
+        && get(docPath('plots', request.resource.data.from)).data.owner == me()
         && request.resource.data.amount is int && request.resource.data.amount >= 10 && request.resource.data.amount <= 1000
         && request.resource.data.note is string && request.resource.data.note.size() <= 120
         && request.resource.data.createdAt == request.time;
@@ -258,7 +282,12 @@ service cloud.firestore {
     // Permanent records of fallen cities.
     match /legacy/{id} {
       allow read: if signedIn();
-      allow create: if signedIn() && request.resource.data.owner == me();
+      // Only for a plot you own, and no longer-lived or bigger than that plot's last save (plus a little for the final hours).
+      allow create: if signedIn() && request.resource.data.owner == me()
+        && get(docPath('plots', request.resource.data.plotId)).data.owner == me()
+        && request.resource.data.daysSurvived is number && request.resource.data.peakPop is number
+        && request.resource.data.daysSurvived <= get(docPath('plots', request.resource.data.plotId)).data.get('day', 0) + 2
+        && request.resource.data.peakPop <= get(docPath('plots', request.resource.data.plotId)).data.get('peakPop', 0) + 50;
       allow update, delete: if false;
     }
   }

@@ -119,9 +119,9 @@ test('moving: a player with a city moves onto ruins, then saves the old plot as 
   const sa = sim.migrate(JSON.parse(pa.state)); sim.collapse(sa, 'test'); await a.fb.savePlot(pa.id, sa);
   const fresh = sim.migrate(JSON.parse(pa.state)); sim.rebuild(fresh, 'New B', 1000);
   await b.fb.takeOverRuins(b.user, 'Ben', pa.id, fresh, w.id);
-  const sb = sim.migrate(JSON.parse(pb.state)); sim.collapse(sb, 'moved');
+  const sb = sim.migrate(JSON.parse(pb.state)); const record = sim.collapse(sb, 'moved');
   await b.fb.savePlot(pb.id, sb);
-  await b.fb.writeLegacy(b.user, pb.id, 'Ben', { daysSurvived: 3 }, w.id);
+  await b.fb.writeLegacy(b.user, pb.id, 'Ben', record, w.id);
 });
 
 // ---------- chat ----------
@@ -286,4 +286,67 @@ test('world data: plots, leaderboards and the live listener are readable', async
   assert.equal(boards.peak.length, 1);
   const changed = await first((cb, err) => a.fb.listenWorld(w.id, cb, err));
   assert.equal(changed[0].id, pa.id);
+});
+
+// ---------- limits added before 1.8 went live ----------
+test('limits: the money guard can no longer be dodged through updatedAt', async () => {
+  const a = await player();
+  const w = await newWorld(a);
+  const p = await a.fb.claimPlot(a.user, 'Ana', 'A', w.id);
+  const ref = doc(a.db, 'plots', p.id);
+  await assertFails(updateDoc(ref, { updatedAt: 'x' }));
+  await assertFails(updateDoc(ref, { updatedAt: Timestamp.fromDate(new Date('2000-01-01')) }));
+  await assertFails(updateDoc(ref, { money: 10_000_000, updatedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(ref, { money: 4000, updatedAt: serverTimestamp() }));
+});
+
+test('limits: population, peak and days rise only as fast as a real city', async () => {
+  const a = await player();
+  const w = await newWorld(a);
+  const p = await a.fb.claimPlot(a.user, 'Ana', 'A', w.id);
+  const ref = doc(a.db, 'plots', p.id);
+  await assertFails(updateDoc(ref, { pop: 1e9, peakPop: 1e9, updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(ref, { peakPop: 5000, updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(ref, { day: 500, updatedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(ref, { pop: 40, peakPop: 40, day: 1, updatedAt: serverTimestamp() }));
+  // Twenty city days away (20 real minutes) allows twenty days and plenty of growth in one save.
+  await admin((db) => updateDoc(doc(db, 'plots', p.id), { updatedAt: Timestamp.fromMillis(Date.now() - 20 * 60_000) }));
+  const st = sim.migrate(JSON.parse(p.state));
+  for (let h = 0; h < 20 * 24; h++) sim.tick(st);
+  await a.fb.savePlot(p.id, st);
+  assert.equal((await getDoc(ref)).data().day, st.day);
+});
+
+test('limits: the full save can only be written together with its summary', async () => {
+  const a = await player();
+  const w = await newWorld(a);
+  const p = await a.fb.claimPlot(a.user, 'Ana', 'A', w.id);
+  await assertFails(setDoc(doc(a.db, 'plotState', p.id), { state: p.state }));
+});
+
+test('limits: new and rebuilt cities start with ordinary money and people', async () => {
+  const a = await player(), b = await player();
+  const w = await newWorld(a);
+  const id = `${w.id}_0_0`;
+  const rich = writeBatch(a.db);
+  rich.set(doc(a.db, 'plots', id), { owner: a.uid, world: w.id, px: 0, py: 0, money: 1e6, pop: 6, peakPop: 6, day: 0, updatedAt: serverTimestamp() });
+  rich.set(doc(a.db, 'memberships', `${a.uid}_${w.id}`), { uid: a.uid, world: w.id, plotId: id, createdAt: serverTimestamp() });
+  await assertFails(rich.commit());
+  const pa = await a.fb.claimPlot(a.user, 'Ana', 'A', w.id);
+  const sa = sim.migrate(JSON.parse(pa.state)); sim.collapse(sa, 'test'); await a.fb.savePlot(pa.id, sa);
+  const fresh = sim.migrate(JSON.parse(pa.state)); sim.rebuild(fresh, 'Greedy', 1e6);
+  await assertFails(b.fb.takeOverRuins(b.user, 'Ben', pa.id, fresh, w.id));
+  sim.rebuild(fresh, 'Honest');
+  await b.fb.takeOverRuins(b.user, 'Ben', pa.id, fresh, w.id);
+});
+
+test('limits: gifts only from your own plot, fallen records only for your own plot', async () => {
+  const a = await player(), b = await player();
+  const w = await newWorld(a);
+  const pa = await a.fb.claimPlot(a.user, 'Ana', 'A', w.id), pb = await b.fb.claimPlot(b.user, 'Ben', 'B', w.id);
+  await assertFails(a.fb.sendGift(w.id, { from: pb.id, fromName: 'B', fromOwner: a.uid, to: pb.id, toOwner: b.uid, amount: 100, note: '' }));
+  await assertFails(a.fb.writeLegacy(a.user, pa.id, 'Ana', { daysSurvived: 99999, peakPop: 6 }, w.id));
+  await assertFails(a.fb.writeLegacy(a.user, pb.id, 'Ana', { daysSurvived: 0, peakPop: 6 }, w.id));
+  await assertFails(a.fb.writeLegacy(a.user, pa.id, 'Ana', { daysSurvived: 0, peakPop: 1e6 }, w.id));
+  await a.fb.writeLegacy(a.user, pa.id, 'Ana', { name: 'A', cityNo: 1, daysSurvived: 0, peakPop: 6, outcome: 'test' }, w.id);
 });

@@ -25,6 +25,7 @@ Guests can turn their guest city into a full account later (Account menu). Linki
 - `public/js/i18n.js` translates the interface as it is drawn: the English text is its own key, so untranslated text stays English. Anything inside `[translate="no"]` is left alone.
 - Dictionaries live in `public/js/lang/`. To add a language: copy `el.js` to e.g. `fr.js`, translate the right-hand sides, then add it to `LANGS` and `languages` in `i18n.js`. Text with numbers in it goes in `patterns`.
 - Still English: news items, advisor tips and toasts built from several parts. Add those strings to the dictionary as you go.
+- Stricter saves in `firestore.rules`: every plot write carries the server's timestamp (`updatedAt == request.time`), and between saves money, population, peak population and days can only rise as fast as a real city (`riseOk`). New cities start with at most $3,000 and 12 people; rebuilds with $3,500 plus half the mover's old money. `plotState` can only be written with its plot summary. Gifts must come from your own plot; fallen-city records must match your plot's last save.
 
 ## New in 1.7
 - Heritage (`s.bday` build days, `s.protect`, `isHistoric`), Monument, disaster insurance (`policy.insured`), city bonds (`s.bond`), selling land back (`sellLand`), crowdfunded requests (`want.fund`), monthly growth (`flags.season`, `growth` in the plot summary) and a hall of fame.
