@@ -21,6 +21,10 @@ Guests can turn their guest city into a full account later (Account menu). Linki
 - Saves are split: `plots/{id}` is a small public summary everyone listens to; `plotState/{id}` holds the full city and is only fetched for adjacent neighbours.
 - `node test/balance.mjs` runs a scripted city for 100 days.
 
+## Zoning and disasters
+- Zones (homes, shops, industry) grow private buildings when demand is positive; they cost the city no upkeep.
+- Floods after heavy rain (storm drains protect within 8 tiles) and blackouts (a second power station is a backup). Fires are softened by fire stations.
+
 ## Deploy
 
 Push to `main`. The GitHub Action deploys hosting.

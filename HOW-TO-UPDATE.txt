@@ -22,4 +22,5 @@ Optional checks:
      node test/balance.mjs    (a scripted 100-day city; prints population, money and mood every 10 days)
 
 Existing cities carry over: each one moves to the new two-part save the first time its mayor plays.
-Chat reports land in the "reports" collection: Firebase console > Firestore Database > reports.
+Feedback and support messages land in Firebase console > Firestore Database > feedback.
+Chat reports land in the "reports" collection next to it.

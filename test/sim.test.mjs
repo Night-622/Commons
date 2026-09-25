@@ -165,4 +165,42 @@ const finishAll = (s) => { for (const q of [...s.queue]) { while (s.queue.includ
   assert.equal(fresh.hour, sim.worldHour(fresh.lastTick), 'new cities start on the world clock');
   console.log('saves ok:', json.length, 'bytes for', s.people.length, 'people');
 }
+
+// ---- junctions, utilities, decisions
+{
+  seed = 41;
+  const s = sim.newCity('Grid', rng); s.money = 90000; s.land.fill(1);
+  for (let x = 8; x <= 16; x++) put(s, x, c + 1, T.ROAD);
+  for (let y = c + 2; y <= 18; y++) put(s, 12, y, T.ROAD);
+  for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = [];
+  const j = sim.idx(12, c + 1);
+  assert(!sim.place(s, sim.idx(8, c + 1), T.LIGHTS).ok, 'lights only go on junctions');
+  const before = sim.plan(s, rng).cap[j];
+  assert(sim.place(s, j, T.ROUNDABOUT).ok, 'roundabout on a junction');
+  for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = [];
+  assert(sim.plan(s, rng).cap[j] > before * 1.5, 'roundabout carries more traffic');
+  s.flags.utilSince = -10;
+  for (let k = 0; k < 30; k++) s.people.push({ ...s.people[0], i: 1000 + k });
+  const u = sim.utilities(s);
+  assert(u.need && u.power.size === 0, 'no power yet');
+  s.decision = { id: 'festival', d: s.day };
+  const m0 = s.money;
+  sim.decide(s, 'a');
+  assert(s.money === m0 - 300 && !s.decision, 'decision applied');
+  console.log('junctions, utilities, decisions ok');
+}
+
+// ---- zoning
+{
+  seed = 51;
+  const s = sim.newCity('Zones', rng); s.money = 9000;
+  for (let x = 13; x <= 15; x++) put(s, x, c, T.ROAD);
+  for (let h = 0; h < 30; h++) sim.tick(s, rng);
+  for (const x of [13, 14, 15]) assert(sim.zone(s, sim.idx(x, c - 1), 1).ok, 'zone homes');
+  for (let h = 0; h < 24 * 4; h++) sim.tick(s, rng);
+  const grown = [13, 14, 15].filter((x) => s.grid[sim.idx(x, c - 1)] !== T.EMPTY).length;
+  assert(grown >= 1, 'developers built in the zone: ' + grown);
+  assert.equal(sim.totals(s).upkeepBy[T.HOUSE] || 0, 0, 'zoned homes cost no upkeep');
+  console.log('zoning ok:', grown, 'grown');
+}
 console.log('all tests passed');

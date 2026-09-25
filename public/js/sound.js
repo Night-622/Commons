@@ -42,3 +42,27 @@ export function play(name) {
   if (!enabled || volume <= 0) return;
   try { SOUNDS[name]?.(); } catch { /* audio blocked until first interaction */ }
 }
+
+// Background city sound: a soft traffic hum that follows how busy the streets are, and birds by day.
+let amb = null;
+export function ambient(on, busy = 0.5, day = true) {
+  if (!on || !enabled || volume <= 0) { if (amb) { amb.gain.gain.setTargetAtTime(0.0001, amb.ctx.currentTime, 0.5); } return; }
+  const a = audio();
+  if (!a) return;
+  if (!amb) {
+    const len = a.sampleRate * 2, buf = a.createBuffer(1, len, a.sampleRate), d = buf.getChannelData(0);
+    let last = 0;
+    for (let k = 0; k < len; k++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[k] = last * 3.5; }
+    const src = a.createBufferSource(); src.buffer = buf; src.loop = true;
+    const filter = a.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 500;
+    const gain = a.createGain(); gain.gain.value = 0.0001;
+    src.connect(filter).connect(gain).connect(a.destination); src.start();
+    amb = { ctx: a, gain, filter, lastBird: 0 };
+  }
+  amb.gain.gain.setTargetAtTime(0.02 + 0.06 * Math.min(1, busy) * volume, a.currentTime, 1);
+  if (day && a.currentTime - amb.lastBird > 4 + Math.random() * 8) {
+    amb.lastBird = a.currentTime;
+    const f = 2400 + Math.random() * 1400;
+    note(f, 0, 0.08, 'sine', 0.03); note(f * 1.2, 0.1, 0.07, 'sine', 0.025);
+  }
+}

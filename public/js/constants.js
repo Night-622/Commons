@@ -46,11 +46,11 @@ export const T = {
   EMPTY: 0, ROAD: 1, HOUSE: 2, WORK: 3, SHOP: 4, SCHOOL: 5, PARK: 6, HALL: 7, RUBBLE: 8,
   PATH: 9, APARTMENT: 10, VILLA: 11, CAFE: 12, FACTORY: 13, DAYCARE: 14, HIGH: 15, UNI: 16, TUTOR: 17, LIBRARY: 18,
   CLINIC: 19, HOSPITAL: 20, POLICE: 21, FIRE: 22, COURT: 23, CEMETERY: 24, PLAYGROUND: 25, SPORTS: 26, GYM: 27,
-  DOJO: 28, POOL: 29, CINEMA: 30, YARD: 31, RAIL: 32, STATION: 33, STOP: 34, DEPOT: 35, XING: 36,
+  DOJO: 28, POOL: 29, CINEMA: 30, YARD: 31, RAIL: 32, STATION: 33, STOP: 34, DEPOT: 35, XING: 36, LIGHTS: 37, ROUNDABOUT: 38, POWER: 39, WATER: 40, DRAIN: 41,
 };
 
 export const CATS = [
-  ['homes', 'Homes'], ['work', 'Work and shops'], ['learn', 'Education'], ['care', 'Health and safety'], ['fun', 'Leisure and sport'], ['transport', 'Transport'],
+  ['homes', 'Homes'], ['work', 'Work and shops'], ['learn', 'Education'], ['care', 'Health and safety'], ['fun', 'Leisure and sport'], ['transport', 'Transport'], ['utility', 'Utilities'],
 ];
 
 // Every building has a job. jobs: [title, education needed, count]. col: which colour slot it uses.
@@ -59,6 +59,11 @@ export const B = {
   [T.ROAD]: { key: 'road', name: 'Road', cost: 10, work: 1, upkeep: 0.3, blurb: 'Cars, bikes and walkers. Jams above 45 car trips a day.' },
   [T.PATH]: { key: 'path', name: 'Footpath', cost: 5, work: 1, upkeep: 0.1, blurb: 'Walkers and bikes only. Takes cars off the road.' },
   [T.XING]: { key: 'crossing', name: 'Level crossing', cost: 30, work: 2, upkeep: 0.5, blurb: 'Where a road and a railway meet. Cars wait while trains pass.' },
+  [T.LIGHTS]: { key: 'lights', name: 'Traffic lights', cost: 80, work: 4, upkeep: 1, blurb: 'Put on a junction. Carries 50% more traffic than an uncontrolled junction.' },
+  [T.ROUNDABOUT]: { key: 'roundabout', name: 'Roundabout', cost: 150, work: 8, upkeep: 1.5, blurb: 'Put on a junction. Keeps traffic flowing: 80% more than an uncontrolled junction.' },
+  [T.POWER]: { key: 'power', name: 'Power station', cat: 'utility', col: 'work', cost: 700, work: 70, upkeep: 12, jobs: [['Engineer', 2, 3]], supply: 12, pollution: 2, blurb: 'Powers every building within 12 tiles. Once the town has 25 people, unpowered buildings work at 60%.' },
+  [T.WATER]: { key: 'water', name: 'Water tower', cat: 'utility', col: 'work', cost: 350, work: 36, upkeep: 5, jobs: [['Technician', 1, 1]], supply: 10, blurb: 'Clean water for every building within 10 tiles. Without it, illness spreads faster.' },
+  [T.DRAIN]: { key: 'drain', name: 'Storm drains', cat: 'utility', col: 'work', cost: 260, work: 24, upkeep: 3, supply: 8, blurb: 'Protects everything within 8 tiles from floods after heavy rain.' },
   [T.RAIL]: { key: 'rail', name: 'Railway', cost: 25, work: 2, upkeep: 0.5, blurb: 'Track for trains. Join stations together, or run it to your plot edge to reach a neighbour.' },
 
   [T.STOP]: { key: 'stop', name: 'Bus stop', cat: 'transport', col: 'hall', cost: 60, work: 6, upkeep: 1, catchment: 4, needs: T.DEPOT, blurb: 'People within 4 tiles ride the bus instead of driving. Needs a bus depot.' },
@@ -101,7 +106,8 @@ export const B = {
   [T.RUBBLE]: { key: 'rubble', name: 'Rubble', cost: 0, work: 0, upkeep: 0 },
 };
 
-export const BRUSHES = [T.ROAD, T.PATH, T.RAIL];
+export const BRUSHES = [T.ROAD, T.PATH, T.RAIL, T.LIGHTS, T.ROUNDABOUT];
+export const UTILITY_POP = 25;   // below this, a town gets by without power and water
 export const BUS_SEATS = 40;          // riders a bus carries in a day
 export const COMMUTE_JOBS = { rail: 10, bus: 5 };   // out-of-town jobs each link to a neighbour opens up
 export const BUILDINGS = Object.keys(B).map(Number).filter((t) => B[t].cat);
@@ -109,8 +115,8 @@ export const UPGRADABLE = BUILDINGS.filter((t) => ![T.CEMETERY, T.PARK, T.PLAYGR
 export const MAX_LEVEL = 3;
 export const LEVEL = { capacity: [0, 1, 1.75, 2.5], upkeep: [0, 1, 1.6, 2.2], cost: [0, 0, 1, 1.6] };
 export const isHome = (t) => !!B[t]?.homes;
-export const walkable = (t) => t === T.ROAD || t === T.PATH || t === T.HALL || t === T.XING;
-export const isRoad = (t) => t === T.ROAD || t === T.XING;
+export const walkable = (t) => t === T.ROAD || t === T.PATH || t === T.HALL || t === T.XING || t === T.LIGHTS || t === T.ROUNDABOUT;
+export const isRoad = (t) => t === T.ROAD || t === T.XING || t === T.LIGHTS || t === T.ROUNDABOUT;
 export const isRail = (t) => t === T.RAIL || t === T.XING;
 
 export const GOALS = [
@@ -140,3 +146,18 @@ export const WANT_REWARD = 120;
 export const GOODS_PER_FACTORY = 20;   // goods a staffed factory makes a day
 export const SEASONS = ['Spring', 'Summer', 'Autumn', 'Winter'];
 export const SEASON_DAYS = 10;         // world days per season
+
+// Decisions the council puts to the mayor now and then. Each choice: [label, effect text].
+export const DECISIONS = [
+  { id: 'festival', title: 'A summer festival?', text: 'Residents want a street festival in the square.', a: ['Fund it ($300)', 'Everyone’s mood lifts'], b: ['Not this year', 'A little disappointment'] },
+  { id: 'taxcut', title: 'Petition to cut taxes', text: 'Hundreds signed a petition asking for lower taxes.', a: ['Cut tax by 10%', 'Happier people, less income'], b: ['Keep taxes', 'Some grumbling'] },
+  { id: 'company', title: 'A company wants to invest', text: 'A firm offers $500 for permission to expand. Locals worry about noise.', a: ['Take the money', '$500, slightly less happy'], b: ['Say no', 'Nothing changes'] },
+  { id: 'strike', title: 'Workers threaten to strike', text: 'Unions want a one-off bonus for the city’s workers.', a: ['Pay the bonus ($250)', 'Work carries on'], b: ['Refuse', 'Income drops for 2 days'] },
+  { id: 'books', title: 'A gift of books', text: 'A retired teacher offers her library to the town if the council pays to move it.', a: ['Accept ($120)', 'Children learn faster for 5 days'], b: ['Decline', 'Nothing changes'] },
+  { id: 'clinic', title: 'Free health checks', text: 'Visiting doctors offer free check-ups if the council hosts them.', a: ['Host them ($150)', 'Sick residents recover'], b: ['Decline', 'Nothing changes'] },
+];
+export const ELECTION_EVERY = 20;   // days between elections
+
+// Zones, SimCity-style: paint them and private developers build when there's demand. Zoned buildings cost you no upkeep.
+export const ZONES = { 1: { key: 'homes', name: 'Homes zone', col: 'rgba(63,167,103,0.30)' }, 2: { key: 'shops', name: 'Shops zone', col: 'rgba(59,125,221,0.28)' }, 3: { key: 'industry', name: 'Industry zone', col: 'rgba(240,150,58,0.30)' } };
+export const ZONE_COST = 2;   // per tile painted

@@ -5,7 +5,7 @@ import {
   ROAD_CAP, HALL_CAP, HOURS_PER_DAY, LEVEL, MAX_LEVEL, UPGRADABLE, TAP_SHARE, TAP_CAP, GOALS, TRADE_PER_LINK,
   LINK_MOOD, MAX_LINKS, HISTORY_DAYS, LOG_SIZE, EVENT_CHANCE, CHUNK, CHUNKS, START_CHUNKS, LAND_PRICE, LAND_STEP,
   MOVE_FEE, ADULT, RETIRE, WAGE, isHome, walkable, BUS_SEATS, COMMUTE_JOBS, TICK_MS, isRoad, isRail, POLICY, WANT_REWARD,
-  GOODS_PER_FACTORY, SEASONS, SEASON_DAYS, YEAR_DAYS,
+  GOODS_PER_FACTORY, SEASONS, SEASON_DAYS, YEAR_DAYS, UTILITY_POP, DECISIONS, ELECTION_EVERY, ZONES, ZONE_COST,
 } from './constants.js';
 
 const N = PLOT * PLOT;
@@ -41,7 +41,9 @@ export const personName = (p) => `${FIRST[p.f]} ${SURNAMES[p.l]}`;
 
 // One clock for the whole world, so every city shares the same time of day, season and weather.
 export const worldHour = (now = Date.now()) => Math.floor(now / TICK_MS) % HOURS_PER_DAY;
-export const worldDay = (now = Date.now()) => Math.floor(now / (TICK_MS * HOURS_PER_DAY));
+// The calendar starts on launch day (25 September 2026), lined up with whole in-game days.
+const EPOCH = Math.floor(Date.UTC(2026, 8, 25) / (TICK_MS * HOURS_PER_DAY)) * TICK_MS * HOURS_PER_DAY;
+export const worldDay = (now = Date.now()) => Math.max(0, Math.floor((now - EPOCH) / (TICK_MS * HOURS_PER_DAY)));
 export const season = (day) => SEASONS[Math.floor(day / SEASON_DAYS) % 4];
 export function weather(day) {
   const s = season(day), r = h32(day, 77);
@@ -93,7 +95,7 @@ export function newCity(name, rng = Math.random) {
   const s = {
     v: 4, name, grid, cond, lv: new Array(N).fill(1), land, queue: [], money: START_MONEY, people: [], nextId: 1,
     happiness: 0.65, hour: 0, day: 0, peakPop: 6, unpaidDays: 0, cityNo: 1, status: 'alive', lastTick: Date.now(),
-    goalsDone: [], history: [], log: [], links: 0, flags: {}, graves: 0, cases: 0, clock: 1, wants: [],
+    goalsDone: [], history: [], log: [], links: 0, flags: {}, graves: 0, cases: 0, clock: 1, wants: [], zone: new Array(N).fill(0),
     policy: { tax: 1, funding: 1, freeTransit: false },
     counters: { births: 0, deaths: 0, graduates: 0, crimes: 0, cases: 0, treated: 0, arrivals: 0, departures: 0, built: 0, land: 0, moved: 0 },
     stats: { income: 0, upkeep: 0, failedTrips: 0, arrivals: 0, departures: 0, graduates: 0 },
@@ -138,6 +140,7 @@ export function migrate(s, rng = Math.random) {
   s.cases = s.cases || 0;
   if (Array.isArray(s.people) && Array.isArray(s.people[0])) s.people = s.people.map(unpack);
   if (!s.policy) s.policy = { tax: 1, funding: 1, freeTransit: false };
+  if (!s.zone) s.zone = new Array(N).fill(0);
   if (!s.wants) s.wants = [];
   if (!s.clock) {
     // Line this city up with the world clock, keeping any time it still has to catch up on.
@@ -259,7 +262,21 @@ function active(s, i, uc) {
   if (t === T.HALL) return true;
   return !(uc ? uc.has(i) : s.queue.some((q) => q.i === i && !q.up)) && s.cond[i] > 0;
 }
-const scale = (s, i, n) => Math.floor(n * condFactor(s, i) * LEVEL.capacity[level(s, i)]);
+// Power and water. Small towns get by without; from 25 people, unpowered buildings work at 60%.
+export function utilities(s) {
+  const need = s.flags?.utilSince !== undefined && s.day - s.flags.utilSince >= 5;
+  const power = new Set(), water = new Set();
+  const src = [];
+  for (let i = 0; i < N; i++) if ((s.grid[i] === T.POWER || s.grid[i] === T.WATER) && active(s, i) && staffing(s, i) > 0) src.push(i);
+  for (let i = 0; i < N; i++) {
+    if (!B[s.grid[i]]?.cat && s.grid[i] !== T.HALL) continue;
+    for (const j of src) if (dist1(i, j) <= B[s.grid[j]].supply) (s.grid[j] === T.POWER ? power : water).add(i);
+  }
+  if (s.flags?.blackout > 0) power.clear();
+  return { need, power, water };
+}
+const utilK = (s, i) => (s._util?.need && B[s.grid[i]]?.cat && s.grid[i] !== T.POWER && s.grid[i] !== T.WATER && !s._util.power.has(i) ? 0.6 : 1);
+const scale = (s, i, n) => Math.floor(n * condFactor(s, i) * LEVEL.capacity[level(s, i)] * utilK(s, i));
 export const homeCap = (s, i) => scale(s, i, B[s.grid[i]].homes || 0);
 export function jobSlots(s, i) { return (B[s.grid[i]].jobs || []).map(([, , n]) => scale(s, i, n)); }
 export function capacity(s, i, field) {
@@ -293,9 +310,9 @@ export function totals(s, uc = underConstruction(s)) {
     if (type === T.EMPTY || type === T.RUBBLE || uc.has(i)) continue;
     const d = B[type];
     t.counts[type] = (t.counts[type] || 0) + 1;
-    if (type === T.ROAD || type === T.PATH || type === T.RAIL || type === T.XING) { t.upkeep += d.upkeep; t.upkeepBy[type] = (t.upkeepBy[type] || 0) + d.upkeep; if (type === T.ROAD) t.roads++; continue; }
+    if (!d.cat && type !== T.HALL) { t.upkeep += d.upkeep; t.upkeepBy[type] = (t.upkeepBy[type] || 0) + d.upkeep; if (type === T.ROAD) t.roads++; continue; }
     if (condFactor(s, i) === 0) continue;
-    const up = d.upkeep * LEVEL.upkeep[level(s, i)];
+    const up = s.zone?.[i] ? 0 : d.upkeep * LEVEL.upkeep[level(s, i)];
     t.upkeep += up;
     t.upkeepBy[type] = (t.upkeepBy[type] || 0) + up;
     t.homes += homeCap(s, i);
@@ -313,7 +330,7 @@ function network(s, uc, cars) {
   for (let i = 0; i < N; i++) {
     const t = s.grid[i];
     if (uc.has(i)) continue;
-    if (t === T.ROAD || t === T.XING || t === T.HALL || (!cars && t === T.PATH)) ok[i] = 1;
+    if (isRoad(t) || t === T.HALL || (!cars && t === T.PATH)) ok[i] = 1;
   }
   return ok;
 }
@@ -338,6 +355,8 @@ function route(map, ok, s, to) {
 }
 
 export function plan(s, rng = Math.random) {
+  s._util = null;
+  s._util = utilities(s);
   const uc = underConstruction(s);
   const walkNet = network(s, uc, false), carNet = network(s, uc, true);
   const byType = new Map();
@@ -549,7 +568,13 @@ export function plan(s, rng = Math.random) {
   // Trips. Short ones are walked or cycled on footpaths and pavements; longer ones are driven.
   const load = new Float32Array(N), cap = new Float32Array(N);
   const snowK = weather(cityDay(s)) === 'snow' ? 0.75 : 1;
-  for (let i = 0; i < N; i++) if (carNet[i]) cap[i] = (s.grid[i] === T.HALL ? HALL_CAP : s.grid[i] === T.XING ? ROAD_CAP * 0.8 : ROAD_CAP) * snowK;
+  // Busy junctions are bottlenecks unless they have lights or a roundabout.
+  for (let i = 0; i < N; i++) {
+    if (!carNet[i]) continue;
+    const t = s.grid[i], ways = neighbours(i).filter((n) => carNet[n]).length;
+    const k = t === T.HALL ? HALL_CAP / ROAD_CAP : t === T.XING ? 0.8 : t === T.LIGHTS ? 1.2 : t === T.ROUNDABOUT ? 1.45 : ways >= 3 ? 0.8 : 1;
+    cap[i] = ROAD_CAP * k * snowK;
+  }
   const trips = [];
   const time = (a, b, k) => a + h32(k, s.day) * (b - a);
   // Drivers avoid busy roads: each car route is found with the traffic already on the roads.
@@ -706,7 +731,7 @@ export function plan(s, rng = Math.random) {
   const railEnds = [...stations];
   for (let i = 0; i < N; i++) {
     const x = i % PLOT, y = (i / PLOT) | 0;
-    if (isRail(s.grid[i]) && railNet[i] && (x === 0 || y === 0 || x === PLOT - 1 || y === PLOT - 1) && stations.some((st) => railComp[st] === railComp[i])) railEnds.push(i);
+    if (isRail(s.grid[i]) && railNet[i] && (x === 0 || y === 0 || x === PLOT - 1 || y === PLOT - 1) && stations.length === 1 && !(s.railLinks > 0) && stations.some((st) => railComp[st] === railComp[i])) railEnds.push(i);
   }
   const trainLines = [];
   for (let a = 0; a < railEnds.length; a++) for (let b = a + 1; b < railEnds.length; b++) {
@@ -749,6 +774,11 @@ export function canPlace(s, i, type) {
   if (s.status !== 'alive') return { ok: false, reason: 'This city has fallen. Rebuild to keep playing.' };
   if (i < 0 || i >= N) return { ok: false, reason: 'Outside your plot.' };
   if (!owns(s, i)) return { ok: false, reason: 'You don’t own this land yet. Buy it first.' };
+  if (type === T.LIGHTS || type === T.ROUNDABOUT) {
+    if (s.grid[i] !== T.ROAD || s.queue.some((q) => q.i === i)) return { ok: false, reason: 'Put it on a finished road junction.' };
+    if (neighbours(i).filter((n) => isRoad(s.grid[n]) || s.grid[n] === T.HALL).length < 3) return { ok: false, reason: 'Only junctions (three or four roads meeting) need this.' };
+    return s.money >= B[type].cost ? { ok: true } : { ok: false, reason: `Needs $${B[type].cost}.` };
+  }
   if (crossing(s, i, type)) {
     if (s.queue.some((q) => q.i === i)) return { ok: false, reason: 'Wait for the builders to finish here.' };
     return s.money >= B[T.XING].cost ? { ok: true } : { ok: false, reason: `A level crossing needs $${B[T.XING].cost}.` };
@@ -765,6 +795,7 @@ export function place(s, i, type) {
   if (!check.ok) return check;
   if (crossing(s, i, type)) type = T.XING;
   s.money -= B[type].cost;
+  if (s.zone) s.zone[i] = 0;   // your own buildings are public: you pay their upkeep
   s.grid[i] = type;
   s.cond[i] = 0;
   s.lv[i] = 1;
@@ -841,6 +872,7 @@ export function bulldoze(s, i) {
   s.grid[i] = T.EMPTY;
   s.cond[i] = 0;
   s.lv[i] = 1;
+  if (s.zone) s.zone[i] = 0;
   s._plan = null;
   return { ok: true, refund };
 }
@@ -887,8 +919,10 @@ function construct(s) {
     if (isBuilder(s, p)) labour += 1;
     else if (p.j < 0 && canWork(p)) labour += VOLUNTEER_RATE;
   }
-  while (labour > 0 && s.queue.length) {
-    const q = s.queue[0];
+  for (const q of s.queue.filter((x) => x.priv)) { q.left -= 3; if (q.left <= 1e-6) finish(s, q); }
+  const pub = () => s.queue.find((x) => !x.priv);
+  while (labour > 0 && pub()) {
+    const q = pub();
     const used = Math.min(labour, q.left);
     q.left -= used;
     labour -= used;
@@ -924,7 +958,7 @@ function daily(s, plan, rng) {
     if (!p.ill) {
       const risk = (fun?.injury || 0) + (p.j >= 0 ? B[s.grid[p.j]]?.injury || 0 : 0) + (lateTrips.has(p.i) ? 0.003 : 0);
       if (rng() < risk) { p.ill = 2; p.sd = 0; note(s, 'warn', `${name(p)} was injured${fun?.injury ? ' playing sport' : ''}.`); }
-      else if (rng() < (weather(cityDay(s)) === 'heat' ? 0.018 : 0.012) * (p.m < 0.4 ? 1.6 : 1) * (p.a > 60 ? 1.8 : 1) * (p.fun >= 0 ? 0.8 : 1) * (p.hp < 60 ? 1.5 : 1)) { p.ill = 1; p.sd = 0; }
+      else if (rng() < (weather(cityDay(s)) === 'heat' ? 0.018 : 0.012) * (s._util?.need && !s._util.water.has(p.h) ? 1.5 : 1) * (p.m < 0.4 ? 1.6 : 1) * (p.a > 60 ? 1.8 : 1) * (p.fun >= 0 ? 0.8 : 1) * (p.hp < 60 ? 1.5 : 1)) { p.ill = 1; p.sd = 0; }
       else p.hp = Math.min(100, p.hp + 3);
     } else if (plan.careFor.has(p.i)) {
       p.ill = 0; p.sd = 0; p.hp = Math.min(100, p.hp + 25); st.treated++;
@@ -954,15 +988,24 @@ function daily(s, plan, rng) {
 
   // Growing up and learning. Tutors and libraries speed it up.
   const birthday = s.day % YEAR_DAYS === YEAR_DAYS - 1;
+  const libraries = s.grid.map((t, i) => (t === T.LIBRARY && active(s, i, uc) && staffing(s, i) > 0 ? i : -1)).filter((i) => i >= 0);
+  const libraryNear = (h) => libraries.some((l) => dist1(l, h) <= 8);
   for (const p of s.people) {
     if (birthday) p.a++;
+    // Children without a school place learn at home: slower and less certain, better with a library nearby.
+    if (p.a >= 5 && p.a < ADULT && p.sc < 0 && !p.as && !p.hol && rng() < (libraryNear(p.h) ? 0.55 : 0.3)) p.sp += 1 / YEAR_DAYS;
+    // Adults with high school who study at the library can earn a degree the long way.
+    if (p.a >= ADULT && p.a < 50 && p.e === 2 && p.sc < 0 && p.fun >= 0 && s.grid[p.fun] === T.LIBRARY && rng() < 0.35) {
+      p.us += 1 / YEAR_DAYS;
+      if (p.us >= 4) { p.e = 3; p.us = 0; p.jy = 3; st.graduates++; remember(s, p, 'Earned a degree studying at the library'); note(s, 'good', `${personName(p)} earned a degree by studying at the library.`); }
+    }
     if (p.sc >= 0 && B[s.grid[p.sc]]) {
       const stage = B[s.grid[p.sc]].school.stage;
-      const boost = (p.tu >= 0 ? 1.5 : 1) + (p.fun >= 0 && B[s.grid[p.fun]]?.visits?.study ? 0.2 : 0);
+      const boost = (p.tu >= 0 ? 1.5 : 1) + (s.flags.books > 0 ? 0.3 : 0) + (p.fun >= 0 && B[s.grid[p.fun]]?.visits?.study ? 0.2 : 0);
       if (stage === 'uni') {
-        p.us += boost / YEAR_DAYS;
+        if (rng() < 0.92) p.us += boost / YEAR_DAYS;
         if (p.us >= 3) { p.e = 3; p.sc = -1; p.us = 0; p.jy = 3; st.graduates++; remember(s, p, 'Graduated from university'); note(s, 'good', `${name(p)} graduated from university.`); }
-      } else if (stage !== 'daycare') p.sp += boost / YEAR_DAYS;
+      } else if (stage !== 'daycare' && rng() < 0.92) p.sp += boost / YEAR_DAYS;
     }
     if (p.as) p.sp += 1 / YEAR_DAYS;
     if (birthday && p.a === ADULT) {
@@ -1057,6 +1100,7 @@ function daily(s, plan, rng) {
   for (const k in by) by[k] = Math.round(by[k]);
   st.byClass = by;
   st.upkeepBy = Object.fromEntries(Object.entries(tot.upkeepBy).map(([k, v]) => [k, Math.round(v)]));
+  if (s.flags.strike > 0) { for (const k of ['basic', 'skilled', 'degree']) by[k] = Math.round(by[k] * 0.7); s.flags.strike--; }
   st.income = Object.values(by).reduce((a, b) => a + b, 0);
   const riders = (plan.riders?.bus || 0) + (plan.riders?.train || 0);
   const service = Object.entries(tot.upkeepBy).reduce((a, [t, v]) => a + (B[t]?.cat && B[t].cat !== 'homes' && B[t].cat !== 'work' ? v : 0), 0);
@@ -1103,6 +1147,7 @@ function daily(s, plan, rng) {
     m += p.fun >= 0 || p.fa ? 0.1 : p.hol ? 0.15 : 0;
     m += plan.parks.has(p.h) ? 0.04 : 0;
     m -= plan.pollution.has(p.h) ? 0.08 : 0;
+    if (s._util?.need) m -= (s._util.power.has(p.h) ? 0 : 0.06) + (s._util.water.has(p.h) ? 0 : 0.06);
     m -= p.ill === 3 ? 0.25 : p.ill ? 0.12 : 0;
     m -= p.vt ? 0.15 : 0;
     m -= p.gr ? 0.18 : 0;
@@ -1197,6 +1242,65 @@ function daily(s, plan, rng) {
       const [t, r] = options[Math.floor(rng() * options.length)];
       s.wants.push({ p: p.i, t, r, d: s.day, reward: WANT_REWARD + B[t].cost * 0.3 | 0 });
     }
+  }
+  if (s.flags.books > 0) s.flags.books--;
+  if (s.flags.blackout > 0) s.flags.blackout--;
+
+  // Zones grow: developers build where there's demand, a road beside the tile, and you own the land.
+  const dem = demand(s, plan);
+  const pickType = (z) => {
+    if (z === 1) return s.people.length >= 30 && rng() < 0.3 ? T.APARTMENT : plan.parks.size && rng() < 0.2 ? T.VILLA : T.HOUSE;
+    if (z === 2) return rng() < 0.65 ? T.SHOP : T.CAFE;
+    return census(s).edu[2] + census(s).edu[3] > census(s).edu[0] + census(s).edu[1] && rng() < 0.5 ? T.WORK : T.FACTORY;
+  };
+  const want = { 1: dem.homes, 2: dem.shops, 3: dem.jobs };
+  for (const z of [1, 2, 3]) {
+    if (want[z] <= 0.1) continue;
+    const spots = [];
+    for (let i = 0; i < N; i++) if (s.zone[i] === z && s.grid[i] === T.EMPTY && owns(s, i) && neighbours(i).some((n) => isRoad(s.grid[n]) || s.grid[n] === T.HALL)) spots.push(i);
+    for (let k = 0; k < Math.min(spots.length, want[z] > 0.5 ? 2 : 1); k++) {
+      const i = spots.splice(Math.floor(rng() * spots.length), 1)[0], t = pickType(z);
+      if (B[t].minPop && s.people.length < B[t].minPop) continue;
+      s.grid[i] = t; s.cond[i] = 0; s.lv[i] = 1;
+      s.queue.push({ i, left: B[t].work, tap: 0, priv: true });
+      st.grown = (st.grown || 0) + 1;
+    }
+  }
+  if (st.grown) note(s, 'info', `Developers started ${st.grown} new building${st.grown > 1 ? 's' : ''} in your zones.`);
+
+  // Disasters, and the things that defend against them.
+  const covered = (t, i) => s.grid.some((g, j) => g === t && active(s, j, uc) && dist1(i, j) <= B[t].supply);
+  const wx = weather(cityDay(s));
+  if (wx === 'rain' && s.day > 5 && rng() < 0.07) {
+    const cx = 2 + Math.floor(rng() * (PLOT - 4)), cy = 2 + Math.floor(rng() * (PLOT - 4));
+    let hit = 0, saved = 0;
+    for (let y = cy - 2; y <= cy + 2; y++) for (let x = cx - 2; x <= cx + 2; x++) {
+      const i = idx(x, y);
+      if (!B[s.grid[i]]?.cat || s.cond[i] <= 0) continue;
+      if (covered(T.DRAIN, i)) { saved++; continue; }
+      s.cond[i] = Math.max(1, s.cond[i] - 35); hit++;
+    }
+    if (hit) note(s, 'warn', `Flash flooding damaged ${hit} building${hit > 1 ? 's' : ''}.${saved ? ` Storm drains protected ${saved}.` : ' Storm drains would have helped.'}`);
+    else if (saved) note(s, 'good', `Heavy rain flooded the streets, but storm drains kept ${saved} building${saved > 1 ? 's' : ''} safe.`);
+  }
+  const plants = s.grid.filter((t, i) => t === T.POWER && active(s, i, uc)).length;
+  if (plants && s.day > 5 && rng() < 0.05) {
+    if (plants >= 2) note(s, 'good', 'A power station tripped, but the backup kept the lights on.');
+    else { s.flags.blackout = 1; note(s, 'warn', 'Blackout! The power station failed. A second one would act as a backup.'); }
+  }
+  if (s.flags.utilSince === undefined && s.people.length >= UTILITY_POP) {
+    s.flags.utilSince = s.day;
+    note(s, 'warn', 'The town has outgrown its wells and generators. Build a power station and a water tower within 5 days, or buildings will struggle.');
+  }
+  // Now and then the council asks the mayor to decide something.
+  if (!s.decision && s.people.length >= 15 && s.day >= 4 && rng() < 0.16) s.decision = { id: DECISIONS[Math.floor(rng() * DECISIONS.length)].id, d: s.day };
+  if (s.decision && s.day - s.decision.d > 3) { note(s, 'warn', 'The council took your silence as a no.'); decide(s, 'b'); }
+  // Elections: a good mood keeps the mayor popular.
+  if (s.day > 0 && s.day % ELECTION_EVERY === 0 && s.people.length >= 10) {
+    const approval = Math.round(clamp(s.happiness * 1.1 - (s.unpaidDays ? 0.15 : 0)) * 100);
+    s.approval = approval;
+    if (approval >= 50) { s.money += 200; note(s, 'good', `Re-elected with ${approval}% of the vote. The region sends a $200 grant.`); }
+    else { s.money = Math.max(0, s.money - 300); for (const p of s.people) p.m = Math.max(0, p.m - 0.03); note(s, 'warn', `Only ${approval}% backed you. You keep the job, but a council audit costs $300.`); }
   }
   st.event = s.day >= 2 && rng() < EVENT_CHANCE ? randomEvent(s, rng, fireCover) : null;
   s.day++;
@@ -1358,4 +1462,78 @@ export function welcome(s, people, from) {
   note(s, 'good', `The ${SURNAMES[made[0].l]} family moved here from ${from}.`);
   s._plan = null;
   return made.length;
+}
+
+// Demand, SimCity-style: what the city is short of right now, from -1 (too much) to 1 (build more).
+export function demand(s, plan) {
+  const c = census(s), tot = totals(s);
+  const pop = Math.max(1, c.total);
+  const homes = clamp((pop + 4 - tot.homes) / Math.max(6, pop * 0.2) + (s.happiness > 0.6 ? 0.3 : -0.2), -1, 1);
+  const jobs = clamp((c.seeking - (tot.jobs - c.employed) * 0.5) / Math.max(4, pop * 0.1), -1, 1);
+  const shops = clamp(1 - (plan?.needs?.shops ?? 1) * 1.3 + 0.2, -1, 1);
+  const services = clamp(1.4 - ((plan?.needs?.school ?? 1) + (plan?.needs?.health ?? 1) + (plan?.needs?.safety ?? 1) + (plan?.needs?.leisure ?? 1)) / 4 * 1.6, -1, 1);
+  return { homes, jobs, shops, services };
+}
+
+// The advisor: the three most useful things to do next, with what to build.
+export function advice(s, plan) {
+  const c = census(s), tot = totals(s), n = plan?.needs || {}, out = [];
+  const add = (score, text, type) => out.push({ score, text, type });
+  if (s.unpaidDays) add(10, 'You can’t pay upkeep. Raise tax a little, cut service funding, or demolish what nobody uses.', null);
+  if ((s.stats.income || 0) < (s.stats.upkeep || 0)) add(6, 'You’re losing money each day. More working residents pay more tax; factories sell goods.', T.FACTORY);
+  if (n.homes < 0.4) add(5, 'No room for newcomers. Build homes.', T.HOUSE);
+  if (c.seeking > 3) add(4 + c.seeking / 5, `${c.seeking} people need work. Build jobs they qualify for.`, c.edu[0] + c.edu[1] > c.edu[2] + c.edu[3] ? T.FACTORY : T.WORK);
+  if (n.shops < 0.8) add(4, 'Some families have no grocer nearby.', T.SHOP);
+  if (c.toddlers && !(tot.seats.daycare > 0)) add(3, 'Parents are staying home with toddlers. A daycare lets them work.', T.DAYCARE);
+  if (n.school < 0.8) add(4, 'Children are missing school. Build schools, and make sure you have teachers with degrees.', c.teens > c.kids ? T.HIGH : T.SCHOOL);
+  if (n.health < 0.8 || c.sick > c.total * 0.1) add(4, 'Sick people aren’t being treated.', tot.counts[T.CLINIC] ? T.HOSPITAL : T.CLINIC);
+  if (n.safety < 0.7) add(3.5, 'Crime is rising.', tot.counts[T.POLICE] ? T.COURT : T.POLICE);
+  if (n.leisure < 0.6) add(3, 'People have nothing to do in the evenings.', T.PARK);
+  if (n.commute < 0.8) add(3.5, 'Roads are jammed. Add routes or footpaths, or a bus service.', tot.counts[T.DEPOT] ? T.STOP : T.DEPOT);
+  if (s.flags.utilSince !== undefined) {
+    const u = s._util || utilities(s), all = s.grid.filter((t) => B[t]?.cat).length || 1;
+    const days = Math.max(0, 5 - (s.day - s.flags.utilSince));
+    if (u.power.size < all * 0.9) add(days ? 7 : 8, days ? `Power is needed within ${days} day${days > 1 ? 's' : ''}. Build a power station.` : 'Buildings without power work at 60%. Build or place power stations to cover them.', T.POWER);
+    if (u.water.size < all * 0.9) add(days ? 6 : 7, 'Homes without clean water get ill more often. Build a water tower.', T.WATER);
+  }
+  if (season(cityDay(s)) !== 'Summer' && s.people.length >= 20 && !tot.counts[T.DRAIN]) add(2.8, 'Heavy rain can flood the streets. Storm drains protect buildings nearby.', T.DRAIN);
+  if (!s.zone?.some(Boolean) && s.people.length >= 12) add(2.6, 'Paint zones and developers will build homes, shops and industry for you, with no upkeep.', null);
+  if (s.counters.deaths > 2 && !tot.counts[T.CEMETERY]) add(3, 'Families have nowhere to lay loved ones to rest.', T.CEMETERY);
+  if (c.edu[2] > 4 && !tot.counts[T.UNI] && !tot.counts[T.LIBRARY]) add(2.5, 'High school graduates want to learn more. A library or university helps.', T.LIBRARY);
+  if (!(s.links || s.railLinks)) add(1.5, 'Link a road or railway with a neighbour for trade, visitors and shared facilities.', null);
+  return out.sort((a, b) => b.score - a.score).slice(0, 3);
+}
+
+// Apply the mayor's answer to a council decision: 'a' or 'b'.
+export function decide(s, choice) {
+  const d = s.decision && DECISIONS.find((x) => x.id === s.decision.id);
+  if (!d) return null;
+  s.decision = null;
+  const all = (v) => { for (const p of s.people) p.m = clamp(p.m + v); };
+  const yes = choice === 'a';
+  if (d.id === 'festival') { if (yes && s.money >= 300) { s.money -= 300; all(0.08); } else all(-0.03); }
+  if (d.id === 'taxcut') { if (yes) { s.policy.tax = Math.max(0.8, Math.round((s.policy.tax - 0.1) * 100) / 100); all(0.05); } else all(-0.04); }
+  if (d.id === 'company' && yes) { s.money += 500; all(-0.03); }
+  if (d.id === 'strike') { if (yes && s.money >= 250) s.money -= 250; else s.flags.strike = 2; }
+  if (d.id === 'books' && yes && s.money >= 120) { s.money -= 120; s.flags.books = 5; }
+  if (d.id === 'clinic' && yes && s.money >= 150) { s.money -= 150; for (const p of s.people) if (p.ill === 1) p.ill = 0; }
+  note(s, 'info', `Council: ${d.title} You chose “${(yes ? d.a : d.b)[0]}”.`);
+  return d;
+}
+
+// Paint or clear a zone on an empty tile you own. kind: 1 homes, 2 shops, 3 industry, 0 to clear.
+export function canZone(s, i, kind) {
+  if (s.status !== 'alive') return { ok: false, reason: 'This city has fallen.' };
+  if (!owns(s, i)) return { ok: false, reason: 'You don’t own this land yet.' };
+  if (kind && s.grid[i] !== T.EMPTY) return { ok: false, reason: 'Zones go on empty land.' };
+  if (s.zone[i] === kind) return { ok: false, reason: 'Already zoned that way.' };
+  if (kind && s.money < ZONE_COST) return { ok: false, reason: `Needs $${ZONE_COST}.` };
+  return { ok: true };
+}
+export function zone(s, i, kind) {
+  const r = canZone(s, i, kind);
+  if (!r.ok) return r;
+  if (kind) s.money -= ZONE_COST;
+  s.zone[i] = kind;
+  return { ok: true, cost: kind ? ZONE_COST : 0 };
 }

@@ -35,6 +35,8 @@ export const DEFAULTS = {
   tips: true,
   alerts: false,
   speak: false,
+  mapContrast: false,
+  ambient: false,
 };
 
 export function loadPrefs() {

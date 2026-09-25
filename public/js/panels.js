@@ -124,6 +124,9 @@ export function statsPanel(ctx, tab) {
       <div class="grid2"><div class="kv"><span>Sick now</span><b class="num">${c.sick}</b></div><div class="kv"><span>Treated yesterday</span><b class="num">${s.stats.treated || 0}</b></div>
       <div class="kv"><span>Crimes yesterday</span><b class="num">${s.stats.crimes || 0}</b></div><div class="kv"><span>Court cases waiting</span><b class="num">${s.cases}</b></div>
       <div class="kv"><span>Births, all time</span><b class="num">${s.counters.births}</b></div><div class="kv"><span>Deaths, all time</span><b class="num">${s.counters.deaths}</b></div></div>
+      <h3 class="sub">Power, water and politics</h3>
+      <div class="grid2"><div class="kv"><span>Powered buildings</span><b class="num">${s._util ? s._util.power.size : 0}</b></div><div class="kv"><span>With clean water</span><b class="num">${s._util ? s._util.water.size : 0}</b></div>
+      <div class="kv"><span>Utilities needed</span><b>${s.flags.utilSince === undefined ? 'Not yet' : s._util?.need ? 'Yes' : 'Soon'}</b></div><div class="kv"><span>Last election</span><b class="num">${s.approval !== undefined ? s.approval + '%' : 'None yet'}</b></div></div>
       <h3 class="sub">Getting around</h3>
       ${(() => { const by = { car: 0, bike: 0, walk: 0, bus: 0, train: 0 }; for (const t of plan?.trips || []) by[t.mode]++; const n = Math.max(1, Object.values(by).reduce((a, b) => a + b, 0));
         const modes = [['car', 'Car', '#3b7ddd'], ['bus', 'Bus', '#f2b233'], ['train', 'Train', '#d8463a'], ['bike', 'Bike', '#2f9e5a'], ['walk', 'Walk', '#e79a1f']];

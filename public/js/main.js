@@ -1,11 +1,11 @@
 import * as sim from './sim.js';
 import {
   T, B, PLOT, TICK_MS, MAX_OFFLINE_DAYS, HOURS_PER_DAY, SAVE_EVERY_MS, RUBBLE_CLEAR_COST, MAX_LEVEL, LEVEL, UPGRADABLE,
-  REBUILD_MONEY, MOVE_KEEP, TUTORIAL_REWARD, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome,
+  REBUILD_MONEY, MOVE_KEEP, TUTORIAL_REWARD, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome, DECISIONS, ZONES, ZONE_COST,
 } from './constants.js';
 import { Renderer, STRIDE, thumbnail, modelHeight } from './render.js';
 import { loadPrefs, savePrefs, applyPrefs, resolvedTheme, palette, PALETTES } from './prefs.js';
-import { play, setSound } from './sound.js';
+import { play, setSound, ambient } from './sound.js';
 import { firebaseConfig } from './config.js';
 import { TripSim, whereabouts } from './trips.js';
 import { createTutorial } from './tutorial.js';
@@ -17,6 +17,10 @@ import * as fb from './firebase.js';
 const { esc, icon, money, pct, bar, avatar } = panels;
 const $ = (id) => document.getElementById(id);
 const ago = (t) => { const m = Math.round((Date.now() - (t || 0)) / 60000); return m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`; };
+// One calendar for the whole world: 10 days a season, 4 seasons a year.
+function dateLabel(day = sim.worldDay()) {
+  return `${sim.season(day)} ${(day % 10) + 1}, Year ${Math.floor(day / 40) + 1}`;
+}
 const hourLabel = (h) => (h === 0 ? 'midnight' : h === 12 ? 'noon' : `${h % 12} ${h < 12 ? 'am' : 'pm'}`);
 
 // ---------- state ----------
@@ -24,12 +28,14 @@ let prefs = loadPrefs();
 let user = null, plotId = null, me = null, state = null, mayor = '';
 let world = { id: localStorage.getItem('commons-world') || 'public', name: 'Public world' }, worlds = [];
 let plan = null, totalsNow = null;
+let zoneKind = 1;
 let mode = 'select', brush = null, moveFrom = -1, catalog = null, catCat = 'all', catQ = '', catAfford = false;
 let overlay = null, hover = null, cursor = null, selected = null;
 let drawer = null, personId = null, peopleFilter = 'all', peopleQuery = '', statsTab = 'overview', acctTab = 'profile';
 let pops = [], undoStack = [], bridges = new Map(), neighbourInfo = [], pulseTile = null, taps = 0, followCam = false;
 let saveTimer = null, lastSave = Date.now(), loopTimer = null, worldTimer = null, lastHour = -1;
 let spaceHeld = false, dirty = true, lastFrame = performance.now(), warnedDay = -1;
+let worldTrains = [];
 let worldUnsub = null, movesUnsub = null, lastSaved = '', offerCache = new Map(), live = false, liveTimer = null, fetching = new Set();
 const INACTIVE_MS = 10 * 60 * 1000;   // a neighbour idle this long stops sharing facilities
 let profile = null, profileDirty = false, chatUnsub = null, chatMessages = [], chatUnread = 0, chatDraft = '', lastChat = 0;
@@ -403,6 +409,35 @@ function computeLinks() {
       visitorsFrom.push({ name: q.name, edge, via, ...theirUse });
     }
   }
+  // A train for every rail link: from your station, over the bridge, to the neighbour's station.
+  const railTile = (t) => t === T.RAIL || t === T.XING || t === T.STATION;
+  const walkRail = (grid, from, goal) => {
+    const prev = new Map([[from, -1]]), q = [from];
+    for (let k = 0; k < q.length; k++) {
+      const u = q[k];
+      if (goal(u)) { const out = []; for (let v = u; v !== -1; v = prev.get(v)) out.push(v); return out.reverse(); }
+      for (const v of sim.neighbours(u)) if (!prev.has(v) && railTile(grid[v])) { prev.set(v, u); q.push(v); }
+    }
+    return null;
+  };
+  const trains = [];
+  for (const a of abroad) {
+    if (a.via !== 'rail') continue;
+    const q = plots.get(a.id), dx = q.px - me.px, dy = q.py - me.py;
+    const k = dx ? Math.floor(a.edge / PLOT) : a.edge % PLOT;
+    const theirEdge = dx === 1 ? k * PLOT : dx === -1 ? k * PLOT + PLOT - 1 : dy === 1 ? k : (PLOT - 1) * PLOT + k;
+    const mine = walkRail(state.grid, a.edge, (i) => state.grid[i] === T.STATION);
+    const theirs = walkRail(q.grid, theirEdge, (i) => q.grid[i] === T.STATION);
+    if (!mine || !theirs) continue;
+    const wpt = (p, i) => [p.px * STRIDE + (i % PLOT) + 0.5, p.py * STRIDE + Math.floor(i / PLOT) + 0.5];
+    const path = [...mine.reverse().map((i) => wpt(me, i))];
+    const e = path.at(-1);
+    for (let g = 1; g <= 2; g++) path.push([e[0] + dx * g, e[1] + dy * g]);
+    path.push(...theirs.map((i) => wpt(q, i)));
+    const old = worldTrains.find((t) => t.to === q.id);
+    trains.push(old && old.path.length === path.length ? old : { to: q.id, path, s: 0, dir: 1, wait: 1, mode: 'train', vehicle: true });
+  }
+  worldTrains = trains;
   state._abroad = abroad;
   state._incoming = incoming;
   state._visitorsFrom = visitorsFrom;
@@ -528,6 +563,22 @@ function checkGoals() {
   }
 }
 
+// Council decisions: a small card with two choices. Ignoring it for 3 days counts as the second.
+function renderDecision() {
+  const box = $('decision');
+  const d = state?.decision && DECISIONS.find((x) => x.id === state.decision.id);
+  if (!d || document.body.classList.contains('photo')) { box.classList.add('hidden'); box.dataset.id = ''; return; }
+  if (box.dataset.id === d.id) return;
+  box.dataset.id = d.id;
+  box.innerHTML = `<span class="pill">Council decision</span><h3>${d.title}</h3><p>${d.text}</p>
+    <div class="dchoices"><button class="btn primary" type="button" data-choice="a">${d.a[0]}<small>${d.a[1]}</small></button>
+    <button class="btn" type="button" data-choice="b">${d.b[0]}<small>${d.b[1]}</small></button></div>`;
+  box.classList.remove('hidden');
+  box.querySelectorAll('[data-choice]').forEach((b) => { b.onclick = () => { sim.decide(state, b.dataset.choice); play('coin'); box.dataset.id = ''; renderDecision(); afterChange(); }; });
+  announce(`Council decision: ${d.title}. ${d.text}`);
+  play('warn');
+}
+
 function startLoops() {
   stopLoops();
   loopTimer = setInterval(() => {
@@ -539,6 +590,8 @@ function startLoops() {
     updateHud();
     drawMinimap();
     updateFollowChip();
+    renderDecision();
+    ambient(prefs.ambient, (plan?.trips.length || 0) / 120, nightAmt() < 0.5);
     if (drawer === 'inspect' || drawer === 'person') renderDrawer();
     else if (drawer && drawer !== 'world' && drawer !== 'chat' && state.hour !== lastHour) renderDrawer();
     lastHour = state.hour;
@@ -606,6 +659,7 @@ function setMode(m) {
   dirty = true;
 }
 function setBrush(b) {
+  if (b === 'zone' && brush === 'zone') { zoneKind = (zoneKind + 1) % 4; renderModebar(); announce(zoneKind ? ZONES[zoneKind].name : 'Unzone'); return; }
   brush = brush === b ? null : b;
   closeCatalog();
   renderModebar();
@@ -618,9 +672,10 @@ function renderModebar() {
   const bar = $('modebar');
   let html = '';
   if (mode === 'build') {
-    html = `${[[T.ROAD, 'road', 'i-road'], [T.PATH, 'path', 'i-path'], [T.RAIL, 'rail', 'i-rail'], ['clear', 'clear', 'i-clear']].map(([t, key, ic]) => {
-      const label = t === 'clear' ? 'Clear' : B[t].name, cost = t === 'clear' ? '' : `$${B[t].cost}`;
-      return `<button type="button" class="brush" data-brush="${key}" aria-pressed="${brush === key}" title="${t === 'clear' ? 'Demolish by dragging' : esc(B[t].blurb)}">${icon(ic)}<span>${label}</span><small class="num">${cost}</small></button>`;
+    html = `${[[T.ROAD, 'road', 'i-road'], [T.PATH, 'path', 'i-path'], [T.RAIL, 'rail', 'i-rail'], [T.LIGHTS, 'lights', 'i-lights'], [T.ROUNDABOUT, 'roundabout', 'i-round'], ['zone', 'zone', 'i-grid'], ['clear', 'clear', 'i-clear']].map(([t, key, ic]) => {
+      const label = t === 'clear' ? 'Clear' : t === 'zone' ? (zoneKind ? ['', 'Homes', 'Shops', 'Industry'][zoneKind] : 'Unzone') : t === T.LIGHTS ? 'Lights' : B[t].name;
+      const cost = t === 'clear' ? '' : t === 'zone' ? (zoneKind ? `$${ZONE_COST} a tile` : 'free') : `$${B[t].cost}`;
+      return `<button type="button" class="brush ${key === 'zone' ? `zone-${zoneKind}` : ''}" data-brush="${key}" aria-pressed="${brush === key}" title="${t === 'clear' ? 'Demolish by dragging' : t === 'zone' ? 'Paint zones: developers build when there’s demand. Tap again to switch between homes, shops, industry and unzone.' : esc(B[t].blurb)}">${icon(ic)}<span>${label}</span><small class="num">${cost}</small></button>`;
     }).join('')}<p class="mhint">${brush ? 'Drag to paint. Tap the brush again to stop.' : `Tap empty land to choose a building. Land parcels cost <b class="num">${money(sim.landPrice(state))}</b>.`}</p>`;
   } else if (mode === 'move') {
     html = moveFrom >= 0
@@ -640,6 +695,7 @@ function checkpoint(label) {
   undoStack.push({ label, at: Date.now(), snap: sim.serialize(state) });
   if (undoStack.length > 15) undoStack.shift();
 }
+const BRUSH_TYPE = { road: T.ROAD, path: T.PATH, rail: T.RAIL, lights: T.LIGHTS, roundabout: T.ROUNDABOUT };
 function placeAt(i, type, quiet) {
   const { x, y } = sim.xy(i);
   const snap = sim.serialize(state);
@@ -780,7 +836,8 @@ function hoverInfo(h) {
   if (mode === 'build') {
     if (!sim.owns(state, h.i)) { out.ok = false; out.sale = true; }
     else if (brush === 'clear') { out.ok = t !== T.EMPTY && t !== T.HALL; out.tool = 'bulldoze'; }
-    else if (brush) { const type = { road: T.ROAD, path: T.PATH, rail: T.RAIL }[brush]; out.ok = sim.canPlace(state, h.i, type).ok; out.ghost = type; }
+    else if (brush === 'zone') out.ok = sim.canZone(state, h.i, zoneKind).ok;
+    else if (brush) { const type = BRUSH_TYPE[brush]; out.ok = sim.canPlace(state, h.i, type).ok; out.ghost = type < T.LIGHTS ? type : undefined; }
     else out.ok = t === T.EMPTY || t !== T.RUBBLE;
   } else if (mode === 'move') {
     if (moveFrom >= 0) { out.ok = sim.canMove(state, moveFrom, h.i).ok; if (out.ok) out.ghost = state.grid[moveFrom]; }
@@ -917,7 +974,12 @@ canvas.addEventListener('pointerdown', (e) => {
 function paint(h, quiet) {
   if (!sim.owns(state, h.i)) { if (!quiet) notify('You don’t own this land yet. Tap it without a brush to buy it.', 'act'); return; }
   if (brush === 'clear') demolish(h.i, quiet);
-  else placeAt(h.i, { road: T.ROAD, path: T.PATH, rail: T.RAIL }[brush], quiet);
+  else if (brush === 'zone') {
+    const r = sim.zone(state, h.i, zoneKind);
+    if (r.ok) { dirty = true; scheduleSave(); if (!quiet) play('tap'); }
+    else if (!quiet) notify(r.reason, 'act');
+  }
+  else placeAt(h.i, BRUSH_TYPE[brush], quiet);
 }
 canvas.addEventListener('pointermove', (e) => {
   if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
@@ -989,7 +1051,7 @@ window.addEventListener('keydown', (e) => {
   if (pan) { followCam = false; renderer.panBy(-pan[0], -pan[1]); dirty = true; return; }
   if (k === '+' || k === '=') { renderer.zoomAt(renderer.w / 2, renderer.h / 2, 1.2); dirty = true; return; }
   if (k === '-' || k === '_') { renderer.zoomAt(renderer.w / 2, renderer.h / 2, 1 / 1.2); dirty = true; return; }
-  if (mode === 'build' && ['1', '2', '3', '4'].includes(k)) { setBrush(['road', 'path', 'rail', 'clear'][+k - 1]); return; }
+  if (mode === 'build' && ['1', '2', '3', '4', '5', '6', '7'].includes(k)) { setBrush(['road', 'path', 'rail', 'lights', 'roundabout', 'zone', 'clear'][+k - 1]); return; }
   const actions = {
     b: () => setMode('build'), e: () => setMode('select'), r: () => setMode('move'),
     '0': fitWorld, t: toggleTraffic, v: toggleView, h: fitHome, g: () => setPref('grid', !prefs.grid),
@@ -1023,6 +1085,17 @@ function frame(now) {
     pops = pops.filter((p) => now - p.t0 < p.dur);
     const t = clockNow();
     const agentsByPlot = prefs.cars ? trips.update(dt, visiblePlotIds(), () => t, prefs.density) : new Map();
+    for (const tr of worldTrains) {
+      if (tr.wait > 0) tr.wait -= dt;
+      else {
+        tr.s += dt * 3 * tr.dir;
+        if (tr.s >= tr.path.length - 1) { tr.s = tr.path.length - 1.001; tr.dir = -1; tr.wait = 1.5; }
+        if (tr.s <= 0) { tr.s = 0; tr.dir = 1; tr.wait = 1.5; }
+      }
+      const k = Math.floor(tr.s), f = tr.s - k, a = tr.path[k], b = tr.path[Math.min(k + 1, tr.path.length - 1)];
+      tr.lx = a[0] + (b[0] - a[0]) * f; tr.ly = a[1] + (b[1] - a[1]) * f;
+      if (b[0] !== a[0] || b[1] !== a[1]) { tr.dx = (b[0] - a[0]) * tr.dir; tr.dy = (b[1] - a[1]) * tr.dir; }
+    }
     const fa = followCam && trips.followedAgent();
     if (fa) {
       renderer.cam.x += (me.px * STRIDE + fa.lx - renderer.cam.x) * Math.min(1, dt * 4);
@@ -1036,9 +1109,9 @@ function frame(now) {
     } else pulseTileMove = null;
     if (catalog) { const { x, y } = sim.xy(catalog.tile); hv = { px: me.px, py: me.py, tx: x, ty: y, i: catalog.tile, ok: true, tool: 'build' }; }
     const wx = sim.weather(sim.worldDay());
-    if (dirty || agentsByPlot.size || pops.length || pulseTile || pulseTileMove || wx === 'rain' || wx === 'snow') {
+    if (dirty || worldTrains.length || agentsByPlot.size || pops.length || pulseTile || pulseTileMove || wx === 'rain' || wx === 'snow') {
       renderer.draw({
-        plots, hover: hv, cursor, selected, overlay, traffic: plan, agentsByPlot, pops, prefs, bridges, pulseTile: pulseTile || pulseTileMove,
+        plots, hover: hv, cursor, selected, overlay, traffic: plan, worldTrains, info: infoTiles(), agentsByPlot, pops, prefs, bridges, pulseTile: pulseTile || pulseTileMove,
         showLand: mode === 'build', landPrice: state ? sim.landPrice(state) : 0, season: sim.season(sim.worldDay()), weather: sim.weather(sim.worldDay()),
         theme: resolvedTheme(prefs), palette: palette(prefs), paletteKey: prefs.colours, shapes: prefs.shapes, nightAmt: nightAmt(),
       });
@@ -1081,7 +1154,64 @@ function goTo(px, py, tx = PLOT / 2, ty = PLOT / 2, z = 12) {
   if (renderer.cam.z < z) renderer.cam.z = z;
   dirty = true;
 }
-function toggleTraffic() {
+// Info views, like Cities: Skylines: colour the map by traffic, mood, service coverage or noise.
+const VIEWS = [['traffic', 'Traffic', 'Green roads flow, red roads are jammed.'], ['mood', 'Mood', 'Homes coloured by how happy their residents are.'],
+  ['services', 'Services', 'Brighter green means more services reach that spot: police, fire, health, schools and transport.'],
+  ['noise', 'Noise', 'Purple tiles are within earshot of a factory. Homes there are less happy.']];
+let infoCache = null, infoKey = '';
+function infoTiles() {
+  if (!state || !overlay || overlay === 'traffic') return null;
+  const key = `${overlay}|${state.day}|${state.hour}|${me.version}`;
+  if (key === infoKey) return infoCache;
+  const out = new Map(), N = PLOT * PLOT, d1 = (a, b) => Math.abs(a % PLOT - b % PLOT) + Math.abs(Math.floor(a / PLOT) - Math.floor(b / PLOT));
+  if (overlay === 'mood') {
+    const by = new Map();
+    for (const p of state.people) { const a = by.get(p.h) || [0, 0]; a[0] += p.m; a[1]++; by.set(p.h, a); }
+    for (const [h, [sum, n]] of by) { const m = sum / n; out.set(h, `rgba(${Math.round(230 - m * 190)},${Math.round(70 + m * 150)},70,0.55)`); }
+  } else {
+    const src = [];
+    for (let i = 0; i < N; i++) {
+      const t = state.grid[i], d = B[t];
+      if (!d || state.cond[i] <= 0) continue;
+      if (overlay === 'noise' && d.pollution) src.push([i, d.pollution]);
+      if (overlay === 'services') {
+        if (d.radius) src.push([i, d.radius]);
+        else if (d.care || d.school) src.push([i, 8]);
+        else if (d.catchment) src.push([i, d.catchment]);
+      }
+    }
+    for (let i = 0; i < N; i++) {
+      if (!sim.owns(state, i)) continue;
+      const n = src.filter(([j, r]) => d1(i, j) <= r).length;
+      if (!n) continue;
+      out.set(i, overlay === 'noise' ? `rgba(138,91,214,${Math.min(0.5, 0.25 * n)})` : `rgba(47,158,90,${Math.min(0.55, 0.1 * n)})`);
+    }
+  }
+  infoKey = key; infoCache = out;
+  return out;
+}
+function setView(v) {
+  overlay = overlay === v ? null : v;
+  $('btn-traffic').setAttribute('aria-pressed', !!overlay);
+  const info = VIEWS.find((x) => x[0] === overlay);
+  announce(info ? `${info[1]} view. ${info[2]}` : 'Info view off.');
+  if (info) notify(`${info[1]}: ${info[2]}`, 'act');
+  $('views')?.remove();
+  dirty = true;
+}
+function showViews() {
+  if ($('views')) { $('views').remove(); return; }
+  const m = document.createElement('div');
+  m.id = 'views'; m.className = 'views plate'; m.setAttribute('role', 'menu');
+  m.innerHTML = VIEWS.map(([k, l]) => `<button type="button" role="menuitemradio" aria-checked="${overlay === k}" data-view="${k}">${l}</button>`).join('') + (overlay ? '<button type="button" role="menuitem" data-view="">Turn off</button>' : '');
+  document.body.appendChild(m);
+  const r = $('btn-traffic').getBoundingClientRect();
+  m.style.top = `${r.bottom + 8}px`; m.style.right = `${innerWidth - r.right}px`;
+  m.querySelectorAll('[data-view]').forEach((b) => { b.onclick = () => (b.dataset.view ? setView(b.dataset.view) : setView(overlay)); });
+  m.querySelector('button').focus();
+}
+function toggleTraffic() { setView(overlay ? overlay : 'traffic'); }
+function toggleTrafficOld() {
   overlay = overlay === 'traffic' ? null : 'traffic';
   $('btn-traffic').setAttribute('aria-pressed', overlay === 'traffic');
   announce(overlay ? 'Traffic shown. Green roads flow, red roads are jammed.' : 'Traffic hidden.');
@@ -1095,7 +1225,7 @@ function toggleView() {
 }
 $('view-3d').onclick = () => prefs.view !== '3d' && toggleView();
 $('view-2d').onclick = () => prefs.view !== 'flat' && toggleView();
-$('btn-traffic').onclick = toggleTraffic;
+$('btn-traffic').onclick = showViews;
 $('btn-home').onclick = fitHome;
 $('btn-world').onclick = fitWorld;
 $('btn-board').onclick = showBoard;
@@ -1159,7 +1289,8 @@ function updateHud() {
   const c = sim.census(state), st = state.stats, pop = c.total;
   const net = (st.income || 0) - (st.upkeep || 0);
   $('city-name').textContent = state.name;
-  $('clock').textContent = state.status === 'ruins' ? `Fell on day ${state.day}` : `Day ${state.day}, ${hourLabel(state.hour)}`;
+  $('clock').textContent = `${hourLabel(state.hour)}, ${dateLabel()}`;
+  $('city-name').title = state.status === 'ruins' ? `Fell after ${state.day} days` : `${state.name} has been running for ${state.day} day${state.day === 1 ? '' : 's'}. Click to rename.`;
   $('dayfill').style.width = `${(clockNow() / 24) * 100}%`;
   $('live').classList.toggle('on', live);
   $('live').title = live ? 'Live: other players’ changes appear as they happen' : 'Connecting…';
@@ -1177,10 +1308,23 @@ function updateHud() {
   $('v-mood').textContent = pct(h);
   $('v-mood-word').textContent = moodWord(h);
   const needs = plan?.needs || {};
-  $('needs').innerHTML = NEEDS.map((n) => `<li title="${esc(n.fix)}">${icon(n.icon)}<span class="nlabel">${n.label}</span>${bar(n.label, needs[n.k] ?? 1)}</li>`).join('');
+  const rows = [...NEEDS];
+  if (state.flags.utilSince !== undefined) {
+    const u = state._util || sim.utilities(state), all = state.grid.filter((t) => B[t]?.cat).length || 1;
+    needs.utilities = Math.min(u.power.size, u.water.size) / all;
+    rows.push({ k: 'utilities', icon: 'i-spark', label: 'Power and water', fix: 'Build power stations and water towers so every building is covered.' });
+  }
+  $('needs').innerHTML = rows.map((n) => `<li title="${esc(n.fix)}">${icon(n.icon)}<span class="nlabel">${n.label}</span>${bar(n.label, needs[n.k] ?? 1)}</li>`).join('');
   const worst = NEEDS.map((n) => [n, needs[n.k] ?? 1]).sort((a, b) => a[1] - b[1])[0];
-  $('hint').textContent = state.status === 'ruins' ? 'This city has fallen. Rebuild on the ruins to start again.'
-    : worst && worst[1] < 0.7 ? worst[0].fix : 'Everything is covered. Grow, upgrade, and link roads with neighbours for trade.';
+  const dem = sim.demand(state, plan);
+  $('demand').innerHTML = [['homes', 'Homes'], ['jobs', 'Jobs'], ['shops', 'Shops'], ['services', 'Services']].map(([k, l]) =>
+    `<div class="dcol" title="${l}: ${dem[k] > 0.2 ? 'needed' : dem[k] < -0.2 ? 'more than enough' : 'about right'}"><span class="dbar"><i style="${dem[k] >= 0 ? `bottom:50%;height:${dem[k] * 50}%` : `top:50%;height:${-dem[k] * 50}%`}" class="${dem[k] >= 0 ? 'up' : 'down'}"></i></span><small>${l}</small></div>`).join('');
+  const tips = state.status === 'ruins' ? [] : sim.advice(state, plan);
+  const tip = tips[0];
+  $('hint').innerHTML = state.status === 'ruins' ? 'This city has fallen. Rebuild on the ruins to start again.'
+    : tip ? `${esc(tip.text)}${tip.type ? ` <button type="button" class="linkbtn" id="tip-go" data-type="${tip.type}">Show me</button>` : ''}`
+    : 'Everything is covered. Grow, upgrade, and link roads with neighbours for trade.';
+  $('tip-go')?.addEventListener('click', (e) => { const t = +e.target.dataset.type; setMode('build'); catQ = B[t].name; notify(`Tap an empty tile you own to build a ${B[t].name.toLowerCase()}.`, 'act'); });
   const alert = $('alert');
   const msg = state.status === 'ruins' ? 'City fallen' : state.unpaidDays ? `Upkeep unpaid for ${state.unpaidDays}d` : c.sick > pop * 0.15 && pop > 10 ? `${c.sick} people sick` : state.cases > 3 ? `${state.cases} court cases waiting` : '';
   alert.textContent = msg;
@@ -1383,7 +1527,23 @@ function inspectorAction(what, arg) {
   const i = selected?.i;
   if (what === 'tap') tap(i);
   else if (what === 'upgrade') upgradeAt(i);
-  else if (what === 'clear') demolish(i, false);
+  else if (what === 'clear') {
+    const t = state.grid[i];
+    if (!B[t]?.cat) { demolish(i, false); }
+    else {
+      const n = state.people.filter((p) => p.h === i || p.j === i || p.sc === i).length;
+      openModal(`<h2 id="modal-title">Demolish this ${B[t].name.toLowerCase()}?</h2><p>${n ? `${n} ${n === 1 ? 'person lives, works or studies' : 'people live, work or study'} here and will need somewhere else. ` : ''}You can undo it for a minute afterwards.</p>
+        <div class="mfoot"><button class="btn primary" data-close autofocus>Keep it</button><button class="btn danger" id="demo-go">Demolish</button></div>`);
+      $('demo-go').onclick = () => { closeModal(); demolish(i, false); };
+    }
+    return;
+  }
+  else if (what === 'cancel-build') {
+    openModal(`<h2 id="modal-title">Cancel this ${B[state.grid[i]].name.toLowerCase()}?</h2><p>Builders stop and the site is cleared. You get half the price back if work hadn’t started.</p>
+      <div class="mfoot"><button class="btn primary" data-close autofocus>Keep building</button><button class="btn danger" id="cancel-go">Cancel construction</button></div>`);
+    $('cancel-go').onclick = () => { closeModal(); demolish(i, false); };
+    return;
+  }
   else if (what === 'move') { setMode('move'); moveFrom = i; renderModebar(); notify('Now tap an empty tile you own to put it down.', 'act'); dirty = true; }
   else if (what === 'follow') { follow(+arg); return; }
   else if (what === 'home') { const { x, y } = sim.xy(+arg); select({ px: me.px, py: me.py, tx: x, ty: y, i: +arg }); goTo(me.px, me.py, x, y, 18); return; }
@@ -1407,7 +1567,7 @@ function ownTile(i) {
   const { x, y } = sim.xy(i);
   const where = `<p class="where">Tile ${x + 1}, ${y + 1}</p>`;
   if (!sim.owns(state, i)) return `<h2>Land for sale</h2>${where}<p>Switch to Build and tap it to buy this parcel for ${money(sim.landPrice(state))}.</p>`;
-  if (t === T.EMPTY) return `<h2>Empty land</h2>${where}<p>Switch to Build and tap here to see everything you can put on it.</p>`;
+  if (t === T.EMPTY) return `<h2>${state.zone[i] ? ZONES[state.zone[i]].name : 'Empty land'}</h2>${where}<p>${state.zone[i] ? 'Developers will build here when the city needs it. It needs a road beside it.' : 'Switch to Build and tap here to see everything you can put on it.'}</p>`;
   if (t === T.RUBBLE) return `<h2>Rubble</h2>${where}<p>Left from a city that fell. Clearing it costs $${RUBBLE_CLEAR_COST}.</p>
     <div class="actions"><button class="btn" data-do="clear">${icon('i-clear')}Clear for $${RUBBLE_CLEAR_COST}</button></div>`;
   if (t === T.RAIL && !q) {
@@ -1430,11 +1590,12 @@ function ownTile(i) {
       <div class="progress big"><i style="width:${done * 100}%"></i></div>${row('Done', pct(done))}
       <p>${pos === 0 ? 'Builders are working on this now.' : `${pos} job${pos > 1 ? 's' : ''} ahead of it.`} More builders finish faster.</p>
       <p class="soft small">${esc(panels.gives(t))}</p>
-      <div class="actions">${q.tap < total * 0.25 - 1e-6 ? `<button class="btn primary" data-do="tap">${icon('i-hammer')}Help build</button>` : ''}<button class="btn" data-do="clear">${icon('i-clear')}Cancel</button></div>`;
+      <div class="actions">${q.tap < total * 0.25 - 1e-6 ? `<button class="btn primary" data-do="tap">${icon('i-hammer')}Help build</button>` : `<button class="btn" disabled>${icon('i-check')}Your builders have it from here</button>`}</div>
+      <div class="danger-row"><button class="linkbtn danger-link" data-do="cancel-build">Cancel construction</button></div>`;
   }
   const cond = t === T.HALL ? 100 : state.cond[i];
   const people = state.people;
-  let body = `<p class="soft small">${esc(d.blurb || '')}</p>`;
+  let body = `<p class="soft small">${esc(d.blurb || '')}</p>${state.zone[i] ? '<p class="good-t small">Built by developers in a zone: you pay no upkeep.</p>' : ''}`;
   if (d.jobs) {
     const slots = sim.jobSlots(state, i), staff = people.filter((p) => p.j === i && !p.oj);
     body += `<div class="kv"><span>Staff</span><b class="num">${staff.length} of ${slots.reduce((a, b) => a + b, 0)}</b></div>`;
@@ -1499,7 +1660,7 @@ function otherPlot(h) {
   const n = neighbourInfo.find((x) => x.px === p.px && x.py === p.py);
   const t = p.grid[h.i];
   const idle = !isActive(p);
-  return `<h2>${esc(p.name)}</h2><p class="soft">Mayor ${esc(p.ownerName)}${p.cityNo > 1 ? `, city number ${p.cityNo} on this plot` : ''}</p>
+  return `<h2>${esc(p.name)}</h2><p class="soft">Mayor ${esc(p.ownerName)}. Running for ${p.day} day${p.day === 1 ? '' : 's'}${p.cityNo > 1 ? `, city number ${p.cityNo} on this plot` : ''}.</p>
     <p class="${idle ? 'warn' : 'good-t'} small">${idle ? `Last active ${ago(p.active)}. Paused until the mayor returns, so it isn't sharing facilities.` : 'Active now'}</p>
     <div class="likes" id="likes" data-plot="${p.id}"></div>
     ${t && B[t] ? `<p class="soft small">You tapped their ${B[t].name.toLowerCase()}.</p>` : ''}
@@ -1611,9 +1772,11 @@ function showWelcome() {
 
 function showHelp() {
   openModal(`${closeX}<h2 id="modal-title">How Commons works</h2>
+    <div class="help-actions"><button class="btn" type="button" id="h-support">${icon('i-help')}Questions and support</button><button class="btn" type="button" id="h-feedback">${icon('i-chat')}Send feedback</button></div>
     <button class="choice wide-choice" type="button" id="h-tour">${icon('i-book')}<b>${tut.active() ? 'Restart the tour' : 'Take the interactive tour'}</b><small>Learn by building, step by step.</small></button>
     <div class="help">
       <section><h3>${icon('i-hammer')}Build, Select, Move</h3><p>Build: tap empty land for a menu of everything you can afford, or pick a road brush and drag. Select: tap anything for details and options. Move: pick up a building and put it elsewhere.</p></section>
+      <section><h3>${icon('i-grid')}Zones</h3><p>Paint homes, shops or industry zones. When the demand bars say so, developers build there for free and you pay no upkeep.</p></section>
       <section><h3>${icon('i-map')}Land</h3><p>You start with an 8×8 patch. In Build mode, price tags show land next to yours that you can buy.</p></section>
       <section><h3>${icon('i-people')}Real people</h3><p>Every resident has a name, family, age, education, job and routine. Every car, bike and walker is one of them. Tap them.</p></section>
       <section><h3>${icon('i-school')}Growing up</h3><p>A day is a year. Toddlers need daycare or a parent stays home. Children need primary and high school; graduates can go to university for the best jobs.</p></section>
@@ -1624,8 +1787,49 @@ function showHelp() {
       <section><h3>${icon('i-link')}Neighbours</h3><p>Roads or railways that meet across a plot edge link two cities: trade, mood, and out-of-town jobs by train or bus. Chat with everyone in your world.</p></section>
     </div>
     <h3 class="keys-h">Keys</h3>
-    <p class="keys"><kbd>B</kbd> build, <kbd>E</kbd> select, <kbd>R</kbd> move, <kbd>1</kbd>–<kbd>4</kbd> road, footpath, railway, clear (in Build), <kbd>Ctrl</kbd> <kbd>Z</kbd> undo, <kbd>T</kbd> traffic, <kbd>V</kbd> 3D or 2D, <kbd>H</kbd> home, <kbd>0</kbd> whole map, <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> pan, <kbd>+</kbd> <kbd>−</kbd> zoom, <kbd>O</kbd> goals, <kbd>P</kbd> people, <kbd>C</kbd> stats, <kbd>N</kbd> news, <kbd>K</kbd> chat, <kbd>J</kbd> world, <kbd>F</kbd> photo mode, <kbd>Esc</kbd> cancel. Click the map, then use the arrow keys and <kbd>Enter</kbd> to play without a mouse.</p>`, 'wide');
+    <p class="keys"><kbd>B</kbd> build, <kbd>E</kbd> select, <kbd>R</kbd> move, <kbd>1</kbd>–<kbd>7</kbd> road, footpath, railway, traffic lights, roundabout, zones (press again to switch type), clear (in Build), <kbd>Ctrl</kbd> <kbd>Z</kbd> undo, <kbd>T</kbd> traffic, <kbd>V</kbd> 3D or 2D, <kbd>H</kbd> home, <kbd>0</kbd> whole map, <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> pan, <kbd>+</kbd> <kbd>−</kbd> zoom, <kbd>O</kbd> goals, <kbd>P</kbd> people, <kbd>C</kbd> stats, <kbd>N</kbd> news, <kbd>K</kbd> chat, <kbd>J</kbd> world, <kbd>F</kbd> photo mode, <kbd>T</kbd> info views, <kbd>Esc</kbd> cancel. Click the map, then use the arrow keys and <kbd>Enter</kbd> to play without a mouse.</p>`, 'wide');
   $('h-tour').onclick = () => { closeModal(); tut.start(0); };
+  $('h-support').onclick = showSupport;
+  $('h-feedback').onclick = () => showFeedback();
+}
+
+const VERSION = 'Commons 0.9';
+const FAQ = [
+  ['Why won’t my school or clinic open?', 'Services need staff with the right education. Tap the building to see which jobs are open. Build schools so residents qualify, or wait for qualified people to arrive.'],
+  ['Why are people leaving?', 'Unhappy families move away. Open People and filter by Unhappy to see what’s on their minds, then fix the weakest need in the mood panel.'],
+  ['My money keeps going down.', 'Upkeep is fixed even when people leave. In Stats, Budget shows where money goes. Lower service funding in Stats, Policy, or get more people into work.'],
+  ['How do I connect to a neighbour?', 'Run a road or railway to your plot edge where the neighbour has one at the same spot. A bridge appears and the cities are linked.'],
+  ['Why is time different when I come back?', 'Every city shares one world clock. While you’re away your city keeps living for up to 3 days, then waits for you.'],
+  ['Can I get my guest city on another device?', 'Only if you save it as an account first: Account, then Account again, then Save as an account.'],
+];
+function showSupport() {
+  openModal(`${closeX}<h2 id="modal-title">Help and support</h2>
+    <div class="faq">${FAQ.map(([q, a]) => `<details><summary>${q}</summary><p>${a}</p></details>`).join('')}</div>
+    <div class="mfoot"><button class="btn" id="sup-tour">${icon('i-book')}Take the tour</button><button class="btn primary" id="sup-contact">Still stuck? Contact us</button></div>`, 'wide');
+  $('sup-tour').onclick = () => { closeModal(); tut.start(0); };
+  $('sup-contact').onclick = () => showFeedback('Question');
+}
+function showFeedback(kind = 'Bug') {
+  openModal(`${closeX}<h2 id="modal-title">Send feedback</h2>
+    <p class="soft">Found a bug, have an idea, or need help? It goes straight to the developer.</p>
+    <div class="seg" role="radiogroup" aria-label="Type">${['Bug', 'Idea', 'Question', 'Other'].map((k) => `<button type="button" role="radio" aria-checked="${k === kind}" data-kind="${k}">${k}</button>`).join('')}</div>
+    <label class="field"><span>${kind === 'Bug' ? 'What happened, and what did you expect?' : kind === 'Question' ? 'What do you need help with?' : 'Tell us more'}</span><textarea id="fb-text" rows="5" maxlength="2000"></textarea></label>
+    <label class="field"><span>Email for a reply (optional)</span><input id="fb-email" type="email" autocomplete="email" value="${esc(user.email || '')}"></label>
+    <label class="tgl"><input type="checkbox" id="fb-info" checked><span class="sw" aria-hidden="true"></span><span class="tl">Include game details<small>Your city, world, day, browser and screen size. Helps with bugs.</small></span></label>
+    <p id="fb-msg" class="formmsg" role="alert"></p>
+    <div class="mfoot"><button class="btn" data-close>Cancel</button><button class="btn primary" id="fb-send">Send</button></div>`);
+  modal.querySelectorAll('[data-kind]').forEach((b) => { b.onclick = () => { const t = $('fb-text').value; showFeedback(b.dataset.kind); $('fb-text').value = t; }; });
+  $('fb-text').focus();
+  $('fb-send').onclick = () => busy($('fb-send'), async () => {
+    const text = $('fb-text').value.trim();
+    if (text.length < 5) throw new Error('Write a little more so we can help.');
+    const info = $('fb-info').checked ? { city: state?.name || '', world: world.id, plot: plotId || '', day: state?.day || 0, pop: state?.people.length || 0,
+      browser: navigator.userAgent.slice(0, 200), screen: `${innerWidth}x${innerHeight}`, version: VERSION } : {};
+    await fb.sendFeedback({ uid: user.uid, kind: modal.querySelector('[data-kind][aria-checked="true"]').dataset.kind, text: text.slice(0, 2000), email: $('fb-email').value.trim().slice(0, 120), ...info });
+    closeModal();
+    notify('Thanks! Your feedback was sent.', 'act');
+    play('goal');
+  }, $('fb-msg'));
 }
 
 function showAway(r) {
@@ -1700,6 +1904,7 @@ function showSettings() {
         <button type="button" role="radio" aria-checked="${prefs.colours === k}" data-pref="colours" data-val='"${k}"' class="palcard">
           <span class="sw6" aria-hidden="true">${Object.values(p.cols).map((c) => `<i style="background:${c}"></i>`).join('')}</span>
           <b>${p.label}</b><small>${p.note}</small></button>`).join('')}</div>
+      ${tgl('mapContrast', 'High-contrast map', 'Dark outlines on every building so shapes stand out')}
       ${tgl('shapes', 'Shape badges on buildings', 'Circle homes, square work, triangle shops, diamond education, star leisure, hexagon services')}`,
     interface: `<div class="srow"><span>Text size</span>${seg('textSize', [[1, 'Normal'], [1.15, 'Large'], [1.3, 'Larger']])}</div>
       <div class="srow"><span>Notifications</span>${seg('notes', [['all', 'All'], ['warn', 'Warnings'], ['off', 'Off']])}</div>
@@ -1707,8 +1912,10 @@ function showSettings() {
       ${tgl('minimap', 'Minimap')}
       ${tgl('alerts', 'Alerts when the game is in the background', 'Browser notifications for warnings like unpaid upkeep')}
       ${tgl('speak', 'Read the city summary aloud', 'The summary button in the mood panel speaks as well as shows it')}
+      <div class="srow"><span>Feedback</span><button class="btn" type="button" id="set-feedback">Send feedback</button></div>
       <div class="srow"><span>Photo mode</span><button class="btn" type="button" id="set-photo">Hide the interface (F)</button></div>`,
     sound: `${tgl('sound', 'Sound effects', 'Shortcut: M')}
+      ${tgl('ambient', 'City sounds', 'A soft traffic hum that follows how busy it is, and birds by day')}
       <div class="srow"><span>Volume</span><input type="range" min="0" max="1" step="0.05" value="${prefs.volume}" data-pref="volume" aria-label="Volume"></div>`,
   };
   openModal(`${closeX}<h2 id="modal-title">Settings</h2>
@@ -1735,6 +1942,7 @@ function showSettings() {
     };
   });
   $('set-photo')?.addEventListener('click', () => { closeModal(); togglePhoto(); });
+  $('set-feedback')?.addEventListener('click', () => showFeedback());
   modal.querySelectorAll('input[type=range][data-pref]').forEach((r) => {
     r.oninput = () => { prefs.volume = +r.value; savePrefs(prefs); setSound(prefs.sound, prefs.volume); };
     r.onchange = () => play('coin');

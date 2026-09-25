@@ -62,6 +62,7 @@
       <symbol id="i-road" viewBox="0 0 24 24"><path d="M7 3 4 21M17 3l3 18M12 4v3M12 10.5v3M12 17v3"/></symbol>
       <symbol id="i-rail" viewBox="0 0 24 24"><path d="M8 3 6 21M16 3l2 18M7 7h10M6.5 12h11M6 17h12"/></symbol>
       <symbol id="i-bus" viewBox="0 0 24 24"><rect x="4" y="3.5" width="16" height="14" rx="2.5"/><path d="M4 11h16M7 17.5V20M17 17.5V20"/><circle cx="8" cy="14.5" r="1"/><circle cx="16" cy="14.5" r="1"/></symbol>
+      <symbol id="i-round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v5M12 16v5M3 12h5M16 12h5"/><path d="M15 6.5l1.5 1.5M8 16l-1.5 1.5"/></symbol>
     </defs>
   </svg>
 
@@ -137,7 +138,7 @@
           <button type="button" id="view-3d" aria-pressed="true" title="3D view (V)"><svg class="ic"><use href="#i-cube"/></svg><span>3D</span></button>
           <button type="button" id="view-2d" aria-pressed="false" title="2D view (V)"><svg class="ic"><use href="#i-grid"/></svg><span>2D</span></button>
         </div>
-        <button class="cbtn" id="btn-traffic" type="button" aria-pressed="false" title="Traffic (T)" aria-label="Show traffic"><svg class="ic"><use href="#i-lights"/></svg></button>
+        <button class="cbtn" id="btn-traffic" type="button" aria-pressed="false" title="Info views: traffic, mood, services, noise (T)" aria-label="Info views" aria-haspopup="menu"><svg class="ic"><use href="#i-lights"/></svg></button>
         <button class="cbtn" id="btn-home" type="button" title="My plot (H)" aria-label="Go to my plot"><svg class="ic"><use href="#i-target"/></svg></button>
         <button class="cbtn" id="btn-world" type="button" title="Whole map (0)" aria-label="Show the whole map"><svg class="ic"><use href="#i-map"/></svg></button>
         <span class="csep" aria-hidden="true"></span>
@@ -154,6 +155,7 @@
         <svg class="ring" viewBox="0 0 64 64" aria-hidden="true"><circle class="ring-bg" cx="32" cy="32" r="27"/><circle id="ring-fg" class="ring-fg" cx="32" cy="32" r="27"/><path id="ring-gem" class="gem" d="M32 17 39 32 32 47 25 32z"/></svg>
         <span class="pulse-txt"><small>Mood</small><b id="v-mood" class="num">0%</b><span id="v-mood-word" class="mood-word">Settling in</span></span>
       </button>
+      <div id="demand" class="demand" aria-label="Demand"></div>
       <ul id="needs" class="needs"></ul>
       <p id="hint" class="hint"></p>
       <button class="linkbtn summary-btn" id="btn-summary" type="button">Read me a city summary</button>
@@ -190,6 +192,7 @@
     <p id="tool-tip" class="tool-tip" aria-hidden="true"></p>
 
     <div id="toasts" class="toasts" aria-live="polite"></div>
+    <div id="decision" class="decision plate hidden" role="region" aria-label="Council decision" aria-live="polite"></div>
     <div id="photo-bar" class="photo-bar plate hidden"><span>Photo mode</span><button class="btn primary" id="photo-save" type="button">Save picture</button><button class="btn" id="photo-exit" type="button">Done</button></div>
     <div id="follow" class="follow-chip hidden" role="status"><span id="follow-text"></span><button type="button" id="follow-stop" class="linkbtn">Stop</button></div>
   </main>

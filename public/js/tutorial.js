@@ -42,7 +42,7 @@ const STEPS = [
   { title: 'Buy more land', text: 'Your plot starts with an 8×8 patch. In Build mode, price tags mark land you can buy next to what you own. Each parcel costs a bit more.',
     task: 'Buy a parcel of land', target: '[data-mode="build"]', base: (a) => a.state().counters.land, done: (a, b) => a.state().counters.land > b },
   { title: 'Keep people happy', text: 'The ring is the city’s mood. The eight bars are needs, and the hint names the weakest one. Unhappy families move away.', target: '#pulse' },
-  { title: 'Life happens', text: 'People get ill (build a clinic), get injured (a hospital), and grow old (a cemetery). Crime rises with unemployment; police catch offenders and a courthouse hears their cases.' },
+  { title: 'Life happens', text: 'People get ill (build a clinic), get injured (a hospital), and grow old (a cemetery). Crime rises with unemployment; police catch offenders and a courthouse hears their cases. From 25 people the town needs power and water, and the council will ask you to make decisions.' },
   { title: 'Watch the traffic', text: 'Each road carries about 45 car trips a day. The traffic view colours roads green to red. Jammed commuters arrive late and grumpy.',
     task: 'Turn on traffic (T)', target: '#btn-traffic', done: (a) => a.overlay() === 'traffic' },
   { title: 'Buses and trains', text: 'A bus depot and two or more stops run buses; people near a stop leave the car at home. Stations beside a railway carry people on long trips. Run track or roads into a neighbour’s city and your residents can commute to jobs there.', target: '[data-mode="build"]' },

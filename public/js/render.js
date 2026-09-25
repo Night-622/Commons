@@ -1,4 +1,4 @@
-import { PLOT, GAP, T, B, MAX_LEVEL, CHUNK, CHUNKS } from './constants.js';
+import { PLOT, GAP, T, B, MAX_LEVEL, CHUNK, CHUNKS, ZONES } from './constants.js';
 
 export const STRIDE = PLOT + GAP;
 const ISO_DETAIL = 7;     // below this zoom, 3D plots draw from cached images
@@ -65,14 +65,14 @@ const GLYPH_COL = { house: 0, work: 1, shop: 2, school: 3, park: 4, hall: 5 };
 const CODE = { [T.HOUSE]: 'H', [T.APARTMENT]: 'Ap', [T.VILLA]: 'V', [T.WORK]: 'Of', [T.SHOP]: 'G', [T.CAFE]: 'Ca', [T.FACTORY]: 'F', [T.YARD]: 'By',
   [T.DAYCARE]: 'Dc', [T.SCHOOL]: 'PS', [T.HIGH]: 'HS', [T.UNI]: 'U', [T.TUTOR]: 'Tu', [T.LIBRARY]: 'Li', [T.CLINIC]: '+', [T.HOSPITAL]: 'H+',
   [T.POLICE]: 'Po', [T.FIRE]: 'Fi', [T.COURT]: 'Ct', [T.CEMETERY]: 'Ce', [T.PARK]: 'Pk', [T.PLAYGROUND]: 'Pl', [T.SPORTS]: 'Sp', [T.GYM]: 'Gy',
-  [T.DOJO]: 'Do', [T.POOL]: 'Sw', [T.CINEMA]: 'Ci', [T.STATION]: 'St', [T.STOP]: 'Bs', [T.DEPOT]: 'Bd', [T.HALL]: 'TH' };
+  [T.DOJO]: 'Do', [T.POOL]: 'Sw', [T.CINEMA]: 'Ci', [T.STATION]: 'St', [T.STOP]: 'Bs', [T.DEPOT]: 'Bd', [T.HALL]: 'TH', [T.POWER]: 'Pw', [T.WATER]: 'Wa', [T.DRAIN]: 'Dr' };
 export const glyphOf = (t) => GLYPH_COL[B[t]?.col];
 // Ground colour for buildings that are mostly open space.
 const GROUND = { [T.SPORTS]: '#6fbf5a', [T.POOL]: '#e9e2cf', [T.CEMETERY]: '#8fb77a', [T.PLAYGROUND]: '#e8d6a3', [T.YARD]: '#c9ae86', [T.VILLA]: '#b8e09a' };
 const MODEL_H = { [T.APARTMENT]: 1.3, [T.VILLA]: 0.8, [T.CAFE]: 0.55, [T.FACTORY]: 1.3, [T.YARD]: 1.1, [T.DAYCARE]: 0.8, [T.HIGH]: 1.1, [T.UNI]: 1.4,
   [T.TUTOR]: 0.7, [T.LIBRARY]: 1, [T.CLINIC]: 0.7, [T.HOSPITAL]: 1.3, [T.POLICE]: 0.8, [T.FIRE]: 1.1, [T.COURT]: 1.2, [T.CEMETERY]: 0.3,
   [T.PLAYGROUND]: 0.5, [T.SPORTS]: 0.3, [T.GYM]: 0.7, [T.DOJO]: 0.9, [T.POOL]: 0.3, [T.CINEMA]: 0.9, [T.PATH]: 0.05,
-  [T.RAIL]: 0.05, [T.STATION]: 0.9, [T.STOP]: 0.5, [T.DEPOT]: 0.8 };
+  [T.DRAIN]: 0.3, [T.RAIL]: 0.05, [T.STATION]: 0.9, [T.STOP]: 0.5, [T.DEPOT]: 0.8, [T.POWER]: 1.4, [T.WATER]: 1.3 };
 export function glyph(g, kind, x, y, r, col) {
   g.fillStyle = col;
   g.beginPath();
@@ -189,6 +189,8 @@ export class Renderer {
         } else this.bridge(g, (tx, ty, h = 0) => this.project(ox + tx, oy + ty, h), b.dir, b.k, this.cam.z, b.rail);
       }
     }
+    // Trains between cities travel in world coordinates, across the bridges.
+    if (this.view === '3d' && this.cam.z >= 7) for (const tr of scene.worldTrains || []) if (tr.lx !== undefined) this.vehicle(g, (x, y, h = 0) => this.project(x, y, h), tr);
     this.overlays(g, scene);
     if (scene.pulseTile) {
       const t = scene.pulseTile, a = 0.5 + 0.5 * Math.sin(performance.now() / 250);
@@ -255,18 +257,31 @@ export class Renderer {
       if (t === T.EMPTY) continue;
       const tx = i % PLOT, ty = (i / PLOT) | 0;
       const dia = [P(tx, ty), P(tx + 1, ty), P(tx + 1, ty + 1), P(tx, ty + 1)];
-      if (t === T.ROAD || t === T.XING) {
+      if (t === T.ROAD || t === T.XING || t === T.LIGHTS || t === T.ROUNDABOUT) {
         let col = plot.uc?.has(i) ? th.dirt : th.road;
         if (traffic && traffic.cap[i]) col = jamColour(traffic.load[i] / traffic.cap[i]);
         if (z >= 9 && !plot.uc?.has(i)) {
           // Pavement on the sides that don't continue into more road.
           poly(g, dia, th.pave);
-          const road = (dx, dy) => { const x = tx + dx, y = ty + dy; return x >= 0 && y >= 0 && x < PLOT && y < PLOT && [T.ROAD, T.HALL, T.XING].includes(grid[y * PLOT + x]); };
+          const road = (dx, dy) => { const x = tx + dx, y = ty + dy; return x >= 0 && y >= 0 && x < PLOT && y < PLOT && [T.ROAD, T.HALL, T.XING, T.LIGHTS, T.ROUNDABOUT].includes(grid[y * PLOT + x]); };
           const e = 0.16, x0 = road(-1, 0) ? 0 : e, x1 = road(1, 0) ? 1 : 1 - e, y0 = road(0, -1) ? 0 : e, y1 = road(0, 1) ? 1 : 1 - e;
           poly(g, [P(tx + x0, ty + y0), P(tx + x1, ty + y0), P(tx + x1, ty + y1), P(tx + x0, ty + y1)], col);
         } else poly(g, dia, col);
-        if (z >= 10 && !plot.uc?.has(i) && t === T.ROAD) this.laneMarks(g, P, grid, i, tx, ty, z);
+        if (z >= 10 && !plot.uc?.has(i) && (t === T.ROAD || t === T.LIGHTS)) this.laneMarks(g, P, grid, i, tx, ty, z);
         if (t === T.XING && !plot.uc?.has(i)) this.rail(g, P, grid, i, tx, ty, z, false, true);
+        if (t === T.ROUNDABOUT && !plot.uc?.has(i)) {
+          const [cx, cy] = P(tx + 0.5, ty + 0.5), r = z * 0.28;
+          g.fillStyle = shade(this.pal.park, 0.35); g.strokeStyle = th.mark; g.lineWidth = Math.max(1.5, z / 12);
+          g.beginPath(); g.ellipse(cx, cy, r, r / 2, 0, 0, Math.PI * 2); g.fill(); g.stroke();
+        }
+        if (t === T.LIGHTS && !plot.uc?.has(i) && z >= 8) {
+          const green = Math.floor(performance.now() / 3000) % 2;
+          for (const [a, b, k] of [[0.12, 0.12, 0], [0.88, 0.88, 0], [0.88, 0.12, 1], [0.12, 0.88, 1]]) {
+            const [x0, y0] = P(tx + a, ty + b, 0), [x1, y1] = P(tx + a, ty + b, 0.35);
+            g.strokeStyle = '#3b444c'; g.lineWidth = Math.max(1, z / 18); g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+            g.fillStyle = (k ^ green) ? '#3ecf6a' : '#e04b3c'; g.beginPath(); g.arc(x1, y1, Math.max(1.5, z * 0.05), 0, Math.PI * 2); g.fill();
+          }
+        }
         if (live && t === T.ROAD && this.scene.nightAmt > 0.3 && hash(i, 21) < 0.35) this._lights.push([plot, tx + 0.12, ty + 0.12]);
       } else if (t === T.RAIL) {
         this.rail(g, P, grid, i, tx, ty, z, plot.uc?.has(i));
@@ -288,12 +303,22 @@ export class Renderer {
       poly(g, [P(cx, cy), P(cx + CHUNK, cy), P(cx + CHUNK, cy + CHUNK), P(cx, cy + CHUNK)], th.wild);
     }
     if (live && plot.mine && this.scene.showLand && land) this.landEdges(g, P, land);
+    const zones = live && plot.mine ? plot.st?.zone : null;
+    if (zones) for (let i = 0; i < zones.length; i++) {
+      if (!zones[i] || grid[i] !== T.EMPTY) continue;
+      const x = i % PLOT, y = (i / PLOT) | 0;
+      poly(g, [P(x + 0.06, y + 0.06), P(x + 0.94, y + 0.06), P(x + 0.94, y + 0.94), P(x + 0.06, y + 0.94)], ZONES[zones[i]].col, z >= 10 ? ZONES[zones[i]].col.replace(/[\d.]+\)$/, '0.9)') : null);
+    }
+    if (live && plot.mine && this.scene.info) for (const [i, col] of this.scene.info) {
+      const x = i % PLOT, y = (i / PLOT) | 0;
+      poly(g, [P(x, y), P(x + 1, y), P(x + 1, y + 1), P(x, y + 1)], col);
+    }
     // Pass 2: objects, back to front along diagonals
     const agents = live ? this.scene.agentsByPlot?.get(plot.id) : null;
     for (let s = 0; s <= 2 * (PLOT - 1); s++) {
       for (let tx = Math.max(0, s - PLOT + 1); tx <= Math.min(s, PLOT - 1); tx++) {
         const ty = s - tx, i = ty * PLOT + tx, t = grid[i];
-        if (t !== T.EMPTY && t !== T.ROAD && t !== T.PATH && t !== T.RAIL) this.object(g, P, plot, t, i, tx, ty, z, live);
+        if (B[t]?.cat || t === T.HALL || t === T.RUBBLE) this.object(g, P, plot, t, i, tx, ty, z, live);
         else if (t === T.EMPTY && land && !land[Math.floor(ty / CHUNK) * CHUNKS + Math.floor(tx / CHUNK)] && hash(i, 9) < 0.28 && z >= 6) {
           this.tree(g, P, tx + 0.3 + hash(i, 3) * 0.4, ty + 0.3 + hash(i, 4) * 0.4, 0.34 + hash(i, 5) * 0.22, th.wildTree, z);
         }
@@ -312,7 +337,7 @@ export class Renderer {
     g.beginPath();
     let n = 0;
     for (const [dx, dy, j] of dirs) {
-      if (j < 0 || (grid[j] !== T.ROAD && grid[j] !== T.HALL && grid[j] !== T.XING)) continue;
+      if (j < 0 || ![T.ROAD, T.HALL, T.XING, T.LIGHTS, T.ROUNDABOUT].includes(grid[j])) continue;
       n++;
       const a = P(cx, cy), b = P(cx + dx * 0.5, cy + dy * 0.5);
       g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]);
@@ -323,9 +348,11 @@ export class Renderer {
   }
 
   box(g, P, x0, y0, x1, y1, z0, z1, col, grey = 0) {
-    poly(g, [P(x0, y1, z0), P(x1, y1, z0), P(x1, y1, z1), P(x0, y1, z1)], shade(col, -0.02, grey));
-    poly(g, [P(x1, y0, z0), P(x1, y1, z0), P(x1, y1, z1), P(x1, y0, z1)], shade(col, -0.2, grey));
-    poly(g, [P(x0, y0, z1), P(x1, y0, z1), P(x1, y1, z1), P(x0, y1, z1)], shade(col, 0.16, grey));
+    const edge = this.scene?.prefs?.mapContrast ? 'rgba(0,0,0,0.6)' : null;
+    if (edge) g.lineWidth = 1;
+    poly(g, [P(x0, y1, z0), P(x1, y1, z0), P(x1, y1, z1), P(x0, y1, z1)], shade(col, -0.02, grey), edge);
+    poly(g, [P(x1, y0, z0), P(x1, y1, z0), P(x1, y1, z1), P(x1, y0, z1)], shade(col, -0.2, grey), edge);
+    poly(g, [P(x0, y0, z1), P(x1, y0, z1), P(x1, y1, z1), P(x0, y1, z1)], shade(col, 0.16, grey), edge);
   }
   // A rectangle painted on the south (S) or east (E) face.
   face(g, P, side, fixed, u0, u1, h0, h1, col) {
@@ -804,6 +831,30 @@ export class Renderer {
         this.box(g, P, tx + 0.08, ty + 0.1, tx + 0.92, ty + 0.9, h, h + 0.05, sh(col), grey);
         return h + 0.05;
       }
+      case T.POWER: {
+        const h = 0.6 + 0.2 * L;
+        this.box(g, P, tx + 0.08, ty + 0.4, tx + 0.6, ty + 0.92, 0, h, sh('#c9ced3'), grey);
+        this.face(g, P, 'S', ty + 0.92, tx + 0.12, tx + 0.56, h * 0.5, h * 0.75, sh(col));
+        for (const [x, y] of [[0.3, 0.2], [0.75, 0.55]]) {
+          const [a, b] = P(tx + x, ty + y, 0), [a2, b2] = P(tx + x, ty + y, 1.1), r = z * 0.17;
+          g.fillStyle = sh('#dfe3e6'); g.beginPath(); g.moveTo(a - r, b); g.lineTo(a2 - r * 0.7, b2); g.lineTo(a2 + r * 0.7, b2); g.lineTo(a + r, b); g.closePath(); g.fill();
+          g.fillStyle = sh('#b9bfc4'); g.beginPath(); g.ellipse(a2, b2, r * 0.7, r * 0.3, 0, 0, Math.PI * 2); g.fill();
+          if (live && cond > 0) { g.fillStyle = 'rgba(235,238,240,0.7)'; g.beginPath(); g.arc(a2, b2 - z * 0.2 - (performance.now() / 60 % 8), z * 0.14, 0, Math.PI * 2); g.fill(); }
+        }
+        return 1.3;
+      }
+      case T.WATER: {
+        for (const [x, y] of [[0.3, 0.3], [0.7, 0.3], [0.3, 0.7], [0.7, 0.7]]) this.box(g, P, tx + x - 0.03, ty + y - 0.03, tx + x + 0.03, ty + y + 0.03, 0, 0.75, '#8a9299', grey);
+        this.box(g, P, tx + 0.2, ty + 0.2, tx + 0.8, ty + 0.8, 0.75, 1.15, sh('#7fb6d9'), grey);
+        this.hip(g, P, tx + 0.18, ty + 0.18, tx + 0.82, ty + 0.82, 1.15, 0.15, sh(col), grey);
+        return 1.3;
+      }
+      case T.DRAIN: {
+        this.box(g, P, tx + 0.15, ty + 0.15, tx + 0.85, ty + 0.85, 0, 0.12, sh('#9aa3ab'), grey);
+        for (let k = 0; k < 4; k++) this.face(g, P, 'S', ty + 0.85, tx + 0.2 + k * 0.16, tx + 0.28 + k * 0.16, 0.02, 0.1, '#4a545c');
+        this.box(g, P, tx + 0.6, ty + 0.2, tx + 0.8, ty + 0.4, 0.12, 0.3, sh(col), grey);
+        return 0.35;
+      }
       case T.POOL: {
         poly(g, [P(tx + 0.15, ty + 0.2), P(tx + 0.85, ty + 0.2), P(tx + 0.85, ty + 0.8), P(tx + 0.15, ty + 0.8)], sh('#3fa9dc'));
         poly(g, [P(tx + 0.2, ty + 0.25), P(tx + 0.8, ty + 0.25), P(tx + 0.8, ty + 0.4), P(tx + 0.2, ty + 0.4)], 'rgba(255,255,255,0.25)');
@@ -852,13 +903,14 @@ export class Renderer {
       }
       g.stroke();
     }
+    if (plot.mine && this.scene.info) for (const [i, col] of this.scene.info) { g.fillStyle = col; g.fillRect(x0 + (i % PLOT) * s, y0 + ((i / PLOT) | 0) * s, s, s); }
     for (let i = 0; i < plot.grid.length; i++) {
       const t = plot.grid[i];
       if (t === T.EMPTY) continue;
       const x = x0 + (i % PLOT) * s, y = y0 + ((i / PLOT) | 0) * s;
       if (x > this.w || y > this.h || x + s < 0 || y + s < 0) continue;
       const uc = plot.uc?.has(i);
-      if (t === T.ROAD || t === T.PATH || t === T.RAIL || t === T.XING) {
+      if (!B[t]?.cat && t !== T.HALL && t !== T.RUBBLE) {
         let col = uc ? th.dirt : t === T.PATH ? th.pave : t === T.RAIL ? '#8f826d' : th.road;
         if (traffic && traffic.cap[i]) col = jamColour(traffic.load[i] / traffic.cap[i]);
         g.fillStyle = col; g.fillRect(x, y, s + 0.5, s + 0.5);

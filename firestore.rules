@@ -105,6 +105,14 @@ service cloud.firestore {
       allow delete: if signedIn() && resource.data.uid == me();
     }
 
+    // Feedback and support requests, for you to read in the console.
+    match /feedback/{id} {
+      allow create: if signedIn() && request.resource.data.uid == me()
+        && request.resource.data.text is string && request.resource.data.text.size() <= 2000
+        && request.resource.data.keys().size() < 16;
+      allow read, update, delete: if false;
+    }
+
     // Chat reports, for you to review in the console.
     match /reports/{id} {
       allow create: if signedIn() && request.resource.data.uid == me() && request.resource.data.keys().size() < 10;

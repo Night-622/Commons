@@ -243,3 +243,8 @@ export function setLike(world, plotId, uid, on) {
 export function report(world, uid, what) {
   return addDoc(collection(db, 'reports'), { world, uid, ...what, createdAt: serverTimestamp() });
 }
+
+// ---------- feedback ----------
+export function sendFeedback(data) {
+  return addDoc(collection(db, 'feedback'), { ...data, createdAt: serverTimestamp() });
+}
