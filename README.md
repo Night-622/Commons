@@ -22,15 +22,19 @@ Firestore rules are not deployed by the Action. After changing `firestore.rules`
 
 ## Features
 
-- Isometric 3D and flat 2D views, day and night, traffic that drives real commutes
-- People: every resident has a name, household, job, mood and a thought; follow anyone's commute
-- City stats: population mix, capacity, daily budget breakdown, 30-day history charts
-- News feed with random events (festivals, visitors, storms, fires, grants)
-- Goals with cash rewards, building upgrades to level 3, tap to help builders
-- Neighbour links: roads that meet across a plot edge form a bridge, earning trade and mood
-- Rebuild on your own ruins, or move onto anyone's ruins
-- Private worlds with invite codes, and switching between worlds
-- Interactive tutorial that waits for you to do each step
+- Real residents: names, ages, families, education, jobs, health and moods. A day is a year of life.
+- Every car, bike and walker is a resident on a real trip: to work, school, the shops, a clinic or a night out. Parents drive young children to school.
+- Life events: births, couples, children growing up and moving out, illness, injury, old age, crime, court cases.
+- 30 building types, each with a job: homes, work, education (daycare to university, tutoring, library), health and safety (clinic, hospital, police, fire, courthouse, cemetery), leisure and sport.
+- Services only open when staffed by people with the right education.
+- Build, Select and Move modes. Tap land in Build mode for a menu of everything you can afford.
+- Land: buy 4×4 parcels next to what you own.
+- Roads with pavements, footpaths for walkers and bikes.
+- Buses and trains: a bus depot runs buses between your stops; stations beside a railway carry people on long trips. Riders leave their cars at home.
+- Railways or roads that cross into a neighbour's city link the two: trade, mood, and out-of-town jobs your residents reach by train or bus.
+- World chat, neighbour links, moving onto ruins, private worlds.
+- Account: profile, lifetime stats, 25 achievements, delete account (the city becomes ruins).
+- Interactive tutorial, 3D and 2D views, colour-blind modes and other accessibility options.
 
 ## Local test
 
@@ -46,7 +50,8 @@ npm run serve     # local server
 - `public/js/main.js` — game controller, HUD, input, menus
 - `public/js/panels.js` — People, Stats, News, World and Goals panels
 - `public/js/people.js` — named residents derived from the simulation
-- `public/js/cars.js` — visual traffic
+- `public/js/trips.js` — residents' trips as cars, bikes and walkers
+- `public/js/account.js` — lifetime stats and achievements
 - `public/js/tutorial.js` — the interactive tour
 - `public/js/prefs.js` — accessibility and display settings, colour modes
 - `public/js/sound.js` — synthesised sound effects

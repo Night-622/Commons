@@ -84,6 +84,25 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // World chat. Anyone signed in can read; you can only post as yourself, briefly.
+    match /worlds/{worldId}/chat/{msgId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'city', 'text', 'createdAt'])
+        && request.resource.data.uid == me()
+        && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 280
+        && request.resource.data.name is string && request.resource.data.name.size() <= 24
+        && request.resource.data.city is string && request.resource.data.city.size() <= 40
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    // Each player's lifetime stats and achievements. Private to them.
+    match /profiles/{uid} {
+      allow read, delete: if signedIn() && me() == uid;
+      allow create, update: if signedIn() && me() == uid && request.resource.data.keys().size() < 12;
+    }
+
     // Permanent records of fallen cities.
     match /legacy/{id} {
       allow read: if signedIn();

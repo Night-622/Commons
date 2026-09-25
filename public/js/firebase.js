@@ -3,11 +3,11 @@ const { initializeApp } = await import(`https://www.gstatic.com/firebasejs/${V}/
 const {
   getAuth, onAuthStateChanged, signInAnonymously, signOut, GoogleAuthProvider, EmailAuthProvider,
   signInWithPopup, linkWithPopup, linkWithCredential, signInWithEmailAndPassword,
-  createUserWithEmailAndPassword, sendPasswordResetEmail, updateProfile,
+  createUserWithEmailAndPassword, sendPasswordResetEmail, updateProfile, deleteUser,
 } = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-auth.js`);
 const {
   getFirestore, doc, getDoc, updateDoc, runTransaction, collection, query, where, orderBy, limit,
-  getDocs, addDoc, serverTimestamp,
+  getDocs, addDoc, serverTimestamp, setDoc, onSnapshot, deleteDoc,
 } = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-firestore.js`);
 import { firebaseConfig } from './config.js';
 import { WORLD_ID } from './constants.js';
@@ -167,4 +167,26 @@ export async function loadLeaderboards(world, plots) {
   const byPeak = [...plots].sort((a, b) => (b.peakPop || 0) - (a.peakPop || 0)).slice(0, 10);
   const running = plots.filter((p) => p.status === 'alive').sort((a, b) => (b.day || 0) - (a.day || 0)).slice(0, 10);
   return { peak: byPeak, running, fallen };
+}
+
+// ---------- profile: lifetime stats and achievements ----------
+export async function getProfile(uid) {
+  const p = await getDoc(doc(db, 'profiles', uid));
+  return p.exists() ? p.data() : null;
+}
+export const deleteProfile = (uid) => deleteDoc(doc(db, 'profiles', uid));
+export const saveProfile = (uid, data) => setDoc(doc(db, 'profiles', uid), { ...data, updatedAt: serverTimestamp() }, { merge: true });
+
+// Deleting an account leaves the city behind as ruins (the caller collapses and saves it first).
+export async function deleteAccount() {
+  await deleteUser(auth.currentUser);
+}
+
+// ---------- chat ----------
+export function listenChat(world, cb) {
+  const q = query(collection(db, 'worlds', world, 'chat'), orderBy('createdAt', 'desc'), limit(60));
+  return onSnapshot(q, (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() })).reverse()), (e) => console.error('Chat', e));
+}
+export function sendChat(world, user, name, city, text) {
+  return addDoc(collection(db, 'worlds', world, 'chat'), { uid: user.uid, name, city, text, createdAt: serverTimestamp() });
 }

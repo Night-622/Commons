@@ -54,6 +54,12 @@
       <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
       <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
       <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5C6.5 4 9.5 4 12 5.5 14.5 4 17.5 4 20 5.5V19c-2.5-1.5-5.5-1.5-8 0-2.5-1.5-5.5-1.5-8 0z"/><path d="M12 5.5V19"/></symbol>
+      <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5.5h16v10H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/></symbol>
+      <symbol id="i-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></symbol>
+      <symbol id="i-path" viewBox="0 0 24 24"><path d="M8 21c0-5 8-5 8-10S8 7 8 3"/><path d="M5 21h6M13 3h6"/></symbol>
+      <symbol id="i-road" viewBox="0 0 24 24"><path d="M7 3 4 21M17 3l3 18M12 4v3M12 10.5v3M12 17v3"/></symbol>
+      <symbol id="i-rail" viewBox="0 0 24 24"><path d="M8 3 6 21M16 3l2 18M7 7h10M6.5 12h11M6 17h12"/></symbol>
+      <symbol id="i-bus" viewBox="0 0 24 24"><rect x="4" y="3.5" width="16" height="14" rx="2.5"/><path d="M4 11h16M7 17.5V20M17 17.5V20"/><circle cx="8" cy="14.5" r="1"/><circle cx="16" cy="14.5" r="1"/></symbol>
     </defs>
   </svg>
 
@@ -155,6 +161,7 @@
       <button type="button" data-panel="people" aria-pressed="false" title="People (P)"><svg class="ic"><use href="#i-people"/></svg><span>People</span></button>
       <button type="button" data-panel="stats" aria-pressed="false" title="City stats (C)"><svg class="ic"><use href="#i-chart"/></svg><span>Stats</span></button>
       <button type="button" data-panel="news" aria-pressed="false" title="News (N)"><svg class="ic"><use href="#i-bell"/></svg><span>News</span><i id="news-dot" class="dot num hidden"></i></button>
+      <button type="button" data-panel="chat" aria-pressed="false" title="Chat (K)"><svg class="ic"><use href="#i-chat"/></svg><span>Chat</span><i id="chat-dot" class="dot num hidden"></i></button>
       <button type="button" data-panel="world" aria-pressed="false" title="World (J)"><svg class="ic"><use href="#i-globe"/></svg><span>World</span></button>
     </nav>
 
@@ -165,11 +172,18 @@
       <canvas id="minimap" width="160" height="120" aria-label="Minimap. Click to move the view."></canvas>
     </div>
 
-    <nav id="dock" class="dock plate" aria-label="Tools">
-      <div id="tools" class="tools" role="toolbar" aria-label="Build tools"></div>
+    <nav id="dock" class="dock plate" aria-label="Modes and tools">
+      <div class="modes seg" role="radiogroup" aria-label="Mode">
+        <button type="button" role="radio" data-mode="build" aria-checked="false" title="Build (B)"><svg class="ic"><use href="#i-hammer"/></svg><span>Build</span></button>
+        <button type="button" role="radio" data-mode="select" aria-checked="true" title="Select (E)"><svg class="ic"><use href="#i-look"/></svg><span>Select</span></button>
+        <button type="button" role="radio" data-mode="move" aria-checked="false" title="Move (R)"><svg class="ic"><use href="#i-move"/></svg><span>Move</span></button>
+      </div>
+      <span class="csep" aria-hidden="true"></span>
+      <div id="modebar" class="modebar"></div>
       <span class="csep" aria-hidden="true"></span>
       <button class="cbtn" id="btn-undo" type="button" title="Undo last placement (Ctrl+Z)" aria-label="Undo last placement"><svg class="ic"><use href="#i-undo"/></svg></button>
     </nav>
+    <div id="catalog" class="catalog plate hidden" role="dialog" aria-labelledby="catalog-title"></div>
     <p id="tool-tip" class="tool-tip" aria-hidden="true"></p>
 
     <div id="toasts" class="toasts" aria-live="polite"></div>

@@ -1,4 +1,4 @@
-import { PLOT, GAP, T, B, MAX_LEVEL } from './constants.js';
+import { PLOT, GAP, T, B, MAX_LEVEL, CHUNK, CHUNKS } from './constants.js';
 
 export const STRIDE = PLOT + GAP;
 const ISO_DETAIL = 7;     // below this zoom, 3D plots draw from cached images
@@ -36,12 +36,12 @@ const THEMES = {
   light: {
     bg: '#dbe9d2', bg2: '#cfe0c4', top: '#a9d68b', top2: '#a1cf82', side: '#86b566', side2: '#74a257', soil: '#b08a60', soil2: '#977550',
     road: '#5e6873', mark: '#f5f1e4', wall: '#f8f3ea', stone: '#ebe6da', dirt: '#c9ae86', glass: '#bfe1f4',
-    ink: '#17313b', grid: 'rgba(23,49,59,0.10)', labelBg: 'rgba(255,255,255,0.92)', scaffold: '#d99a2b', ruin: '#9a8b7b',
+    pave: '#d8d4ca', wild: 'rgba(60,96,40,0.22)', wildTree: '#4f8a44', ink: '#17313b', grid: 'rgba(23,49,59,0.10)', labelBg: 'rgba(255,255,255,0.92)', scaffold: '#d99a2b', ruin: '#9a8b7b',
   },
   dark: {
     bg: '#172327', bg2: '#131e22', top: '#4e7b44', top2: '#4a753f', side: '#3b6234', side2: '#31532b', soil: '#5f4b37', soil2: '#4e3e2e',
     road: '#3b434b', mark: '#cfcbbd', wall: '#e2dccf', stone: '#cfc9bc', dirt: '#7d6a50', glass: '#8fb3c7',
-    ink: '#e8f0ef', grid: 'rgba(255,255,255,0.08)', labelBg: 'rgba(20,34,40,0.92)', scaffold: '#c98a22', ruin: '#6c6255',
+    pave: '#6f7470', wild: 'rgba(0,0,0,0.22)', wildTree: '#2f5a2b', ink: '#e8f0ef', grid: 'rgba(255,255,255,0.08)', labelBg: 'rgba(20,34,40,0.92)', scaffold: '#c98a22', ruin: '#6c6255',
   },
 };
 const CAR_COLS = ['#e94f4f', '#f2f2f2', '#3a7bd5', '#f2c230', '#2f2f36', '#46b37b'];
@@ -55,12 +55,19 @@ export function modelHeight(t, lv = 1) {
     case T.SCHOOL: return 0.55 + 0.25 * (lv - 1) + 0.3;
     case T.PARK: return 0.6;
     case T.HALL: return 1.2;
-    default: return 0.1;
+    default: return (MODEL_H[t] || 0.1) + ([T.APARTMENT, T.HOSPITAL, T.FACTORY].includes(t) ? 0.45 : 0.2) * (lv - 1);
   }
 }
 
-// Shapes that tell building types apart without colour (Junction's glyph set).
-export const GLYPH = { [T.HOUSE]: 0, [T.WORK]: 1, [T.SHOP]: 2, [T.SCHOOL]: 3, [T.PARK]: 4, [T.HALL]: 5 };
+// Shapes that tell building groups apart without colour (Junction's glyph set).
+const GLYPH_COL = { house: 0, work: 1, shop: 2, school: 3, park: 4, hall: 5 };
+export const glyphOf = (t) => GLYPH_COL[B[t]?.col];
+// Ground colour for buildings that are mostly open space.
+const GROUND = { [T.SPORTS]: '#6fbf5a', [T.POOL]: '#e9e2cf', [T.CEMETERY]: '#8fb77a', [T.PLAYGROUND]: '#e8d6a3', [T.YARD]: '#c9ae86', [T.VILLA]: '#b8e09a' };
+const MODEL_H = { [T.APARTMENT]: 1.3, [T.VILLA]: 0.8, [T.CAFE]: 0.55, [T.FACTORY]: 1.3, [T.YARD]: 1.1, [T.DAYCARE]: 0.8, [T.HIGH]: 1.1, [T.UNI]: 1.4,
+  [T.TUTOR]: 0.7, [T.LIBRARY]: 1, [T.CLINIC]: 0.7, [T.HOSPITAL]: 1.3, [T.POLICE]: 0.8, [T.FIRE]: 1.1, [T.COURT]: 1.2, [T.CEMETERY]: 0.3,
+  [T.PLAYGROUND]: 0.5, [T.SPORTS]: 0.3, [T.GYM]: 0.7, [T.DOJO]: 0.9, [T.POOL]: 0.3, [T.CINEMA]: 0.9, [T.PATH]: 0.05,
+  [T.RAIL]: 0.05, [T.STATION]: 0.9, [T.STOP]: 0.5, [T.DEPOT]: 0.8 };
 export function glyph(g, kind, x, y, r, col) {
   g.fillStyle = col;
   g.beginPath();
@@ -170,7 +177,7 @@ export class Renderer {
           const s = this.cam.z * FLAT_K, [bx, by] = this.project(ox + (b.dir === 'e' ? PLOT : b.k + 0.15), oy + (b.dir === 'e' ? b.k + 0.15 : PLOT));
           g.fillStyle = this.th.road;
           g.fillRect(bx, by, b.dir === 'e' ? GAP * s : 0.7 * s, b.dir === 'e' ? 0.7 * s : GAP * s);
-        } else this.bridge(g, (tx, ty, h = 0) => this.project(ox + tx, oy + ty, h), b.dir, b.k, this.cam.z);
+        } else this.bridge(g, (tx, ty, h = 0) => this.project(ox + tx, oy + ty, h), b.dir, b.k, this.cam.z, b.rail);
       }
     }
     this.overlays(g, scene);
@@ -239,23 +246,47 @@ export class Renderer {
       if (t === T.ROAD) {
         let col = plot.uc?.has(i) ? th.dirt : th.road;
         if (traffic && traffic.cap[i]) col = jamColour(traffic.load[i] / traffic.cap[i]);
-        poly(g, dia, col);
+        if (z >= 9 && !plot.uc?.has(i)) {
+          // Pavement on the sides that don't continue into more road.
+          poly(g, dia, th.pave);
+          const road = (dx, dy) => { const x = tx + dx, y = ty + dy; return x >= 0 && y >= 0 && x < PLOT && y < PLOT && [T.ROAD, T.HALL].includes(grid[y * PLOT + x]); };
+          const e = 0.16, x0 = road(-1, 0) ? 0 : e, x1 = road(1, 0) ? 1 : 1 - e, y0 = road(0, -1) ? 0 : e, y1 = road(0, 1) ? 1 : 1 - e;
+          poly(g, [P(tx + x0, ty + y0), P(tx + x1, ty + y0), P(tx + x1, ty + y1), P(tx + x0, ty + y1)], col);
+        } else poly(g, dia, col);
         if (z >= 10 && !plot.uc?.has(i)) this.laneMarks(g, P, grid, i, tx, ty, z);
-      } else if (t === T.PARK) poly(g, dia, plot.uc?.has(i) ? th.dirt : shade(this.pal.park, 0.55));
+      } else if (t === T.RAIL) {
+        this.rail(g, P, grid, i, tx, ty, z, plot.uc?.has(i));
+      } else if (t === T.PATH) {
+        poly(g, dia, plot.uc?.has(i) ? th.dirt : th.pave);
+        if (z >= 10 && !plot.uc?.has(i)) poly(g, [P(tx + 0.3, ty + 0.3), P(tx + 0.7, ty + 0.3), P(tx + 0.7, ty + 0.7), P(tx + 0.3, ty + 0.7)], shade(th.pave, -0.06));
+      } else if (GROUND[t] && !plot.uc?.has(i)) poly(g, dia, plot.cond[i] <= 0 ? shade(GROUND[t], 0, 0.6) : GROUND[t]);
+      else if (t === T.PARK) poly(g, dia, plot.uc?.has(i) ? th.dirt : shade(this.pal.park, 0.55));
       else if (t === T.HALL) poly(g, dia, th.stone);
       else if (t === T.RUBBLE) poly(g, dia, shade(th.dirt, -0.15));
       else if (plot.uc?.has(i)) poly(g, dia, th.dirt);
       else if (plot.cond[i] <= 0) poly(g, dia, shade(th.dirt, 0, 0.6));
     }
+    // Land nobody has bought yet looks wild.
+    const land = plot.land;
+    if (land) for (let c = 0; c < CHUNKS * CHUNKS; c++) {
+      if (land[c]) continue;
+      const cx = (c % CHUNKS) * CHUNK, cy = ((c / CHUNKS) | 0) * CHUNK;
+      poly(g, [P(cx, cy), P(cx + CHUNK, cy), P(cx + CHUNK, cy + CHUNK), P(cx, cy + CHUNK)], th.wild);
+    }
+    if (live && plot.mine && this.scene.showLand && land) this.landEdges(g, P, land);
     // Pass 2: objects, back to front along diagonals
-    const cars = live ? this.scene.carsByPlot?.get(plot.id) : null;
+    const agents = live ? this.scene.agentsByPlot?.get(plot.id) : null;
     for (let s = 0; s <= 2 * (PLOT - 1); s++) {
       for (let tx = Math.max(0, s - PLOT + 1); tx <= Math.min(s, PLOT - 1); tx++) {
         const ty = s - tx, i = ty * PLOT + tx, t = grid[i];
-        if (t !== T.EMPTY && t !== T.ROAD) this.object(g, P, plot, t, i, tx, ty, z, live);
-        if (cars && cars.has(i)) for (const car of cars.get(i)) this.car(g, P, car);
+        if (t !== T.EMPTY && t !== T.ROAD && t !== T.PATH && t !== T.RAIL) this.object(g, P, plot, t, i, tx, ty, z, live);
+        else if (t === T.EMPTY && land && !land[Math.floor(ty / CHUNK) * CHUNKS + Math.floor(tx / CHUNK)] && hash(i, 9) < 0.28 && z >= 6) {
+          this.tree(g, P, tx + 0.3 + hash(i, 3) * 0.4, ty + 0.3 + hash(i, 4) * 0.4, 0.34 + hash(i, 5) * 0.22, th.wildTree, z);
+        }
+        if (agents && agents.has(i)) for (const a of agents.get(i)) this.agent(g, P, a);
       }
     }
+    if (live && plot.mine && this.scene.showLand && land) this.landTags(g, P, land);
   }
 
   laneMarks(g, P, grid, i, tx, ty, z) {
@@ -334,7 +365,7 @@ export class Renderer {
     if (plot.uc?.has(i)) { this.site(g, P, t, tx, ty, q, z); return; }
     const cond = t === T.HALL ? 100 : plot.cond[i] ?? 100;
     const grey = cond <= 0 ? 0.9 : cond < 40 ? 0.5 : 0;
-    const col = pal[B[t].key] || '#999999';
+    const col = pal[B[t].col || B[t].key] || '#999999';
     const night = live && this.scene.nightAmt > 0.15 && cond > 0;
     const glass = night ? '#ffd57a' : th.glass;
     let top = 0.5;
@@ -402,15 +433,15 @@ export class Renderer {
       g.beginPath(); g.moveTo(fx, fy); g.lineTo(fx2, fy2); g.stroke();
       poly(g, [[fx2, fy2], [fx2 + z * 0.4, fy2 + z * 0.1], [fx2, fy2 + z * 0.2]], col);
       top = 1.6;
-    }
+    } else top = this.more(g, P, t, i, tx, ty, z, lv, col, grey, glass, live, cond);
 
     if (q && q.up) this.scaffold(g, P, tx, ty, modelHeight(t, Math.min(MAX_LEVEL, lv + 1)), q, t, z);
     if (live && cond > 0 && cond < 40 && z >= 12) this.badgeText(g, P(tx + 0.5, ty + 0.5, top + 0.35), '!', '#e04b3c', z);
-    if (live && this.scene.shapes && GLYPH[t] !== undefined && z >= 9) {
+    if (live && this.scene.shapes && glyphOf(t) !== undefined && z >= 9) {
       const [bx, by] = P(tx + 0.5, ty + 0.5, top + 0.3);
       const r = Math.max(4, z * 0.22);
       g.fillStyle = 'rgba(255,255,255,0.95)'; g.beginPath(); g.arc(bx, by, r + 2, 0, Math.PI * 2); g.fill();
-      glyph(g, GLYPH[t], bx, by, r * 0.62, '#17313b');
+      glyph(g, glyphOf(t), bx, by, r * 0.62, '#17313b');
     }
   }
 
@@ -420,7 +451,7 @@ export class Renderer {
     this.box(g, P, tx + 0.1, ty + 0.1, tx + 0.9, ty + 0.9, 0, 0.05, '#cfc9bd');
     if (done > 0.02) {
       g.globalAlpha = 0.85;
-      this.box(g, P, tx + 0.2, ty + 0.2, tx + 0.8, ty + 0.8, 0.05, 0.05 + (H - 0.1) * done, shade(this.pal[B[t].key] || this.th.wall, 0.5));
+      this.box(g, P, tx + 0.2, ty + 0.2, tx + 0.8, ty + 0.8, 0.05, 0.05 + (H - 0.1) * done, shade(this.pal[B[t].col || B[t].key] || this.th.wall, 0.5));
       g.globalAlpha = 1;
     }
     this.scaffold(g, P, tx, ty, H, q, t, z);
@@ -480,13 +511,300 @@ export class Renderer {
     }
   }
 
+
+
+  rail(g, P, grid, i, tx, ty, z, building) {
+    poly(g, [P(tx + 0.08, ty + 0.08), P(tx + 0.92, ty + 0.08), P(tx + 0.92, ty + 0.92), P(tx + 0.08, ty + 0.92)], building ? this.th.dirt : '#b3a58f');
+    if (building || z < 6) return;
+    const is = (dx, dy) => { const x = tx + dx, y = ty + dy; return x >= 0 && y >= 0 && x < PLOT && y < PLOT && [T.RAIL, T.STATION].includes(grid[y * PLOT + x]); };
+    const ew = is(1, 0) || is(-1, 0) || tx === 0 || tx === PLOT - 1, ns = is(0, 1) || is(0, -1) || ty === 0 || ty === PLOT - 1;
+    const dirs = ew || !ns ? [['x']] : [];
+    if (ns) dirs.push(['y']);
+    for (const [d] of dirs) {
+      g.strokeStyle = '#7a5b3e'; g.lineWidth = Math.max(1.5, z / 10);
+      g.beginPath();
+      for (let k = 0.1; k < 1; k += 0.2) {
+        const a = d === 'x' ? P(tx + k, ty + 0.25) : P(tx + 0.25, ty + k), b = d === 'x' ? P(tx + k, ty + 0.75) : P(tx + 0.75, ty + k);
+        g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]);
+      }
+      g.stroke();
+      g.strokeStyle = '#5d646b'; g.lineWidth = Math.max(1, z / 16);
+      g.beginPath();
+      for (const o of [0.36, 0.64]) {
+        const a = d === 'x' ? P(tx, ty + o) : P(tx + o, ty), b = d === 'x' ? P(tx + 1, ty + o) : P(tx + o, ty + 1);
+        g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]);
+      }
+      g.stroke();
+    }
+  }
+
+  vehicle(g, P, a) {
+    const along = Math.abs(a.dx || 1) >= Math.abs(a.dy || 0), x = a.lx, y = a.ly;
+    if (a.mode === 'bus') {
+      const L = 0.34, W = 0.13, hx = along ? L : W, hy = along ? W : L;
+      this.box(g, P, x - hx, y - hy, x + hx, y + hy, 0.03, 0.22, '#f2b233');
+      if (along) this.face(g, P, 'S', y + hy, x - hx + 0.04, x + hx - 0.04, 0.12, 0.19, '#cfe3ee');
+      else this.face(g, P, 'E', x + hx, y - hy + 0.04, y + hy - 0.04, 0.12, 0.19, '#cfe3ee');
+      return;
+    }
+    const L = 0.46, W = 0.15, hx = along ? L : W, hy = along ? W : L;
+    this.box(g, P, x - hx, y - hy, x + hx, y + hy, 0.04, 0.27, '#eef2f5');
+    if (along) { this.face(g, P, 'S', y + hy, x - hx, x + hx, 0.06, 0.1, '#d8463a'); this.face(g, P, 'S', y + hy, x - hx + 0.05, x + hx - 0.05, 0.15, 0.22, '#3d5a73'); }
+    else { this.face(g, P, 'E', x + hx, y - hy, y + hy, 0.06, 0.1, '#d8463a'); this.face(g, P, 'E', x + hx, y - hy + 0.05, y + hy - 0.05, 0.15, 0.22, '#3d5a73'); }
+  }
+
+  // People on the move: cars on the road, bikes near the kerb, walkers on the pavement.
+  agent(g, P, a) {
+    if (a.mode === 'car') { this.car(g, P, a); return; }
+    if (a.mode === 'bus' || a.mode === 'train') { this.vehicle(g, P, a); return; }
+    const [x, y] = P(a.lx, a.ly, 0);
+    const z = this.cam.z, u = Math.max(1.5, z * 0.05);
+    if (a.mode === 'bike') {
+      g.strokeStyle = '#2f3a40'; g.lineWidth = Math.max(1, u * 0.5);
+      const along = Math.abs(a.dx || 1) >= Math.abs(a.dy || 0), sx = along ? u * 1.6 : -u * 1.6, sy = u * 0.8;
+      g.beginPath(); g.arc(x - sx, y - sy * (along ? 1 : -1) * 0.5, u * 0.9, 0, Math.PI * 2); g.arc(x + sx, y + sy * (along ? 1 : -1) * 0.5, u * 0.9, 0, Math.PI * 2); g.stroke();
+      g.fillStyle = a.shirt; g.fillRect(x - u * 0.7, y - u * 4.2, u * 1.4, u * 2.6);
+      g.fillStyle = '#e8c4a0'; g.beginPath(); g.arc(x, y - u * 4.9, u * 0.9, 0, Math.PI * 2); g.fill();
+    } else {
+      g.fillStyle = a.shirt; g.fillRect(x - u * 0.8, y - u * 3.4, u * 1.6, u * 2.4);
+      g.fillStyle = '#3b4650'; g.fillRect(x - u * 0.7, y - u * 1.1, u * 0.6, u * 1.2); g.fillRect(x + u * 0.1, y - u * 1.1, u * 0.6, u * 1.2);
+      g.fillStyle = '#e8c4a0'; g.beginPath(); g.arc(x, y - u * 4.2, u * 0.95, 0, Math.PI * 2); g.fill();
+    }
+    if (a.follow) { g.strokeStyle = '#ffc933'; g.lineWidth = 2.5; g.beginPath(); g.arc(x, y - u * 2.5, u * 4, 0, Math.PI * 2); g.stroke(); }
+  }
+
+  landEdges(g, P, land) {
+    g.strokeStyle = 'rgba(255,201,51,0.9)'; g.lineWidth = 2; g.setLineDash([6, 5]);
+    g.beginPath();
+    for (let c = 0; c < CHUNKS * CHUNKS; c++) {
+      if (!land[c]) continue;
+      const cx = (c % CHUNKS) * CHUNK, cy = ((c / CHUNKS) | 0) * CHUNK, x = c % CHUNKS, y = (c / CHUNKS) | 0;
+      const own = (dx, dy) => { const X = x + dx, Y = y + dy; return X >= 0 && Y >= 0 && X < CHUNKS && Y < CHUNKS && land[Y * CHUNKS + X]; };
+      const seg = (a, b) => { const p = P(...a), q = P(...b); g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]); };
+      if (!own(0, -1)) seg([cx, cy], [cx + CHUNK, cy]);
+      if (!own(0, 1)) seg([cx, cy + CHUNK], [cx + CHUNK, cy + CHUNK]);
+      if (!own(-1, 0)) seg([cx, cy], [cx, cy + CHUNK]);
+      if (!own(1, 0)) seg([cx + CHUNK, cy], [cx + CHUNK, cy + CHUNK]);
+    }
+    g.stroke(); g.setLineDash([]);
+  }
+  landTags(g, P, land) {
+    const price = this.scene.landPrice;
+    for (let c = 0; c < CHUNKS * CHUNKS; c++) {
+      if (land[c]) continue;
+      const x = c % CHUNKS, y = (c / CHUNKS) | 0;
+      const next = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => { const X = x + dx, Y = y + dy; return X >= 0 && Y >= 0 && X < CHUNKS && Y < CHUNKS && land[Y * CHUNKS + X]; });
+      if (!next) continue;
+      const [px, py] = P(x * CHUNK + CHUNK / 2, y * CHUNK + CHUNK / 2, 0.6);
+      const text = `$${price.toLocaleString()}`;
+      g.font = '800 12px Overpass, system-ui, sans-serif';
+      const w = g.measureText(text).width + 14;
+      g.fillStyle = '#ffc933'; roundRect(g, px - w / 2, py - 11, w, 22, 11); g.fill();
+      g.strokeStyle = '#17313b'; g.lineWidth = 1.5; g.stroke();
+      g.fillStyle = '#17313b'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, px, py + 1);
+    }
+  }
+
+  // Models for the wider catalogue. Returns the height of the top, for badges.
+  more(g, P, t, i, tx, ty, z, lv, col, grey, glass, live, cond) {
+    const th = this.th, L = lv - 1, sh = (c, a = 0) => shade(c, a, grey);
+    const night = live && this.scene.nightAmt > 0.3 && cond > 0;
+    const flag = (x, y, h, c) => {
+      const [a, b] = P(x, y, h), [a2, b2] = P(x, y, h + 0.6);
+      g.strokeStyle = '#6b6f73'; g.lineWidth = Math.max(1, z / 16); g.beginPath(); g.moveTo(a, b); g.lineTo(a2, b2); g.stroke();
+      poly(g, [[a2, b2], [a2 + z * 0.32, b2 + z * 0.08], [a2, b2 + z * 0.16]], c);
+    };
+    const cross = (x, y, h, c = '#e04b3c') => { const [a, b] = P(x, y, h); const r = Math.max(3, z * 0.12); g.fillStyle = '#fff'; g.fillRect(a - r * 1.4, b - r * 1.4, r * 2.8, r * 2.8); g.fillStyle = c; g.fillRect(a - r, b - r * 0.35, r * 2, r * 0.7); g.fillRect(a - r * 0.35, b - r, r * 0.7, r * 2); };
+    switch (t) {
+      case T.APARTMENT: {
+        const h = 1.3 + 0.45 * L, x0 = tx + 0.12, x1 = tx + 0.88, y0 = ty + 0.12, y1 = ty + 0.88;
+        this.box(g, P, x0, y0, x1, y1, 0, h, sh(col, 0.55), grey);
+        this.windows(g, P, x0, y0, x1, y1, Math.round(h / 0.28), 0.28, 0.04, sh(glass), 3);
+        this.box(g, P, x0 + 0.1, y0 + 0.1, x0 + 0.3, y0 + 0.3, h, h + 0.12, sh(col, -0.2), grey);
+        return h + 0.12;
+      }
+      case T.VILLA: {
+        const h = 0.45 + 0.18 * L;
+        poly(g, [P(tx + 0.62, ty + 0.58), P(tx + 0.92, ty + 0.58), P(tx + 0.92, ty + 0.9), P(tx + 0.62, ty + 0.9)], '#5ab8e0');
+        this.box(g, P, tx + 0.12, ty + 0.12, tx + 0.6, ty + 0.62, 0, h, th.wall, grey);
+        this.windows(g, P, tx + 0.12, ty + 0.12, tx + 0.6, ty + 0.62, 1, h, 0.04, sh(glass), 2);
+        this.hip(g, P, tx + 0.08, ty + 0.08, tx + 0.64, ty + 0.66, h, 0.28, col, grey);
+        this.tree(g, P, tx + 0.8, ty + 0.25, 0.4, sh(this.pal.park), z);
+        return h + 0.28;
+      }
+      case T.CAFE: {
+        const h = 0.4 + 0.15 * L;
+        this.box(g, P, tx + 0.15, ty + 0.12, tx + 0.8, ty + 0.62, 0, h, sh(col, 0.7), grey);
+        this.face(g, P, 'S', ty + 0.62, tx + 0.2, tx + 0.75, 0.04, h * 0.6, sh(night ? '#ffd57a' : glass));
+        for (let k = 0; k < 4; k++) poly(g, [P(tx + 0.15 + k * 0.16, ty + 0.62, h * 0.8), P(tx + 0.31 + k * 0.16, ty + 0.62, h * 0.8), P(tx + 0.31 + k * 0.16, ty + 0.74, h * 0.65), P(tx + 0.15 + k * 0.16, ty + 0.74, h * 0.65)], sh(k % 2 ? '#ffffff' : col));
+        for (const [a, b] of [[0.3, 0.85], [0.62, 0.85]]) { this.box(g, P, tx + a - 0.05, ty + b - 0.05, tx + a + 0.05, ty + b + 0.05, 0, 0.12, '#f4f1e8'); }
+        return h;
+      }
+      case T.FACTORY: {
+        const h = 0.7 + 0.3 * L;
+        this.box(g, P, tx + 0.1, ty + 0.15, tx + 0.9, ty + 0.88, 0, h, sh(shade(col, -0.25, 0.4)), grey);
+        for (let k = 0; k < 3; k++) this.gable(g, P, tx + 0.1 + k * 0.27, ty + 0.15, tx + 0.37 + k * 0.27, ty + 0.88, h, 0.16, sh('#9aa3ab'), grey);
+        this.box(g, P, tx + 0.72, ty + 0.18, tx + 0.84, ty + 0.3, h, h + 0.55, sh('#8a6f5a'), grey);
+        if (cond > 0 && live) { const [a, b] = P(tx + 0.78, ty + 0.24, h + 0.7 + (performance.now() / 2000) % 0.3); g.fillStyle = 'rgba(200,200,200,0.6)'; g.beginPath(); g.arc(a, b, z * 0.12, 0, Math.PI * 2); g.arc(a + z * 0.12, b - z * 0.12, z * 0.09, 0, Math.PI * 2); g.fill(); }
+        return h + 0.55;
+      }
+      case T.YARD: {
+        for (let k = 0; k < 3; k++) this.box(g, P, tx + 0.15 + k * 0.18, ty + 0.62, tx + 0.29 + k * 0.18, ty + 0.78, 0, 0.14 + k * 0.03, '#b98a52');
+        this.box(g, P, tx + 0.55, ty + 0.15, tx + 0.88, ty + 0.45, 0, 0.35, sh(col, 0.3), grey);
+        const [a, b] = P(tx + 0.25, ty + 0.25, 0), [a2, b2] = P(tx + 0.25, ty + 0.25, 1.05), [a3, b3] = P(tx + 0.85, ty + 0.25, 1.05);
+        g.strokeStyle = '#e0a52e'; g.lineWidth = Math.max(1.5, z / 12);
+        g.beginPath(); g.moveTo(a, b); g.lineTo(a2, b2); g.lineTo(a3, b3); g.stroke();
+        return 1.05;
+      }
+      case T.DAYCARE: case T.TUTOR: {
+        const h = 0.42 + 0.18 * L, x0 = tx + 0.18, x1 = tx + 0.82, y0 = ty + 0.18, y1 = ty + 0.72;
+        this.box(g, P, x0, y0, x1, y1, 0, h, sh(col, 0.62), grey);
+        this.windows(g, P, x0, y0, x1, y1, 1 + L, h / (1 + L), 0, sh(glass), 2);
+        if (t === T.DAYCARE) {
+          this.gable(g, P, x0 - 0.03, y0 - 0.03, x1 + 0.03, y1 + 0.03, h, 0.26, col, grey);
+          for (let k = 0; k < 5; k++) this.box(g, P, tx + 0.12 + k * 0.17, ty + 0.86, tx + 0.15 + k * 0.17, ty + 0.89, 0, 0.12, '#fff');
+          const [a, b] = P(tx + 0.85, ty + 0.3, 0.85); g.fillStyle = this.pal.shop; g.beginPath(); g.arc(a, b, z * 0.1, 0, Math.PI * 2); g.fill();
+          return h + 0.26;
+        }
+        this.box(g, P, x0 + 0.1, y1 - 0.02, x1 - 0.1, y1 + 0.02, h * 0.7, h * 0.95, col);
+        return h;
+      }
+      case T.HIGH: case T.UNI: case T.LIBRARY: case T.COURT: {
+        const uni = t === T.UNI, h = (uni ? 0.75 : t === T.HIGH ? 0.65 : 0.55) + 0.22 * L;
+        const stone = t !== T.HIGH;
+        this.box(g, P, tx + 0.06, ty + 0.06, tx + 0.94, ty + 0.94, 0, 0.08, th.stone);
+        this.box(g, P, tx + 0.14, ty + 0.14, tx + 0.86, ty + 0.86, 0.08, h, stone ? th.wall : sh(col, 0.55), grey);
+        if (stone) for (let k = 0; k < 5; k++) {
+          const u = tx + 0.18 + k * 0.14;
+          this.face(g, P, 'S', ty + 0.86, u, u + 0.04, 0.1, h - 0.04, sh(th.stone, -0.2));
+          this.face(g, P, 'E', tx + 0.86, ty + 0.18 + k * 0.14, ty + 0.22 + k * 0.14, 0.1, h - 0.04, sh(th.stone, -0.3));
+        } else this.windows(g, P, tx + 0.14, ty + 0.14, tx + 0.86, ty + 0.86, 2 + L, (h - 0.08) / (2 + L), 0.08, sh(glass), 3);
+        if (uni) {
+          this.hip(g, P, tx + 0.1, ty + 0.1, tx + 0.9, ty + 0.9, h, 0.18, sh(col, -0.1), grey);
+          const [a, b] = P(tx + 0.5, ty + 0.5, h + 0.22), r = z * 0.32;
+          g.fillStyle = sh(col); g.beginPath(); g.arc(a, b, r, Math.PI, 0); g.fill();
+          g.fillStyle = sh(col, 0.25); g.beginPath(); g.arc(a - r * 0.25, b - r * 0.2, r * 0.45, Math.PI, 0); g.fill();
+          flag(tx + 0.5, ty + 0.5, h + 0.5, this.pal.shop);
+          return h + 1.1;
+        }
+        this.hip(g, P, tx + 0.1, ty + 0.1, tx + 0.9, ty + 0.9, h, t === T.COURT ? 0.32 : 0.26, t === T.COURT ? sh('#8a7c66') : col, grey);
+        if (t === T.HIGH) flag(tx + 0.18, ty + 0.18, h, this.pal.shop);
+        if (t === T.COURT) { const [a, b] = P(tx + 0.5, ty + 0.86, h - 0.12); g.fillStyle = '#c9a227'; g.beginPath(); g.arc(a, b, z * 0.08, 0, Math.PI * 2); g.fill(); }
+        return h + 0.3;
+      }
+      case T.CLINIC: case T.HOSPITAL: {
+        const hosp = t === T.HOSPITAL, h = (hosp ? 1.05 : 0.5) + (hosp ? 0.4 : 0.18) * L;
+        this.box(g, P, tx + 0.12, ty + 0.12, tx + 0.88, ty + 0.88, 0, h, '#f6f8fa', grey);
+        for (let h0 = 0.12; h0 + 0.1 < h - 0.05; h0 += 0.24) {
+          this.face(g, P, 'S', ty + 0.88, tx + 0.16, tx + 0.84, h0, h0 + 0.1, sh(night ? '#ffe9a8' : glass));
+          this.face(g, P, 'E', tx + 0.88, ty + 0.16, ty + 0.84, h0, h0 + 0.1, sh(shade(glass, -0.15)));
+        }
+        this.box(g, P, tx + 0.12, ty + 0.12, tx + 0.88, ty + 0.88, h, h + 0.04, sh(col, 0.2), grey);
+        if (hosp) { const [a, b] = P(tx + 0.5, ty + 0.5, h + 0.05); g.strokeStyle = '#fff'; g.lineWidth = 2; g.beginPath(); g.ellipse(a, b, z * 0.3, z * 0.15, 0, 0, Math.PI * 2); g.stroke(); }
+        cross(tx + 0.5, ty + 0.88, h * 0.75);
+        return h + 0.1;
+      }
+      case T.POLICE: case T.FIRE: {
+        const fire = t === T.FIRE, h = 0.52 + 0.18 * L;
+        this.box(g, P, tx + 0.12, ty + 0.14, tx + 0.88, ty + 0.86, 0, h, fire ? sh('#d8463a') : sh('#e9eef4'), grey);
+        this.face(g, P, 'S', ty + 0.86, tx + 0.18, tx + 0.82, h * 0.65, h * 0.8, fire ? '#f4f1e8' : sh(this.pal.work));
+        if (fire) { this.face(g, P, 'S', ty + 0.86, tx + 0.22, tx + 0.48, 0, h * 0.55, '#5b3a32'); this.face(g, P, 'S', ty + 0.86, tx + 0.52, tx + 0.78, 0, h * 0.55, '#5b3a32'); this.box(g, P, tx + 0.14, ty + 0.16, tx + 0.34, ty + 0.36, h, h + 0.45, sh('#b8372d'), grey); }
+        else {
+          this.windows(g, P, tx + 0.12, ty + 0.14, tx + 0.88, ty + 0.86, 1, h * 0.6, 0, sh(glass), 2);
+          const blink = live && Math.floor(performance.now() / 400) % 2;
+          this.box(g, P, tx + 0.4, ty + 0.45, tx + 0.5, ty + 0.55, h, h + 0.07, blink ? '#e04b3c' : '#7a2a24');
+          this.box(g, P, tx + 0.5, ty + 0.45, tx + 0.6, ty + 0.55, h, h + 0.07, blink ? '#2a3f7a' : '#3b7ddd');
+        }
+        return h + (fire ? 0.45 : 0.1);
+      }
+      case T.CEMETERY: {
+        for (let r = 0; r < 3; r++) for (let k = 0; k < 3; k++) this.box(g, P, tx + 0.2 + k * 0.22, ty + 0.2 + r * 0.22, tx + 0.28 + k * 0.22, ty + 0.24 + r * 0.22, 0, 0.12, '#b9bdc1');
+        this.tree(g, P, tx + 0.82, ty + 0.82, 0.45, '#3f6b3a', z);
+        return 0.4;
+      }
+      case T.PLAYGROUND: {
+        this.box(g, P, tx + 0.2, ty + 0.2, tx + 0.4, ty + 0.4, 0, 0.35, sh(this.pal.shop), grey);
+        poly(g, [P(tx + 0.4, ty + 0.2, 0.35), P(tx + 0.4, ty + 0.4, 0.35), P(tx + 0.75, ty + 0.4, 0), P(tx + 0.75, ty + 0.2, 0)], sh(this.pal.school));
+        const post = (x, y) => { const [a, b] = P(x, y, 0), [c2, d] = P(x, y, 0.4); g.moveTo(a, b); g.lineTo(c2, d); };
+        g.strokeStyle = '#6b6f73'; g.lineWidth = Math.max(1, z / 16); g.beginPath();
+        post(tx + 0.3, ty + 0.7); post(tx + 0.3, ty + 0.9); post(tx + 0.75, ty + 0.7); post(tx + 0.75, ty + 0.9);
+        const [a, b] = P(tx + 0.3, ty + 0.8, 0.4), [c2, d] = P(tx + 0.75, ty + 0.8, 0.4); g.moveTo(a, b); g.lineTo(c2, d); g.stroke();
+        return 0.5;
+      }
+      case T.SPORTS: {
+        g.strokeStyle = 'rgba(255,255,255,0.85)'; g.lineWidth = Math.max(1, z / 18);
+        poly(g, [P(tx + 0.1, ty + 0.1), P(tx + 0.9, ty + 0.1), P(tx + 0.9, ty + 0.9), P(tx + 0.1, ty + 0.9)], null, 'rgba(255,255,255,0.85)');
+        g.beginPath(); const [a, b] = P(tx + 0.5, ty + 0.1), [c2, d] = P(tx + 0.5, ty + 0.9); g.moveTo(a, b); g.lineTo(c2, d); g.stroke();
+        for (const y of [0.1, 0.9]) this.box(g, P, tx + 0.4, ty + y - 0.02, tx + 0.6, ty + y + 0.02, 0, 0.18, '#ffffff');
+        return 0.3;
+      }
+      case T.GYM: case T.CINEMA: {
+        const cin = t === T.CINEMA, h = (cin ? 0.72 : 0.5) + 0.2 * L;
+        this.box(g, P, tx + 0.12, ty + 0.12, tx + 0.88, ty + 0.88, 0, h, cin ? sh('#3a3350') : sh(col, 0.2), grey);
+        if (cin) {
+          this.face(g, P, 'S', ty + 0.88, tx + 0.14, tx + 0.86, h * 0.55, h * 0.85, sh(col));
+          if (night || live) for (let k = 0; k < 6; k++) { const [a, b] = P(tx + 0.2 + k * 0.12, ty + 0.88, h * 0.52); g.fillStyle = night ? '#ffe28a' : '#e8d9a0'; g.fillRect(a - 1.5, b - 1.5, 3, 3); }
+        } else this.face(g, P, 'S', ty + 0.88, tx + 0.16, tx + 0.84, 0.08, h * 0.8, sh(night ? '#ffe9a8' : glass));
+        return h;
+      }
+      case T.DOJO: {
+        const h = 0.42 + 0.16 * L;
+        this.box(g, P, tx + 0.2, ty + 0.2, tx + 0.8, ty + 0.8, 0, h, sh('#efe6d2'), grey);
+        this.face(g, P, 'S', ty + 0.8, tx + 0.4, tx + 0.6, 0, h * 0.7, sh('#5b3a32'));
+        this.hip(g, P, tx + 0.08, ty + 0.08, tx + 0.92, ty + 0.92, h, 0.16, sh(col, -0.3), grey);
+        this.hip(g, P, tx + 0.24, ty + 0.24, tx + 0.76, ty + 0.76, h + 0.2, 0.22, sh(col, -0.3), grey);
+        this.box(g, P, tx + 0.3, ty + 0.3, tx + 0.7, ty + 0.7, h + 0.1, h + 0.2, sh('#efe6d2'), grey);
+        return h + 0.42;
+      }
+
+      case T.STATION: {
+        const h = 0.55 + 0.2 * L;
+        this.box(g, P, tx + 0.05, ty + 0.05, tx + 0.95, ty + 0.95, 0, 0.1, '#cfc9bc');
+        this.box(g, P, tx + 0.18, ty + 0.3, tx + 0.82, ty + 0.85, 0.1, h, sh('#efe6d2'), grey);
+        this.windows(g, P, tx + 0.18, ty + 0.3, tx + 0.82, ty + 0.85, 1, h - 0.1, 0.1, sh(glass), 3);
+        this.gable(g, P, tx + 0.12, ty + 0.25, tx + 0.88, ty + 0.9, h, 0.24, sh(col, -0.1), grey);
+        for (const k of [0.15, 0.85]) { const [a, b] = P(tx + k, ty + 0.12, 0.1), [c2, d] = P(tx + k, ty + 0.12, 0.55); g.strokeStyle = '#6b6f73'; g.lineWidth = Math.max(1, z / 16); g.beginPath(); g.moveTo(a, b); g.lineTo(c2, d); g.stroke(); }
+        poly(g, [P(tx + 0.08, ty + 0.05, 0.55), P(tx + 0.92, ty + 0.05, 0.55), P(tx + 0.92, ty + 0.25, 0.5), P(tx + 0.08, ty + 0.25, 0.5)], sh(col));
+        const [ca, cb] = P(tx + 0.5, ty + 0.85, h - 0.08); g.fillStyle = '#fff'; g.beginPath(); g.arc(ca, cb, z * 0.08, 0, Math.PI * 2); g.fill();
+        return h + 0.24;
+      }
+      case T.STOP: {
+        this.box(g, P, tx + 0.25, ty + 0.35, tx + 0.75, ty + 0.55, 0, 0.04, '#cfc9bc');
+        poly(g, [P(tx + 0.25, ty + 0.4, 0.04), P(tx + 0.75, ty + 0.4, 0.04), P(tx + 0.75, ty + 0.4, 0.34), P(tx + 0.25, ty + 0.4, 0.34)], 'rgba(191,225,244,0.7)');
+        this.box(g, P, tx + 0.22, ty + 0.33, tx + 0.78, ty + 0.58, 0.34, 0.38, sh(col), grey);
+        const [a, b] = P(tx + 0.82, ty + 0.62, 0), [c2, d] = P(tx + 0.82, ty + 0.62, 0.5);
+        g.strokeStyle = '#6b6f73'; g.lineWidth = Math.max(1, z / 16); g.beginPath(); g.moveTo(a, b); g.lineTo(c2, d); g.stroke();
+        g.fillStyle = '#f2b233'; g.beginPath(); g.arc(c2, d, Math.max(3, z * 0.09), 0, Math.PI * 2); g.fill();
+        return 0.55;
+      }
+      case T.DEPOT: {
+        const h = 0.55 + 0.18 * L;
+        this.box(g, P, tx + 0.08, ty + 0.1, tx + 0.92, ty + 0.9, 0, h, sh('#dfe3e6'), grey);
+        for (const k of [0.15, 0.55]) this.face(g, P, 'S', ty + 0.9, tx + k, tx + k + 0.3, 0, h * 0.7, '#4a545c');
+        this.box(g, P, tx + 0.08, ty + 0.1, tx + 0.92, ty + 0.9, h, h + 0.05, sh(col), grey);
+        return h + 0.05;
+      }
+      case T.POOL: {
+        poly(g, [P(tx + 0.15, ty + 0.2), P(tx + 0.85, ty + 0.2), P(tx + 0.85, ty + 0.8), P(tx + 0.15, ty + 0.8)], sh('#3fa9dc'));
+        poly(g, [P(tx + 0.2, ty + 0.25), P(tx + 0.8, ty + 0.25), P(tx + 0.8, ty + 0.4), P(tx + 0.2, ty + 0.4)], 'rgba(255,255,255,0.25)');
+        this.box(g, P, tx + 0.86, ty + 0.45, tx + 0.94, ty + 0.53, 0, 0.35, '#ffffff');
+        return 0.4;
+      }
+    }
+    return 0.5;
+  }
+
   // A road bridge across the gap between two linked plots. dir 'e' or 's', k = tile along the edge.
-  bridge(g, P, dir, k, z) {
+  bridge(g, P, dir, k, z, rail) {
     const [x0, y0, x1, y1] = dir === 'e' ? [PLOT, k + 0.12, PLOT + GAP, k + 0.88] : [k + 0.12, PLOT, k + 0.88, PLOT + GAP];
     const leg = (x, y) => this.box(g, P, x - 0.06, y - 0.06, x + 0.06, y + 0.06, -0.45, -0.08, '#9aa3ab');
     if (dir === 'e') { leg(PLOT + 1, k + 0.3); leg(PLOT + 1, k + 0.7); } else { leg(k + 0.3, PLOT + 1); leg(k + 0.7, PLOT + 1); }
-    this.box(g, P, x0, y0, x1, y1, -0.08, 0, this.th.road);
-    if (z >= 10) {
+    this.box(g, P, x0, y0, x1, y1, -0.08, 0, rail ? '#9c8f7b' : this.th.road);
+    if (rail) {
+      g.strokeStyle = '#5d646b'; g.lineWidth = Math.max(1, z / 16); g.beginPath();
+      for (const o of [0.36, 0.64]) { const a = dir === 'e' ? P(x0, k + o) : P(k + o, y0), b = dir === 'e' ? P(x1, k + o) : P(k + o, y1); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); }
+      g.stroke();
+    } else if (z >= 10) {
       g.strokeStyle = this.th.mark; g.lineWidth = Math.max(1, z / 16); g.setLineDash([z * 0.18, z * 0.16]);
       const a = dir === 'e' ? P(x0, k + 0.5) : P(k + 0.5, y0), b = dir === 'e' ? P(x1, k + 0.5) : P(k + 0.5, y1);
       g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke(); g.setLineDash([]);
@@ -499,6 +817,11 @@ export class Renderer {
     const [x0, y0] = this.project(ox, oy);
     g.fillStyle = plot.status === 'ruins' ? shade(th.top, -0.1, 0.5) : th.top;
     g.fillRect(x0, y0, size, size);
+    if (plot.land) for (let c = 0; c < CHUNKS * CHUNKS; c++) {
+      if (plot.land[c]) continue;
+      g.fillStyle = th.wild;
+      g.fillRect(x0 + (c % CHUNKS) * CHUNK * s, y0 + ((c / CHUNKS) | 0) * CHUNK * s, CHUNK * s, CHUNK * s);
+    }
     const detailed = s >= FLAT_DETAIL;
     const traffic = plot.mine && this.scene.overlay === 'traffic' ? this.scene.traffic : null;
     if (detailed && plot.mine && this.scene.prefs.grid) {
@@ -515,14 +838,14 @@ export class Renderer {
       const x = x0 + (i % PLOT) * s, y = y0 + ((i / PLOT) | 0) * s;
       if (x > this.w || y > this.h || x + s < 0 || y + s < 0) continue;
       const uc = plot.uc?.has(i);
-      if (t === T.ROAD) {
-        let col = uc ? th.dirt : th.road;
+      if (t === T.ROAD || t === T.PATH || t === T.RAIL) {
+        let col = uc ? th.dirt : t === T.PATH ? th.pave : t === T.RAIL ? '#8f826d' : th.road;
         if (traffic && traffic.cap[i]) col = jamColour(traffic.load[i] / traffic.cap[i]);
         g.fillStyle = col; g.fillRect(x, y, s + 0.5, s + 0.5);
         continue;
       }
       if (t === T.RUBBLE) { g.fillStyle = th.ruin; g.fillRect(x + s * 0.2, y + s * 0.25, s * 0.2, s * 0.2); g.fillRect(x + s * 0.55, y + s * 0.5, s * 0.22, s * 0.2); continue; }
-      const col = this.pal[B[t].key];
+      const col = this.pal[B[t].col || B[t].key] || '#999999';
       const inset = Math.max(1, s * 0.08), bx = x + inset, by = y + inset, bs = s - inset * 2;
       if (uc) {
         const q = plot.queueMap?.get(i), done = q ? 1 - q.left / B[t].work : 0;
@@ -537,7 +860,7 @@ export class Renderer {
       g.fillStyle = shade(col, 0, grey);
       g.fillRect(bx, by, bs, bs);
       if (detailed) {
-        glyph(g, GLYPH[t], bx + bs / 2, by + bs / 2, bs * 0.2, 'rgba(255,255,255,0.92)');
+        glyph(g, glyphOf(t), bx + bs / 2, by + bs / 2, bs * 0.2, 'rgba(255,255,255,0.92)');
         const lv = plot.lv ? plot.lv[i] || 1 : 1;
         for (let k = 1; k < lv; k++) { g.fillStyle = '#fff'; g.fillRect(bx + 3 + (k - 1) * 5, by + bs - 6, 3, 3); }
         if (plot.queueMap?.get(i)?.up) { g.strokeStyle = th.scaffold; g.lineWidth = 2; g.strokeRect(bx + 1, by + 1, bs - 2, bs - 2); }
@@ -546,12 +869,13 @@ export class Renderer {
     g.strokeStyle = plot.mine ? th.ink : 'rgba(0,0,0,0.12)';
     g.lineWidth = plot.mine ? 2 : 1;
     g.strokeRect(x0 + 0.5, y0 + 0.5, size - 1, size - 1);
-    const byTile = detailed ? this.scene.carsByPlot?.get(plot.id) : null;
+    const byTile = detailed ? this.scene.agentsByPlot?.get(plot.id) : null;
     if (byTile) for (const list of byTile.values()) for (const car of list) {
       const [cx, cy] = this.project(ox + car.lx, oy + car.ly);
       const along = Math.abs(car.dx || 1) >= Math.abs(car.dy || 0);
-      g.fillStyle = car.follow ? '#ffc933' : CAR_COLS[car.c % CAR_COLS.length];
-      g.fillRect(cx - s * (along ? 0.17 : 0.1), cy - s * (along ? 0.1 : 0.17), s * (along ? 0.34 : 0.2), s * (along ? 0.2 : 0.34));
+      const k = car.mode === 'car' ? 1 : car.mode === 'bike' ? 0.55 : 0.4;
+      g.fillStyle = car.follow ? '#ffc933' : car.mode === 'car' ? CAR_COLS[car.c % CAR_COLS.length] : car.shirt;
+      g.fillRect(cx - s * (along ? 0.17 : 0.1) * k, cy - s * (along ? 0.1 : 0.17) * k, s * (along ? 0.34 : 0.2) * k, s * (along ? 0.2 : 0.34) * k);
       if (car.follow) { g.strokeStyle = '#17313b'; g.lineWidth = 2; g.strokeRect(cx - s * 0.2, cy - s * 0.2, s * 0.4, s * 0.4); }
     }
   }
@@ -653,7 +977,9 @@ export function thumbnail(canvas, type, pal, theme) {
   const g = r.ctx;
   g.clearRect(0, 0, r.w, r.h);
   const P = (tx, ty, h = 0) => { const [x, y] = r.project(tx, ty, h); return [x, y + r.h * 0.2]; };
-  poly(g, [P(0, 0), P(1, 0), P(1, 1), P(0, 1)], type === T.ROAD ? r.th.road : type === T.PARK ? shade(pal.park, 0.55) : r.th.top);
+  poly(g, [P(0, 0), P(1, 0), P(1, 1), P(0, 1)], type === T.ROAD ? r.th.road : type === T.PATH ? r.th.pave : type === T.PARK ? shade(pal.park, 0.55) : GROUND[type] || r.th.top);
+  if (type === T.PATH) return;
+  if (type === T.RAIL) { r.rail(g, P, [], 0, 0, 0, r.cam.z, false); return; }
   if (type === T.ROAD) {
     g.strokeStyle = r.th.mark; g.setLineDash([3, 3]); g.lineWidth = 1.5;
     const a = P(0, 0.5), b = P(1, 0.5); g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke(); g.setLineDash([]);

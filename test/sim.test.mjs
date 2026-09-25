@@ -1,105 +1,119 @@
 import assert from 'node:assert/strict';
-import { spiral } from '../public/js/spiral.js';
 import * as sim from '../public/js/sim.js';
-import { T, PLOT } from '../public/js/constants.js';
+import { T, PLOT, B, START_MONEY } from '../public/js/constants.js';
 
-// spiral: unique, and each new plot touches an earlier one
-const seen = new Set();
-for (let n = 0; n < 2000; n++) {
-  const { x, y } = spiral(n);
-  const key = `${x},${y}`;
-  assert(!seen.has(key), `dup at ${n}: ${key}`);
-  if (n > 0) assert([[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dy]) => seen.has(`${x+dx},${y+dy}`)), `isolated ${n}`);
-  seen.add(key);
-}
-console.log('spiral ok, first 9:', Array.from({length:9},(_, n)=>spiral(n)).map(p=>`${p.x},${p.y}`).join(' '));
-
-let seed = 42; const rng = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-const runDays = (s, d) => { let r; for (let h = 0; h < d * 24; h++) { r = sim.tick(s, rng); if (r.collapsed) return r; } return r; };
-const log = (label, s, r) => console.log(label, 'day', s.day, 'money', Math.round(s.money), 'pop', sim.totalPop(s), JSON.stringify(s.pop), 'students', sim.students(s), 'happy', s.happiness.toFixed(2), 'failed', s.stats.failedTrips, 'queue', s.queue.length, s.status);
-
-// Well-planned city: ring road around hall, houses, work, shop, school, park
-const s = sim.newCity('Test');
+let seed = 42;
+const rng = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 const c = PLOT >> 1;
-const put = (x, y, t) => { const r = sim.place(s, sim.idx(x, y), t); assert(r.ok, r.reason + ` ${x},${y}`); };
-for (let x = c - 4; x <= c + 4; x++) { put(x, c - 1, T.ROAD); put(x, c + 1, T.ROAD); }
-put(c - 1, c, T.ROAD); put(c + 1, c, T.ROAD);
-for (const x of [c-4, c-3, c-2, c+2, c+3]) put(x, c - 2, T.HOUSE);
-for (const x of [c-4, c-3, c+2, c+3]) put(x, c + 2, T.HOUSE);
-put(c - 2, c + 2, T.WORK); put(c + 4, c - 2, T.SHOP); put(c + 4, c + 2, T.SCHOOL); put(c, c + 2, T.PARK);
-log('start', s);
-let r = runDays(s, 5); log('d5 ', s);
-r = runDays(s, 15); log('d20', s);
-assert(!Number.isNaN(s.money) && !Number.isNaN(s.happiness));
-assert(s.status === 'alive');
-assert(sim.totalPop(s) > 20, 'city should grow');
-assert(s.pop.builder + s.pop.teacher + s.pop.pro > 3, 'education should produce graduates');
+const put = (s, x, y, t) => { const r = sim.place(s, sim.idx(x, y), t); assert(r.ok, `${B[t].name} at ${x},${y}: ${r.reason}`); };
+const finishAll = (s) => { for (const q of [...s.queue]) { while (s.queue.includes(q)) sim.tapHelp(s, q.i) || (q.left = 0, sim.tick(s, rng)); } };
 
-// Round trip
-const back = JSON.parse(sim.serialize(s));
-assert.deepEqual(back.grid, s.grid);
-
-// Neglected city: bankrupt, overbuilt, no jobs -> should collapse
-const d = sim.newCity('Doomed');
-d.money = 5000;
-for (let x = 0; x < PLOT; x++) for (const y of [2, 4, 20]) if (sim.canPlace(d, sim.idx(x, y), T.HOUSE).ok) sim.place(d, sim.idx(x, y), T.HOUSE);
-d.money = 0;
-r = runDays(d, 60); log('doomed', d);
-assert(d.status === 'ruins', 'neglected city should collapse');
-console.log('collapse record', r.collapsed);
-sim.rebuild(d);
-assert(d.status === 'alive' && d.grid.includes(T.RUBBLE));
-console.log('all tests passed');
-
-// ---- v2: upgrades, taps, undo, goals, migration
+// ---- a new city
 {
-  const s = sim.newCity('Up');
-  const c = PLOT >> 1;
-  for (let x = c + 1; x <= c + 5; x++) sim.place(s, sim.idx(x, c), T.ROAD);
-  sim.place(s, sim.idx(c + 2, c - 1), T.HOUSE);
-  const u = sim.undoPlace(s, sim.idx(c + 2, c - 1));
-  assert(u.ok && s.grid[sim.idx(c + 2, c - 1)] === T.EMPTY, 'undo refunds untouched placement');
-  sim.place(s, sim.idx(c + 2, c - 1), T.HOUSE);
-  const i = sim.idx(c + 2, c - 1);
-  let taps = 0; while (sim.tapHelp(s, i).ok) taps++;
-  assert(taps === 5, 'tap cap is 25% at 5% a tap, got ' + taps);
-  for (let h = 0; h < 48; h++) sim.tick(s, rng);
-  assert.equal(s.cond[i], 100);
-  const before = sim.totals(s).homes;
-  assert(sim.upgrade(s, i).ok, 'upgrade should start');
-  assert.equal(sim.totals(s).homes, before, 'building keeps working while upgrading');
-  for (let h = 0; h < 48; h++) sim.tick(s, rng);
-  assert.equal(s.lv[i], 2);
-  assert(sim.totals(s).homes > before, 'level 2 adds homes');
-  const got = sim.checkGoals(s).map((g) => g.id);
-  assert(got.includes('upgrade1'), 'upgrade goal pays out');
-  const tr = sim.computeTraffic(s);
-  for (const k of ['jobs', 'commute', 'shops', 'homes', 'school', 'leisure']) assert(tr.needs[k] >= 0 && tr.needs[k] <= 1, k);
-  const old = JSON.parse(sim.serialize(s)); delete old.lv; delete old.goalsDone;
-  sim.migrate(old); assert(old.lv.length === PLOT * PLOT && Array.isArray(old.goalsDone));
-  console.log('v2 features ok');
+  const s = sim.newCity('Test', rng);
+  assert.equal(s.people.length, 6, 'six settlers');
+  assert.equal(s.money, START_MONEY);
+  assert(sim.owns(s, sim.HALL_INDEX), 'owns the hall');
+  assert(!sim.owns(s, sim.idx(0, 0)), 'does not own the corner');
+  assert(!sim.place(s, sim.idx(0, 0), T.ROAD).ok, 'cannot build on unowned land');
+  const plan = sim.plan(s, rng);
+  const builders = s.people.filter((p) => p.j === sim.HALL_INDEX && p.jt === 0).length;
+  assert(builders >= 2, 'settlers take builder jobs at the hall');
+  assert(plan.needs.jobs > 0);
+  console.log('new city ok');
 }
 
-// ---- v3: history, log, events, links, breakdown, rebuild money
+// ---- a working town over 25 days
 {
-  const s = sim.newCity('Log');
-  const c = PLOT >> 1;
-  for (let x = c + 1; x <= c + 6; x++) sim.place(s, sim.idx(x, c), T.ROAD);
-  for (let x = c + 1; x <= c + 5; x++) sim.place(s, sim.idx(x, c - 1), T.HOUSE);
-  sim.place(s, sim.idx(c + 2, c + 1), T.WORK);
-  sim.place(s, sim.idx(c + 3, c + 1), T.SHOP);
-  for (let h = 0; h < 24 * 12; h++) sim.tick(s, rng);
-  assert(s.history.length === 12, 'one history entry a day');
-  assert(s.log.length > 0, 'log has entries');
-  const before = s.stats.byClass.trade;
-  s.links = 2;
-  for (let h = 0; h < 24; h++) sim.tick(s, rng);
-  assert(s.stats.byClass.trade > before, 'links pay trade');
-  const sum = Object.values(s.stats.byClass).reduce((a, b) => a + b, 0);
-  assert.equal(sum, s.stats.income, 'income breakdown adds up');
+  seed = 7;
+  const s = sim.newCity('Grow', rng);
+  s.money = 20000;
+  for (let x = 8; x <= 15; x++) put(s, x, c + 1, T.ROAD);
+  for (let y = 8; y <= 15; y++) if (y !== c && y !== c + 1) put(s, c + 1, y, T.ROAD);
+  for (const x of [8, 9, 10, 11]) put(s, x, c + 2, T.HOUSE);
+  for (const x of [14, 15]) put(s, x, c + 2, T.HOUSE);
+  put(s, 8, c, T.SHOP); put(s, 9, c, T.WORK); put(s, 10, c, T.FACTORY); put(s, 11, c, T.SCHOOL);
+  put(s, 14, c, T.DAYCARE); put(s, 15, c, T.PARK); put(s, c + 2, 9, T.CLINIC); put(s, c + 2, 10, T.PLAYGROUND);
+  put(s, c, 9, T.PATH);
+  for (let h = 0; h < 24 * 25; h++) sim.tick(s, rng);
+  const cs = sim.census(s);
+  assert.equal(s.queue.length, 0, 'everything got built');
+  assert(s.people.length > 20, `city grew: ${s.people.length}`);
+  assert(cs.employed > 5, 'people work');
+  assert(s.history.length === 25);
+  assert(s.log.length > 5, 'news was written');
+  const plan = s._plan;
+  const modes = new Set(plan.trips.map((t) => t.mode));
+  assert(plan.trips.length > 10, 'people make trips');
+  assert(modes.has('car') || modes.has('bike') || modes.has('walk'));
+  assert(plan.trips.every((t) => t.path.length >= 1), 'every trip has a path');
+  for (const k of ['jobs', 'commute', 'shops', 'homes', 'school', 'health', 'safety', 'leisure']) assert(plan.needs[k] >= 0 && plan.needs[k] <= 1, k);
+  const income = Object.values(s.stats.byClass).reduce((a, b) => a + b, 0);
+  assert.equal(income, s.stats.income, 'budget adds up');
+  console.log('town ok:', s.people.length, 'people,', cs.employed, 'employed,', s.counters.births, 'births,', s.counters.deaths, 'deaths,', plan.trips.length, 'trips', [...modes].join('/'));
+
+  // moving a house takes its family along
+  const house = sim.idx(8, c + 2), fam = s.people.filter((p) => p.h === house).length;
+  s.money += 1000;
+  const r = sim.moveBuilding(s, house, sim.idx(9, c - 1));
+  assert(r.ok, r.reason);
+  assert.equal(s.people.filter((p) => p.h === sim.idx(9, c - 1)).length, fam, 'family moved with the house');
+
+  // land
+  const price = sim.landPrice(s);
+  assert(!sim.canBuyLand(s, 0).ok, 'must be next to owned land');
+  assert(sim.buyLand(s, 13).ok, 'buys adjacent land');
+  assert(sim.landPrice(s) > price, 'land gets pricier');
+
+  // upgrades
+  const shop = sim.idx(8, c);
+  assert(sim.upgrade(s, shop).ok);
+  for (let h = 0; h < 72; h++) sim.tick(s, rng);
+  assert.equal(s.lv[shop], 2);
+
+  // collapse and rebuild
   const rec = sim.collapse(s, 'moved');
   assert.equal(rec.outcome, 'moved');
+  assert.equal(s.people.length, 0);
   sim.rebuild(s, 'Again', 999);
+  assert.equal(s.people.length, 6);
   assert.equal(s.money, 999);
-  console.log('v3 features ok');
+  console.log('actions ok');
 }
+
+// ---- old saves become people
+{
+  const old = JSON.parse(sim.serialize(sim.newCity('Old', rng)));
+  delete old.people; delete old.land;
+  old.pop = { unskilled: 3, builder: 3, teacher: 0, pro: 0 }; old.cohorts = [];
+  sim.migrate(old, rng);
+  assert(old.people.length >= 5 && old.people.length <= 6, 'head counts became people');
+  assert(old.land.every(Boolean), 'old cities keep all their land');
+  console.log('migration ok');
+}
+
+// ---- buses and trains
+{
+  seed = 11;
+  const s = sim.newCity('Transit', rng);
+  s.money = 50000; s.land.fill(1);
+  for (let x = 2; x <= 21; x++) put(s, x, c + 1, T.ROAD);
+  for (let x = 2; x <= 21; x++) put(s, x, 3, T.RAIL);
+  for (let y = 4; y <= c; y++) { put(s, 2, y, T.ROAD); put(s, 21, y, T.ROAD); }
+  for (const x of [3, 4, 5, 6, 7, 8]) put(s, x, c + 2, T.HOUSE);
+  for (const x of [17, 18, 19, 20]) put(s, x, c + 2, T.WORK);
+  put(s, 10, c + 2, T.DEPOT); put(s, 11, c + 2, T.SHOP);
+  for (let h = 0; h < 24 * 8; h++) sim.tick(s, rng);
+  put(s, 3, 4, T.STATION); put(s, 20, 4, T.STATION); put(s, 5, c, T.STOP); put(s, 18, c, T.STOP);
+  for (let h = 0; h < 24 * 8; h++) sim.tick(s, rng);
+  const plan = s._plan, modes = {};
+  for (const t of plan.trips) modes[t.mode] = (modes[t.mode] || 0) + 1;
+  assert(plan.stations.length === 2, 'both stations run: ' + plan.stations.length);
+  assert(plan.trainLines.length >= 1, 'a train line exists');
+  assert(plan.busLoop, 'a bus loop exists');
+  assert((modes.train || 0) + (modes.bus || 0) > 0, 'people ride transit: ' + JSON.stringify(modes));
+  s.railLinks = 1;
+  sim.plan(s, rng);
+  console.log('transit ok:', JSON.stringify(modes), 'commuters', s.people.filter((p) => p.oj).length);
+}
+console.log('all tests passed');
