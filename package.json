@@ -8,7 +8,8 @@
     "login": "npx --yes firebase-tools login",
     "serve": "npx --yes firebase-tools emulators:start --only hosting",
     "deploy:rules": "npx --yes firebase-tools deploy --only firestore:rules",
-    "test:rules": "firebase emulators:exec --only firestore,auth --project demo-commons \"node --import ./test/rules/register.mjs --test --test-force-exit test/rules/rules.test.mjs\""
+    "test:rules": "firebase emulators:exec --only firestore,auth --project demo-commons \"node --import ./test/rules/register.mjs --test --test-force-exit test/rules/rules.test.mjs\"",
+    "test:smoke": "playwright test -c test/smoke/playwright.config.mjs"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.2",

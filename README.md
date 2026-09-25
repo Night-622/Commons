@@ -105,9 +105,18 @@ Every collection and subcollection the game touches needs its own `match` block:
 ## Local test
 
 ```
-npm test          # simulation tests
-npm run serve     # local server
+npm install              # once: test tools (Firebase emulators, Playwright)
+npx playwright install chromium   # once
+npm test                 # simulation tests
+npm run test:rules       # security rules against the Firestore emulator (needs Java 21+)
+npm run test:smoke       # the game in Chromium with a fake firebase.js
+npm run balance -- 1-30  # 30 scripted cities for 100 days: grown / stalled / fell
+npm run serve            # local server
 ```
+
+The rules tests run the game's own `public/js/firebase.js` in node: `test/rules/loader.mjs` points its gstatic imports at the npm SDK wired to the emulators. The smoke tests serve `public/` with `js/firebase.js` swapped for `test/smoke/fake-firebase.js`, which keeps data in localStorage; `window.__fakeFb.failSaves = 'unavailable'` makes saves fail. When you add an export to `firebase.js`, add it to the fake too (a test checks they match).
+
+GitHub runs all three suites before every deploy (`.github/workflows/tests.yml`); a failure stops the deploy.
 
 ## Files
 
