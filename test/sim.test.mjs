@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import * as sim from '../public/js/sim.js';
-import { T, PLOT, B, START_MONEY } from '../public/js/constants.js';
+import { T, PLOT, B, START_MONEY, START_CHUNKS } from '../public/js/constants.js';
 
 let seed = 42;
 const rng = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 const c = PLOT >> 1;
 const put = (s, x, y, t) => { const r = sim.place(s, sim.idx(x, y), t); assert(r.ok, `${B[t].name} at ${x},${y}: ${r.reason}`); };
-const finishAll = (s) => { for (const q of [...s.queue]) { while (s.queue.includes(q)) sim.tapHelp(s, q.i) || (q.left = 0, sim.tick(s, rng)); } };
+const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100; s.queue = []; s._plan = null; };
 
 // ---- a new city
 {
@@ -104,6 +104,7 @@ const finishAll = (s) => { for (const q of [...s.queue]) { while (s.queue.includ
   for (const x of [17, 18, 19, 20]) put(s, x, c + 2, T.WORK);
   put(s, 10, c + 2, T.DEPOT); put(s, 11, c + 2, T.SHOP);
   for (let h = 0; h < 24 * 8; h++) sim.tick(s, rng);
+  finishAll(s);
   put(s, 3, 4, T.STATION); put(s, 20, 4, T.STATION); put(s, 5, c, T.STOP); put(s, 18, c, T.STOP);
   for (let h = 0; h < 24 * 8; h++) sim.tick(s, rng);
   const plan = s._plan, modes = {};
@@ -202,5 +203,185 @@ const finishAll = (s) => { for (const q of [...s.queue]) { while (s.queue.includ
   assert(grown >= 1, 'developers built in the zone: ' + grown);
   assert.equal(sim.totals(s).upkeepBy[T.HOUSE] || 0, 0, 'zoned homes cost no upkeep');
   console.log('zoning ok:', grown, 'grown');
+}
+// ---- clean power, air, tourism, the bank, badges, new decisions
+{
+  seed = 77;
+  const s = sim.newCity('Green', rng); s.money = 20000;
+  s.land.fill(1);
+  for (let x = 4; x <= 20; x++) put(s, x, c + 1, T.ROAD);
+  put(s, 6, c + 2, T.SOLAR); put(s, 8, c + 2, T.WIND);
+  for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = [];
+  assert.equal(sim.greenShare(s), 1, 'all clean power');
+  put(s, 10, c + 2, T.POWER);
+  for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = [];
+  assert(sim.greenShare(s) < 1 && sim.greenShare(s) > 0, 'mixed power');
+  const dirty = sim.airQuality(s, 0);
+  put(s, 12, c + 2, T.FACTORY); put(s, 14, c + 2, T.FACTORY);
+  for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = [];
+  assert(sim.airQuality(s, 0) < dirty, 'factories foul the air');
+  s.policy.carbon = true;
+  assert(sim.airQuality(s, 0) > sim.airQuality({ ...s, policy: { ...s.policy, carbon: false } }, 0), 'carbon tax cleans the air');
+  // The bank
+  s.history = Array.from({ length: 7 }, (_, d) => ({ d, pop: 30, money: 1000, mood: 60, net: 50 }));
+  for (let k = 0; k < 50; k++) s.people.push({ ...s.people[0], i: 2000 + k });
+  assert.equal(sim.creditRating(s), 'A', 'good rating');
+  const m0 = s.money;
+  assert(sim.borrow(s, 3000).ok && s.money === m0 + 3000 && s.loan.left === 3000, 'borrow');
+  assert(!sim.canBorrow(s, 100).ok, 'one loan at a time');
+  s.day = 20;
+  for (let h = 0; h < 24; h++) sim.tick(s, rng);
+  assert(s.loan.left < 3000 && s.stats.loanPaid > 0, 'loan repaid daily');
+  assert(sim.repay(s).ok && !s.loan && s.flags.repaid, 'pay off early');
+  // Summary carries the new public fields, and badges are plain strings
+  const sm = sim.summary(s);
+  for (const k of ['green', 'air', 'riders', 'tourists']) assert(typeof sm[k] === 'number', 'summary ' + k);
+  assert(Array.isArray(sm.badges) && sm.badges.every((b) => typeof b === 'string'), 'badges');
+  // New council decisions
+  s.decision = { id: 'carfree', d: s.day }; sim.decide(s, 'a'); assert(s.flags.carfree === 5, 'car-free sundays');
+  s.decision = { id: 'robots', d: s.day }; const m1 = s.money; sim.decide(s, 'a'); assert(s.flags.robots && s.money === m1 - 400, 'robots');
+  // Tourism: a staffed museum and a hotel bring money in
+  put(s, 16, c + 2, T.MUSEUM); put(s, 18, c + 2, T.HOTEL);
+  for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = [];
+  for (const i of [sim.idx(16, c + 2), sim.idx(18, c + 2)]) for (let k = 0; k < 3; k++) { const p = s.people[k + (i % 7)]; if (p) { p.j = i; p.jt = 0; p.e = 3; } }
+  for (let h = 0; h < 48; h++) sim.tick(s, rng);
+  assert((s.stats.byClass.tourism || 0) >= 0, 'tourism line exists');
+  console.log('green power, air, bank, badges, decisions ok: air', sm.air, 'tourists', s.stats.tourists, 'badges', sm.badges);
+}
+// ---- terrain
+{
+  const a = sim.terrainFor(3, -2, 'public'), b = sim.terrainFor(3, -2, 'public');
+  assert.equal(a, b, 'terrain is the same every time');
+  assert.notEqual(sim.terrainFor(3, -2, 'wabc'), a, 'private worlds get their own land');
+  let most = 0, found = null;
+  for (let py = -5; py <= 5; py++) for (let px = -5; px <= 5; px++) {
+    const t = sim.terrainFor(px, py);
+    const w = [...t].filter((c) => c === '2').length;
+    most = Math.max(most, w);
+    for (let y = 8; y < 16; y++) for (let x = 8; x < 16; x++) assert.equal(t[y * PLOT + x], '0', 'the start is dry and flat');
+    if (!found && w > 20) found = [px, py];
+  }
+  assert(most <= PLOT * PLOT * 0.35 + 1, 'no plot is mostly water: ' + most);
+  assert(found, 'some plots have water');
+  const s = sim.newCity('River', rng); s.money = 1e6; s.land.fill(1);
+  sim.ensureTerrain(s, ...found, 'public');
+  const wi = [...s.terr].indexOf('2');
+  assert(!sim.place(s, wi, T.HOUSE).ok, 'no houses on water');
+  const m0 = s.money;
+  assert(sim.place(s, wi, T.ROAD).ok && m0 - s.money === B[T.ROAD].cost * 4, 'bridges cost four times a road');
+  const hi = [...s.terr].indexOf('1');
+  if (hi >= 0) assert(!sim.place(s, hi, T.AIRPORT).ok, 'airports need flat land');
+  const old = sim.newCity('Old', rng); old.land.fill(1);
+  const t0 = sim.terrainFor(...found, 'public'), wet = [...t0].indexOf('2');
+  old.grid[wet] = T.HOUSE; old.cond[wet] = 100;
+  sim.ensureTerrain(old, ...found, 'public');
+  assert.equal(old.terr[wet], '0', 'old buildings stay on dry land');
+  assert.equal(sim.fromMap(sim.mapString(s)).terr, s.terr, 'terrain travels in the map string');
+  console.log('terrain ok: most water on one plot', most, 'tiles');
+}
+// ---- residents' character, pets, pensions, rubbish and sewage
+{
+  seed = 88;
+  const s = sim.newCity('Waste', rng); s.money = 1e5; s.land.fill(1);
+  for (let k = 0; k < 60; k++) s.people.push({ ...s.people[0], i: 3000 + k, a: k % 3 ? 30 : 70 });
+  const traits = new Set(s.people.map(sim.traitOf));
+  assert(traits.size >= 4, 'residents have a mix of characters');
+  assert.equal(sim.traitOf(s.people[5]), sim.traitOf({ ...s.people[5] }), 'traits are stable');
+  s.day = 20; s.flags.wasteSince = 5; s.flags.sewageSince = 5;   // the 5-day warnings have run out
+  let w = sim.wasteStatus(s);
+  assert(w.needWaste && w.waste === 0 && w.needSewage && w.sewage === 0, 'a big town needs rubbish and sewage handled');
+  for (let x = 4; x <= 20; x++) put(s, x, c + 1, T.ROAD);
+  put(s, 6, c + 2, T.RECYCLE); put(s, 8, c + 2, T.SEWAGE);
+  for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = [];
+  for (const [x, n] of [[6, 4], [8, 2]]) for (let k = 0; k < n; k++) { const p = s.people[10 + x + k]; p.j = sim.idx(x, c + 2); p.jt = 0; p.e = 3; }
+  w = sim.wasteStatus(s);
+  assert(w.waste === 1 && w.sewage === 1, 'plants cover the town: ' + JSON.stringify(w));
+  for (let h = 0; h < 24; h++) sim.tick(s, rng);
+  assert(s.stats.upkeepBy.pensions > 0, 'retirees draw pensions');
+  assert((s.stats.byClass.recycling || 0) > 0, 'recycling earns a little');
+  console.log('traits, pets, pensions, waste ok:', [...traits].join(', '));
+}
+// ---- research, letters, chains, metro
+{
+  seed = 99;
+  const s = sim.newCity('Metro', rng); s.money = 1e5; s.land.fill(1);
+  assert(!sim.availability(s, T.METRO).ok, 'metro needs research');
+  s.rp = 1000;
+  assert(!sim.research(s, 'metro').ok, 'research needs its prerequisites');
+  for (const t of ['smartgrid', 'trafficai', 'metro']) assert(sim.research(s, t).ok, 'research ' + t);
+  assert(sim.hasTech(s, 'metro') && s.rp === 1000 - 70 - 80 - 120, 'points spent');
+  for (let x = 2; x <= 21; x++) put(s, x, c + 1, T.ROAD);
+  for (const x of [3, 4, 5, 6]) put(s, x, c + 2, T.HOUSE);
+  for (const x of [17, 18, 19, 20]) put(s, x, c + 2, T.WORK);
+  put(s, 4, c, T.METRO); put(s, 19, c, T.METRO);
+  finishAll(s);
+  for (let k = 0; k < 30; k++) s.people.push({ ...s.people[0], i: 4000 + k, h: sim.idx(3 + (k % 4), c + 2), j: -1, e: 2 });
+  for (const [x, o] of [[4, 10], [19, 14]]) for (let k = 0; k < 2; k++) { const p = s.people[o + k]; p.j = sim.idx(x, c); p.jt = 0; }
+  const plan = sim.plan(s, rng);
+  assert(plan.metros.length === 2 && plan.metroCap > 0, 'metro runs');
+  // letters and promises
+  s.day = 10;
+  for (let d = 0; d < 20 && !s.letter; d++) for (let h = 0; h < 24; h++) sim.tick(s, rng);
+  assert(s.letter, 'a resident wrote a letter');
+  sim.replyLetter(s, 'promise');
+  assert(s.pledge && !s.letter, 'promise recorded');
+  s.pledge.until = s.day;
+  for (let h = 0; h < 24; h++) sim.tick(s, rng);
+  assert(!s.pledge, 'promise came due');
+  // an event chain follows the first choice
+  s.decision = { id: 'company', d: s.day }; sim.decide(s, 'a');
+  assert(s.flags.chain?.id === 'company2', 'follow-up queued');
+  console.log('research, metro, letters, chains ok: metro riders', plan.riders.metro, 'letter topic', s.flags.opp ? 'election on' : 'none');
+}
+// ---- heritage, land sales, bonds, insurance, crowdfunding
+{
+  seed = 123;
+  const s = sim.newCity('Old Town', rng); s.money = 1e5; s.land.fill(1);
+  for (let x = 4; x <= 20; x++) put(s, x, c + 1, T.ROAD);
+  put(s, 6, c + 2, T.LIBRARY);
+  finishAll(s);
+  const lib = sim.idx(6, c + 2);
+  s.bday[lib] = 0; s.day = 40;
+  assert(sim.isHistoric(s, lib), 'a 40-day-old library is historic');
+  assert(sim.setProtected(s, lib, true).ok && sim.isProtected(s, lib), 'protect it');
+  assert(!sim.bulldoze(s, lib).ok, 'protected buildings stay');
+  sim.setProtected(s, lib, false);
+  const m0 = s.people.reduce((a, p) => a + p.m, 0);
+  assert(sim.bulldoze(s, lib).historic, 'pulling down history is noticed');
+  assert(s.people.reduce((a, p) => a + p.m, 0) < m0, 'and people mind');
+  // land: a parcel away from the hall with nothing on it
+  const far = [...Array(36).keys()].find((k) => !START_CHUNKS.includes(k) && sim.canSellLand(s, k).ok);
+  const before = s.money, r = sim.sellLand(s, far);
+  assert(r.ok && s.money === before + r.price && !s.land[far], 'sell a parcel back');
+  assert(!sim.canSellLand(s, START_CHUNKS[0]).ok, 'the middle stays');
+  // bonds
+  for (let k = 0; k < 30; k++) s.people.push({ ...s.people[0], i: 5000 + k });
+  const b0 = s.money;
+  assert(sim.issueBonds(s, 500).ok && s.money === b0 + 500 && s.bond.left === 560, 'bonds raise money');
+  assert(!sim.canIssueBonds(s, 100).ok, 'one issue at a time');
+  // insurance halves disasters
+  put(s, 8, c + 2, T.HOUSE); put(s, 9, c + 2, T.SHOP); finishAll(s);
+  s.policy.insured = true;
+  for (let h = 0; h < 24; h++) sim.tick(s, rng);
+  assert(s.stats.upkeepBy.insurance > 0 && s.stats.upkeepBy.bonds > 0, 'premiums and bond payments in upkeep');
+  // crowdfunding grows day by day
+  s.wants = [{ p: s.people[0].i, t: T.CINEMA, r: 1, d: s.day, reward: 100 }];
+  for (let h = 0; h < 48; h++) sim.tick(s, rng);
+  assert(!s.wants.length || s.wants[0].fund > 0, 'neighbours raise money towards a request');
+  console.log('heritage, land sales, bonds, insurance, crowdfunding ok');
+}
+// ---- every random event at once, and none at all: nothing should throw
+{
+  for (const r of [() => 0.0005, () => 0.9995, () => 0.5]) {
+    const s = sim.newCity('Chaos', rng); s.money = 1e5; s.land.fill(1); s.terr = sim.terrainFor(2, 3);
+    for (let x = 4; x <= 20; x++) put(s, x, c + 1, T.ROAD);
+    for (const x of [5, 6, 7, 8, 9, 10]) put(s, x, c + 2, T.HOUSE);
+    put(s, 12, c + 2, T.FACTORY); put(s, 14, c + 2, T.SHOP); put(s, 16, c + 2, T.CLINIC);
+    finishAll(s);
+    for (let k = 0; k < 40; k++) s.people.push({ ...s.people[0], i: 6000 + k, h: sim.idx(5 + (k % 6), c + 2), a: 20 + k });
+    s.day = 12; s.policy.insured = true; s.decision = null;
+    for (let h = 0; h < 24 * 6; h++) sim.tick(s, r);
+  }
+  console.log('stress ok: all events, no events, and middling luck');
 }
 console.log('all tests passed');

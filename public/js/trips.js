@@ -35,7 +35,7 @@ export class TripSim {
   }
 
   spawn(e, trip, back, progress = 0) {
-    if (e.agents.length > 150 || trip.mode === 'bus' || trip.mode === 'train') return;   // riders are inside the vehicles
+    if (e.agents.length > 150 || trip.mode === 'bus' || trip.mode === 'train' || trip.mode === 'metro') return;   // riders are inside the vehicles, or underground
     const path = back ? [...trip.path].reverse() : trip.path;
     if (path.length < 2) return;
     const who = trip.visitor || e.st.people.find((p) => p.i === trip.p);
@@ -142,8 +142,8 @@ export function whereabouts(st, plan, person, t, agent) {
   const out = mine.find((x) => x.abroad && x.dep <= t && t < x.ret);
   if (out) return { fun: `Out for the evening in ${out.city}`, school: `At school in ${out.city}`, care: `Seeing a doctor in ${out.city}`, shop: `Shopping in ${out.city}` }[out.kind] || `In ${out.city}`;
   for (const x of mine) {
-    if (x.mode !== 'bus' && x.mode !== 'train') continue;
-    const hours = x.path.length / SPEED[x.mode] / HOUR_S + 0.3;
+    if (x.mode !== 'bus' && x.mode !== 'train' && x.mode !== 'metro') continue;
+    const hours = x.path.length / (SPEED[x.mode] || SPEED.train) / HOUR_S + 0.3;
     for (const back of [false, true]) {
       const start = back ? x.ret : x.dep;
       if (t >= start && t < start + hours) return `On the ${x.mode} ${back ? 'home' : `to the ${(B[st.grid[x.to]]?.name || 'town').toLowerCase()}`}`;

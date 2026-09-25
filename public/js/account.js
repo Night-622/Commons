@@ -1,8 +1,15 @@
 // Lifetime stats and achievements, kept in profiles/{uid}. Pure helpers; main.js does the saving.
-import { T } from './constants.js';
+import { T, FLAG_UNLOCKS } from './constants.js';
 import { esc, icon, money } from './panels.js';
 
 export const COLOURS = ['#ffc933', '#f0963a', '#e0588e', '#8a5bd6', '#3b7ddd', '#2f9e5a'];
+// Mayor level: everything you've done across all your cities.
+export function mayorXp(profile) {
+  const l = { ...emptyLife(), ...(profile?.stats || {}) };
+  return (l.built || 0) + (l.goals || 0) * 20 + (l.births || 0) * 3 + (l.graduates || 0) * 10 + (l.daysPlayed || 0) * 2 + (l.rebuilt || 0) * 30 + Object.keys(profile?.achievements || {}).length * 50;
+}
+export const mayorLevel = (profile) => Math.floor(Math.sqrt(mayorXp(profile) / 50)) + 1;
+const levelXp = (lv) => (lv - 1) ** 2 * 50;
 const LIFE_KEYS = ['built', 'land', 'moved', 'births', 'deaths', 'graduates', 'crimes', 'cases', 'treated', 'arrivals'];
 
 export function emptyLife() {
@@ -59,6 +66,17 @@ export const ACHIEVEMENTS = [
   { id: 'survivor', name: 'Survivor', text: 'Keep a city running 30 days', test: ({ life }) => life.bestDays >= 30, goal: 30, of: ({ life }) => life.bestDays },
   { id: 'phoenix', name: 'Phoenix', text: 'Rebuild on ruins', test: ({ life }) => life.rebuilt >= 1 },
   { id: 'tour', name: 'Top of the class', text: 'Finish the tour', test: ({ life }) => life.tutorial >= 1 },
+  { id: 'sunny', name: 'Here comes the sun', text: 'Power a city with only clean energy', test: ({ s }) => s.people.length >= 25 && count(s, T.SOLAR, T.WIND) >= 1 && !count(s, T.POWER) },
+  { id: 'fresh', name: 'Fresh air', text: '80+ people and air quality above 90%', test: ({ s }) => s.people.length >= 80 && (s.stats.air ?? 0) >= 0.9 },
+  { id: 'tourists', name: 'Tourist trap', text: '40 tourists in one day', test: ({ s }) => (s.stats.tourists || 0) >= 40, goal: 40, of: ({ s }) => s.stats.tourists || 0 },
+  { id: 'stadium', name: 'Match day', text: 'Open a stadium', test: ({ s }) => count(s, T.STADIUM) >= 1 },
+  { id: 'debtfree', name: 'Debt free', text: 'Pay off a bank loan', test: ({ s }) => !!s.flags?.repaid },
+  { id: 'storm', name: 'Weathered the storm', text: 'Keep 50+ people through an earthquake or tornado', test: ({ s }) => !!s.stats.disaster && s.people.length >= 50 },
+  { id: 'farm', name: 'Grow your own', text: 'Feed a household from an urban farm', test: ({ s }) => count(s, T.FARM) >= 1 && s.people.length >= 10 },
+  { id: 'badge', name: 'Decorated', text: 'Earn a city badge', test: ({ s }) => (s._badges || 0) > 0 },
+  // Hidden until earned.
+  { id: 'honest', name: 'Clean hands', text: 'Hold an inquiry into a scandal', hidden: true, test: ({ s }) => !!s.flags?.inquiry },
+  { id: 'hoarder', name: 'Scrooge', text: 'Hold $100,000', hidden: true, test: ({ s }) => s.money >= 100000 },
 ];
 
 export function checkAchievements(profile, s) {
@@ -91,8 +109,12 @@ export function accountHtml(ctx, tab) {
       <div><b>Mayor ${esc(mayor)}</b><small>${guest ? 'Guest on this device' : esc(user.email || 'Signed in with Google')}</small>
       <small>${esc(s.name)}, day ${s.day}, ${s.people.length} people. ${esc(world.name)}.</small></div></div>
       <label class="field"><span>Mayor name</span><span class="inline"><input id="acct-mayor" maxlength="20" value="${esc(mayor)}"><button class="btn" id="acct-mayor-save" type="button">Save</button></span></label>
-      <div class="field"><span>Badge colour</span><div class="swatches" role="radiogroup" aria-label="Badge colour">${COLOURS.map((c) =>
-        `<button type="button" role="radio" aria-checked="${c === colour}" data-colour="${c}" style="background:${c}" aria-label="Colour ${c}"></button>`).join('')}</div></div>
+      ${(() => { const lv = mayorLevel(profile), xp = mayorXp(profile), next = levelXp(lv + 1), cur = levelXp(lv);
+        return `<div class="field"><span>Mayor level ${lv}</span><span class="bar"><i data-l="ok" style="width:${Math.max(4, ((xp - cur) / (next - cur)) * 100)}%"></i></span><small class="soft">${xp - cur} of ${next - cur} to level ${lv + 1}. Build, grow, finish goals and earn achievements.</small></div>
+      <div class="field"><span>Town hall flag and badge colour</span><div class="swatches" role="radiogroup" aria-label="Flag colour">${FLAG_UNLOCKS.map(([need, c]) => need <= lv
+        ? `<button type="button" role="radio" aria-checked="${c === colour}" data-colour="${c}" style="background:${c}" aria-label="Colour ${c}"></button>`
+        : `<button type="button" disabled class="locked" style="background:${c}" title="Unlocks at mayor level ${need}" aria-label="Locked until level ${need}"></button>`).join('')}</div>
+        <small class="soft">Your flag flies over your town hall for everyone to see.</small></div>`; })()}
       <div class="grid2 minis">
         <div class="kv"><span>This city</span><b>${esc(s.name)}</b></div><div class="kv"><span>City number</span><b class="num">${s.cityNo}</b></div>
         <div class="kv"><span>Money</span><b class="num">${money(s.money)}</b></div><div class="kv"><span>Goals</span><b class="num">${s.goalsDone.length}</b></div>
@@ -106,6 +128,7 @@ export function accountHtml(ctx, tab) {
       <ul class="ach">${ACHIEVEMENTS.map((a) => {
         const done = !!ach[a.id];
         const prog = !done && a.goal && a.of ? Math.min(a.goal, a.of({ s, life }) || 0) : null;
+        if (a.hidden && !done) return `<li><span class="medal" aria-hidden="true">${icon('i-lock')}</span><span class="pmain"><b>Secret</b><small>Keep playing to find it.</small></span></li>`;
         return `<li class="${done ? 'done' : ''}"><span class="medal" aria-hidden="true">${done ? icon('i-trophy') : icon('i-lock')}</span>
           <span class="pmain"><b>${a.name}</b><small>${a.text}${prog !== null ? ` (${prog} of ${a.goal})` : ''}</small></span>
           ${done ? `<small class="when">${new Date(ach[a.id]).toLocaleDateString()}</small>` : ''}</li>`;
@@ -117,6 +140,7 @@ export function accountHtml(ctx, tab) {
         <button class="btn primary wide" id="up-email-go" type="button">Save as an account</button>
         <button class="btn wide gbtn" id="up-google" type="button">Save with Google</button></div>`
       : !google && user.email ? '<button class="btn" id="acct-reset" type="button">Email me a password reset link</button>' : '<p class="soft">Signed in with Google.</p>'}
+      <button class="btn" id="acct-export" type="button">Download a copy of my city</button>
       <button class="btn" id="acct-out" type="button">Sign out</button>
       <div class="danger-zone"><h3>Delete account</h3><p>Deletes your sign-in, stats and achievements for good. ${esc(s.name)} falls into ruins and stays on the map, where anyone can rebuild on it.</p>
         <button class="btn danger" id="acct-delete" type="button">Delete my account</button></div>`;

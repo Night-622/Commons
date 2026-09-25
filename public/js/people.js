@@ -1,6 +1,6 @@
 // How residents are described in the interface: roles, jobs, family, thoughts and why they feel the way they do.
 import { B, ADULT, RETIRE, EDU, isHome } from './constants.js';
-import { personName, FIRST } from './sim.js';
+import { personName, FIRST, traitOf } from './sim.js';
 
 export const ROLES = {
   baby: { label: 'Toddler', colour: '#f2a3c0' },
@@ -70,7 +70,15 @@ export function moodReasons(s, plan, p) {
   if (p.fun >= 0) add(1, `Going to the ${place(s, p.fun).toLowerCase()} tonight`);
   else if (p.a >= 3) add(-1, 'Nothing to do in the evenings');
   if (plan?.parks.has(p.h)) add(1, 'Park nearby');
-  if (plan?.pollution.has(p.h)) add(-1, 'Factory noise');
+  if (plan?.pollution.has(p.h)) add(-1, 'Noise and smells nearby');
+  const tr = traitOf(p);
+  if (tr === 'owl' && p.fun < 0 && p.a >= 16) add(-2, 'Bored stiff. Needs a night out');
+  if (tr === 'homebody' && p.fun < 0) add(1, 'Enjoying a quiet night in');
+  if (plan?.pets?.has(p.h)) add(plan.vetFor?.has(p.h) || s.people.length < 20 ? 1 : -1, plan.vetFor?.has(p.h) || s.people.length < 20 ? 'Loves the family pet' : 'Worried: no vet for the pet');
+  if (plan?.waste && plan.waste.waste < 0.8) add(-1, 'Rubbish piling up in the street');
+  if (plan?.waste && plan.waste.sewage < 0.8) add(-1, 'Worried about the drains');
+  if (plan?.value && plan.value[p.h] > 0.72 && p.e <= 1 && p.a >= 18) add(-1, 'Rent is getting too high');
+  else if (plan?.value && plan.value[p.h] > 0.7) add(1, 'Lives in a sought-after street');
   if (p.ill) add(-2, healthText(p));
   if (p.vt) add(-2, 'Was a victim of crime');
   if (p.gr) add(-2, 'Grieving');

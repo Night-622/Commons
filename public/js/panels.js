@@ -1,5 +1,7 @@
 // HTML for the side drawer and the build catalogue. Pure functions: main.js supplies data and wires up buttons.
-import { T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY } from './constants.js';
+import { REGIONAL, ALLIANCE_TRADE, REACTIONS, T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY, BONDS, INSURANCE, TECH, ERAS, TRAITS, CARBON_TAX, LOANS, LOAN_DAYS, CONGESTION_FEE, BADGES } from './constants.js';
+import { t as tr } from './i18n.js';
+import { creditRating, greenShare, traitOf, hasTech, canResearch, eraOf } from './sim.js';
 import { ROLES, roleOf, jobText, family, healthText, moodReasons, thought, personName } from './people.js';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -19,13 +21,16 @@ const personRow = (s, plan, p) => `<button type="button" class="person" data-per
   <small>${p.a}, ${esc(jobText(s, p))}</small><em>“${esc(thought(s, plan, p))}”</em></span>${bar(`Mood`, p.m, 'tiny')}</button>`;
 
 // ---------- goals ----------
-export function goalsPanel(state) {
+export function goalsPanel(state, daily) {
   const done = state.goalsDone.length;
   const wants = (state.wants || []).map((w) => ({ ...w, p: state.people.find((x) => x.i === w.p) })).filter((w) => w.p);
   return `${head('Goals', `<span class="soft num fill">${done} of ${GOALS.length}</span>`)}
+    ${daily ? `<div class="weekly"><h3 class="sub">${icon('i-flag')}Today’s challenge</h3><p><b>${esc(daily.text)}</b></p>
+      ${bar('Daily challenge', daily.got / daily.n)}<p class="soft small">${daily.got} of ${daily.n}. A new one each day.</p>
+      ${daily.claimed ? '<p class="good-t small">Done for today. Come back tomorrow.</p>' : daily.done ? `<button class="btn primary" type="button" id="daily-claim">Collect ${money(200)}</button>` : ''}</div>` : ''}
     <h3 class="sub">${icon('i-people')}Requests from residents</h3>
     ${wants.length ? `<ul class="wants">${wants.map((w) => `<li>${avatar(w.p)}<span class="pmain"><b>${esc(personName(w.p))}</b>
-      <small>Wants a ${B[w.t].name.toLowerCase()} within ${w.r} tiles of home. ${Math.max(0, 6 - (state.day - w.d))} days left.</small></span>
+      <small>Wants a ${B[w.t].name.toLowerCase()} within ${w.r} tiles of home. ${Math.max(0, 6 - (state.day - w.d))} days left.${w.fund >= 1 ? ` Neighbours have raised ${money(w.fund)} towards it.` : ''}</small></span>
       <b class="num reward">${money(w.reward)}</b><button class="btn" type="button" data-home="${w.p.h}">Show</button></li>`).join('')}</ul>`
       : '<p class="empty small">No requests right now. Residents ask for things as the city grows.</p>'}
     <h3 class="sub">${icon('i-flag')}Milestones</h3>
@@ -78,6 +83,8 @@ export function personCard(s, plan, p, now, fav = false) {
     <div class="kv"><span>Mood</span>${bar('Mood', p.m, 'small')}</div>
     <div class="kv"><span>Health</span><b>${healthText(p)}</b></div>
     <div class="kv"><span>Education</span><b>${EDU[p.e]}${p.sc >= 0 && p.a >= 5 ? ', studying' : ''}</b></div>
+    ${(() => { const t = TRAITS.find((x) => x.id === traitOf(p)); return `<div class="kv"><span>Character${t.note ? `<small>${t.note}</small>` : ''}</span><b>${t.name}</b></div>`; })()}
+    ${plan?.pets?.has(p.h) ? `<div class="kv"><span>Pet</span><b>${['A dog', 'A cat', 'A rabbit', 'A parrot', 'Two goldfish'][p.h % 5]}${plan.vetFor?.has(p.h) ? ', with a vet nearby' : ''}</b></div>` : ''}
     <div class="kv"><span>Day to day</span><b class="right">${esc(jobText(s, p))}</b></div>
     ${p.cs ? '<div class="kv"><span>Court</span><b>Waiting for a hearing</b></div>' : ''}
     ${reasons.length ? `<h3 class="sub">What’s on their mind</h3><ul class="reasons">${reasons.map(([v, t]) => `<li class="${v > 0 ? 'up' : 'down'}"><span aria-hidden="true">${v > 0 ? '+' : '−'}</span>${esc(t)}</li>`).join('')}</ul>` : ''}
@@ -103,7 +110,7 @@ function spark(values, colour, fmt) {
 }
 export function statsPanel(ctx, tab) {
   const { state: s, totals, plan, census: c } = ctx;
-  const tabs = [['overview', 'People'], ['services', 'Services'], ['budget', 'Budget'], ['policy', 'Policy'], ['history', 'History']];
+  const tabs = [['overview', 'People'], ['services', 'Services'], ['budget', 'Budget'], ['policy', 'Policy', 'adv'], ['research', 'Research', 'adv'], ['history', 'History']];
   let body = '';
   if (tab === 'overview') {
     const ages = [['Under 5', c.toddlers, '#f2a3c0'], ['5 to 11', c.kids, '#e0588e'], ['12 to 17', c.teens, '#c04a86'], ['18 to 64', c.adults, '#3b7ddd'], ['65 and over', c.seniors, '#7c8a90']];
@@ -139,39 +146,114 @@ export function statsPanel(ctx, tab) {
     const inRows = [['Basic jobs', by.basic, `$${WAGE[0]} a worker`], ['Skilled jobs', by.skilled, `$${WAGE[1]} a worker`], ['Degree jobs', by.degree, `$${WAGE[2]} a worker`],
       ['Unemployed', by.benefits, ''], ['Trade with neighbours', by.trade, `$${TRADE_PER_LINK} a road link, double for rail`],
       ['Visitors from neighbours', by.visitors, 'Evenings out, doctors, shopping, school and holidays'],
-      ['Goods sold', by.exports, `${st.goods || 0} goods from factories, $2 each to linked neighbours or 50c locally`]];
-    const outRows = Object.entries(up).sort((a, b) => b[1] - a[1]).map(([t, v]) => [B[t].name, v]);
+      ['Goods sold', by.exports, `${st.goods || 0} goods from factories, $2 each to linked neighbours or 50c locally`],
+      ['Tourism', by.tourism, `${st.tourists || 0} tourists. Museums and stadiums draw them; hotels let them stay the night`]];
+    if (by.carbon) inRows.push(['Carbon tax', by.carbon, `$${CARBON_TAX} a day from each fossil plant and factory`]);
+    if (by.tolls) inRows.push(['Congestion charge', by.tolls, `${st.cars || 0} car trips`]);
+    if (by.recycling) inRows.push(['Recycling sold', by.recycling, 'Sorted rubbish from recycling centres']);
+    if (by.property) inRows.push(['Property tax', by.property, 'Scaled by land value where people live']);
+    const outRows = Object.entries(up).sort((a, b) => b[1] - a[1]).map(([t, v]) => [{ loan: 'Loan repayment', pensions: `Pensions (${st.retirees || 0} retirees)`, insurance: 'Disaster insurance', bonds: 'City bonds' }[t] || B[t]?.name || t, v]);
+    const rating = creditRating(s), terms = LOANS[rating];
+    const bank = s.loan?.left > 0
+      ? `<div class="kv"><span>Loan left to pay<small>${(s.loan.rate * 100).toFixed(1)}% a day. Paid back automatically.</small></span><b class="num">${money(s.loan.left)}</b></div>
+        <div class="actions"><button class="btn" type="button" data-repay="${Math.min(s.loan.left, Math.floor(s.money))}" ${s.money >= 1 ? '' : 'disabled'}>Pay off ${money(Math.min(s.loan.left, Math.floor(s.money)))} now</button></div>`
+      : terms.max
+        ? `<p class="soft small">Borrow to build faster. You pay back in equal parts over ${LOAN_DAYS} days, plus ${(terms.rate * 100).toFixed(1)}% interest a day.</p>
+          <div class="actions">${[0.25, 0.5, 1].map((f) => Math.round(terms.max * f / 100) * 100).map((a) => `<button class="btn" type="button" data-borrow="${a}">Borrow ${money(a)}</button>`).join('')}</div>`
+        : '<p class="warn small">The bank won’t lend right now. Balance the budget and pay your bills to improve your rating.</p>';
     const net = (st.income || 0) - (st.upkeep || 0);
     body = `<p class="soft small">Yesterday. Tax is scaled by mood: at ${pct(s.happiness)} mood you collect ${pct(Math.min(1, Math.max(0, (s.happiness - 0.15) / 0.7)))} of full tax. Sick people don't work or pay.</p>
       <h3 class="sub">Income <b class="num good">+${money(st.income || 0)}</b></h3>
       ${inRows.map(([l, v, n]) => `<div class="kv"><span>${l}${n ? `<small>${n}</small>` : ''}</span><b class="num">${money(v || 0)}</b></div>`).join('')}
       <h3 class="sub">Upkeep <b class="num bad">−${money(st.upkeep || 0)}</b></h3>
       ${outRows.length ? outRows.map(([l, v]) => `<div class="kv"><span>${l}</span><b class="num">${money(v)}</b></div>`).join('') : '<p class="soft small">Nothing to maintain yet.</p>'}
-      <div class="total ${net < 0 ? 'neg' : ''}"><span>Daily balance</span><b class="num">${net >= 0 ? '+' : '−'}${money(Math.abs(net))}</b></div>`;
+      <div class="total ${net < 0 ? 'neg' : ''}"><span>Daily balance</span><b class="num">${net >= 0 ? '+' : '−'}${money(Math.abs(net))}</b></div>
+      ${(() => {
+        const recent = s.history.slice(-3), avg = recent.length ? recent.reduce((a, h) => a + (h.net || 0), 0) / recent.length : net;
+        const days = Array.from({ length: 7 }, (_, k) => Math.round(s.money + avg * (k + 1)));
+        const low = days.findIndex((v) => v < 0);
+        return `<h3 class="sub">${icon('i-chart')}Next 7 days</h3><p class="soft small">If the last three days are typical (${avg >= 0 ? '+' : '−'}${money(Math.abs(Math.round(avg)))} a day):</p>
+          <div class="forecast">${days.map((v, k) => `<span class="${v < 0 ? 'neg' : ''}"><small>+${k + 1}d</small><b class="num">${money(v)}</b></span>`).join('')}</div>
+          ${low >= 0 ? `<p class="warn small">You’d run out of money in ${low + 1} day${low ? 's' : ''}. Cut costs or borrow.</p>` : ''}`;
+      })()}
+      <div class="adv"><h3 class="sub">${icon('i-coin')}Bank <span class="tag">Credit rating ${rating}</span></h3>${bank}
+      <h3 class="sub">${icon('i-people')}City bonds</h3>
+      ${s.bond?.left > 0 ? `<div class="kv"><span>Owed to bondholders<small>${money(s.bond.daily)} a day until it’s paid</small></span><b class="num">${money(s.bond.left)}</b></div>`
+        : s.people.length >= BONDS.minPop ? `<p class="soft small">Borrow from your own residents: up to ${money(s.people.length * BONDS.perHead)}, repaid with ${Math.round(BONDS.rate * 100)}% interest over ${BONDS.days} days. No credit check, but missing a payment angers them.</p>
+          <div class="actions">${[0.5, 1].map((f) => Math.floor(s.people.length * BONDS.perHead * f / 50) * 50).filter((a) => a > 0).map((a) => `<button class="btn" type="button" data-bond="${a}">Sell ${money(a)} of bonds</button>`).join('')}</div>`
+        : `<p class="soft small">Once you have ${BONDS.minPop} residents, they can buy city bonds.</p>`}</div>`;
+  } else if (tab === 'research') {
+    const era = eraOf(s), next = ERAS[ERAS.indexOf(era) + 1];
+    body = `<div class="world-card"><span class="wbadge">${icon('i-flag')}</span><div><b>${s.name} is a ${era.name.toLowerCase()}</b>
+        <small>${next ? `${next.name} at ${next.pop} people (you’ve reached ${s.peakPop}). Each era sends a grant and speeds up research.` : 'The biggest there is.'}</small></div></div>
+      <div class="grid2"><div class="kv"><span>Research points</span><b class="num">${Math.floor(s.rp || 0)}</b></div><div class="kv"><span>Earned yesterday</span><b class="num">+${s.stats.rp || 0}</b></div></div>
+      <p class="soft small">Graduates, libraries, universities and museums earn research points.</p>
+      <ul class="tech">${TECH.map((t) => { const done = hasTech(s, t.id), c = canResearch(s, t.id), blocked = t.needs && !hasTech(s, t.needs);
+        return `<li class="${done ? 'done' : blocked ? 'blocked' : ''}"><span class="pmain"><b>${t.name}</b><small>${t.text}${blocked ? ` Needs ${TECH.find((x) => x.id === t.needs).name}.` : ''}</small></span>
+          ${done ? '<span class="tag">Done</span>' : `<button class="btn ${c.ok ? 'primary' : ''}" type="button" data-tech="${t.id}" ${c.ok ? '' : 'disabled'}>${t.cost} pts</button>`}</li>`; }).join('')}</ul>`;
   } else if (tab === 'policy') {
     const pol = s.policy || { tax: 1, funding: 1, freeTransit: false };
     const slider = (k, label, [a, b], help) => `<div class="policy"><div class="phead2"><b>${label}</b><b class="num" id="pol-${k}-v">${pct(pol[k])}</b></div>
       <input type="range" min="${a}" max="${b}" step="0.05" value="${pol[k]}" data-policy="${k}" aria-label="${label}"><p class="soft small">${help}</p></div>`;
     body = `${slider('tax', 'Tax rate', POLICY.tax, 'Higher tax brings in more money, but every resident likes it a little less.')}
       ${slider('funding', 'Service funding', POLICY.funding, 'Scales upkeep for schools, health, safety, leisure and transport. More funding means more places and happier people; less saves money.')}
-      <label class="tgl"><input type="checkbox" data-policy="freeTransit" ${pol.freeTransit ? 'checked' : ''}><span class="sw" aria-hidden="true"></span><span class="tl">Free buses and trains<small>Riders are happier. Costs 50c per ride.</small></span></label>`;
+      <label class="tgl"><input type="checkbox" data-policy="freeTransit" ${pol.freeTransit ? 'checked' : ''}><span class="sw" aria-hidden="true"></span><span class="tl">Free buses and trains<small>Riders are happier. Costs 50c per ride.</small></span></label>
+      <label class="tgl"><input type="checkbox" data-policy="toll" ${pol.toll ? 'checked' : ''}><span class="sw" aria-hidden="true"></span><span class="tl">Congestion charge<small>Drivers pay ${Math.round(CONGESTION_FEE * 100)}c a trip. Money in, but drivers grumble.</small></span></label>
+      <label class="tgl"><input type="checkbox" data-policy="insured" ${pol.insured ? 'checked' : ''}><span class="sw" aria-hidden="true"></span><span class="tl">Disaster insurance<small>${INSURANCE.premium * 100}c a day per building. Floods, fires, storms, quakes and tornadoes do ${Math.round(INSURANCE.damage * 100)}% of the damage.</small></span></label>
+      <label class="tgl"><input type="checkbox" data-policy="carbon" ${pol.carbon ? 'checked' : ''}><span class="sw" aria-hidden="true"></span><span class="tl">Carbon tax<small>$${CARBON_TAX} a day from each fossil plant and factory. Cleaner air, factories make 15% less.</small></span></label>
+      <div class="policy"><div class="phead2"><b>Property tax</b></div>
+        <div class="seg" role="radiogroup" aria-label="Property tax">${['Off', 'Low', 'High'].map((l, k) => `<button type="button" role="radio" aria-checked="${(pol.property || 0) === k}" data-prop="${k}">${l}</button>`).join('')}</div>
+        <p class="soft small">Charged on homes by land value. Good money in a desirable city, but everyone likes it a little less, and families without schooling on expensive streets may be priced out.</p></div>
+      <h3 class="sub">${icon('i-tree')}Environment</h3>
+      <div class="kv"><span>Air quality<small>Fossil power, factories and cars foul it. Parks, farms and clean power help.</small></span>${bar('Air quality', plan?.needs?.air ?? 1, 'small')}</div>
+      <div class="kv"><span>Clean power<small>Solar farms and wind turbines</small></span><b class="num">${pct(greenShare(s))}</b></div>`;
   } else {
     const h = s.history;
-    body = `<div class="chart"><div class="chart-h"><span>${icon('i-people')}Population</span><b class="num">${s.people.length}</b></div>${spark(h.map((x) => x.pop), '#3b7ddd', (v) => v)}</div>
+    body = `<div class="actions"><button class="btn primary" type="button" id="open-timelapse">${icon('i-clock')}Watch your city grow</button></div>
+      <div class="chart"><div class="chart-h"><span>${icon('i-people')}Population</span><b class="num">${s.people.length}</b></div>${spark(h.map((x) => x.pop), '#3b7ddd', (v) => v)}</div>
       <div class="chart"><div class="chart-h"><span>${icon('i-coin')}Money</span><b class="num">${money(s.money)}</b></div>${spark(h.map((x) => x.money), '#c98a0e', money)}</div>
       <div class="chart"><div class="chart-h"><span>${icon('i-mood')}Mood</span><b class="num">${pct(s.happiness)}</b></div>${spark(h.map((x) => x.mood), '#2f9e5a', (v) => v + '%')}</div>
       <div class="chart"><div class="chart-h"><span>${icon('i-chart')}Daily balance</span><b class="num">${money(h.at(-1)?.net ?? 0)}</b></div>${spark(h.map((x) => x.net), '#8a5bd6', money)}</div>`;
   }
   return `${head('City stats')}
-    <div class="seg tabs" role="tablist">${tabs.map(([k, l]) => `<button type="button" role="tab" aria-selected="${tab === k}" data-stats-tab="${k}">${l}</button>`).join('')}</div>
+    <div class="seg tabs" role="tablist">${tabs.map(([k, l, cls]) => `<button type="button" role="tab" class="${cls || ''}" aria-selected="${tab === k}" data-stats-tab="${k}">${l}</button>`).join('')}</div>
     <div class="ppane">${body}</div>`;
 }
 
 // ---------- news ----------
 const NEWS_ICON = { good: 'i-check', warn: 'i-alert', info: 'i-people', event: 'i-spark' };
-export function newsPanel(state, unseenFrom) {
+// The Daily: yesterday's biggest story as a headline, the numbers, and the weather ahead.
+function paper(s, plan, forecast) {
+  const st = s.stats || {}, pop = s.people.length, net = (st.income || 0) - (st.upkeep || 0);
+  const story = st.disaster ? ['Disaster strikes', st.disaster]
+    : st.milestone ? [`${st.milestone} and counting`, `${s.name} passed ${st.milestone} residents yesterday.`]
+    : st.priced ? ['Priced out', `${st.priced} residents left as rents climbed. Critics blame the property tax.`]
+    : st.departures > 3 ? ['Residents head for the exits', `${st.departures} people left yesterday. The mayor’s office is under pressure.`]
+    : st.graduates ? ['Caps in the air', `${st.graduates} graduate${st.graduates > 1 ? 's' : ''} finished university.`]
+    : st.births > 1 ? ['Baby boom', `${st.births} babies were born yesterday.`]
+    : (st.tourists || 0) >= 10 ? ['Tourists pour in', `${st.tourists} visitors spent ${money(st.byClass?.tourism || 0)} in town.`]
+    : st.event ? ['Around town', st.event]
+    : net < 0 ? ['Budget in the red', `The city lost ${money(-net)} yesterday.`]
+    : ['A quiet day', `${pop} residents went about their lives.`];
+  const air = st.air ?? plan?.needs?.air ?? 1;
+  return `<article class="paper"><p class="masthead">The ${esc(s.name)} Daily <small>Day ${s.day}</small></p>
+    <h3>${esc(story[0])}</h3><p>${esc(story[1])}</p>
+    <div class="paper-cols"><span><small>Population</small><b class="num">${pop}</b></span><span><small>Mood</small><b class="num">${pct(s.happiness)}</b></span>
+      <span><small>Budget</small><b class="num">${net >= 0 ? '+' : '−'}${money(Math.abs(net))}</b></span><span><small>Air</small><b class="num">${pct(air)}</b></span></div>
+    <p class="soft small">Weather: tomorrow ${forecast[0]}, then ${forecast[1]} and ${forecast[2]}.${forecast.includes('rain') ? ' Storm drains help if it pours.' : ''}</p></article>`;
+}
+export function newsPanel(state, unseenFrom, o = {}) {
   const log = state.log.map((e, k) => ({ ...e, n: k })).reverse();
-  return `${head('News')}
+  const tabs = [['paper', 'Headlines'], ['log', 'Everything'], ['inbox', `Alerts ${o.inbox?.length || ''}`]];
+  const tabBar = `<div class="seg tabs" role="tablist">${tabs.map(([k, l]) => `<button type="button" role="tab" aria-selected="${o.tab === k}" data-news-tab="${k}">${l}</button>`).join('')}</div>`;
+  if (o.tab === 'paper') return `${head('News')}${tabBar}${paper(state, o.plan, o.forecast || ['clear', 'clear', 'clear'])}
+    <h3 class="sub">Latest</h3><ul class="news compact">${log.slice(0, 6).map((e) => `<li class="n-${e.k}"><span class="ntext">${esc(e.t)}<small>Day ${e.d}</small></span></li>`).join('')}</ul>`;
+  if (o.tab === 'inbox') {
+    const t = (at) => new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return `${head('News')}${tabBar}${o.inbox?.length ? `<ul class="news">${o.inbox.map((e) => `<li class="n-${e.k === 'warn' ? 'warn' : e.k === 'good' ? 'good' : 'info'}"><span class="ntext">${esc(e.t)}<small>${t(e.at)}</small></span></li>`).join('')}</ul>`
+      : '<p class="empty">No alerts this session. Pop-up messages you missed land here.</p>'}`;
+  }
+  return `${head('News')}${tabBar}
     ${log.length ? `<ul class="news">${log.map((e) => `<li class="n-${e.k} ${e.n >= unseenFrom ? 'new' : ''}">
       <span class="nicon">${icon(NEWS_ICON[e.k] || 'i-people')}</span><span class="ntext">${esc(e.t)}<small>Day ${e.d}, ${e.h ?? 0}:00</small></span></li>`).join('')}</ul>`
       : '<p class="empty">Nothing yet. Births, graduations, illness, crime and events will appear here.</p>'}`;
@@ -182,10 +264,14 @@ export function chatPanel(ctx) {
   const { messages, me, world, colourOf } = ctx;
   const time = (m) => (m.createdAt?.toDate ? m.createdAt.toDate().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'now');
   return `${head('Chat', `<span class="soft small fill">${esc(world.name)}</span>`)}
+    ${ctx.error ? `<p class="warn small">Chat isn’t available: ${esc(ctx.error)}</p>` : ''}
     <ul class="chat" id="chat-list" aria-live="polite">${messages.length ? messages.map((m) => `
       <li class="${m.uid === me ? 'mine' : ''}"><span class="avatar-sm" style="--role:${colourOf(m.uid)}" aria-hidden="true">${esc((m.name || '?')[0].toUpperCase())}</span>
-        <div><span class="who"><b>${esc(m.name)}</b> <small>${esc(m.city || '')}, ${time(m)}</small></span><p>${esc(m.text)}</p>
-        ${m.uid !== me ? `<span class="msg-tools"><button type="button" class="linkbtn" data-mute="${esc(m.uid)}">Mute</button><button type="button" class="linkbtn" data-report="${esc(m.id)}">Report</button></span>` : ''}</div></li>`).join('')
+        <div><span class="who" translate="no"><b>${esc(m.name)}</b> <small>${esc(m.city || '')}, ${time(m)}</small></span><p translate="no">${esc(m.text)}</p>
+        <span class="reacts">${REACTIONS.map((e) => { const n = Object.values(m.reactions || {}).filter((x) => x === e).length, on = m.reactions?.[me] === e;
+          return n || on ? `<button type="button" class="react ${on ? 'on' : ''}" data-react="${esc(m.id)}|${e}" aria-pressed="${on}" aria-label="${e} ${n}">${e} <b>${n}</b></button>` : ''; }).join('')}
+          <span class="react-add">${REACTIONS.map((e) => `<button type="button" class="react ghost" data-react="${esc(m.id)}|${e}" aria-label="React ${e}">${e}</button>`).join('')}</span></span>
+        ${m.uid !== me ? `<span class="msg-tools"><button type="button" class="linkbtn" data-mute="${esc(m.uid)}">Block</button><button type="button" class="linkbtn" data-report="${esc(m.id)}">Report</button></span>` : ''}</div></li>`).join('')
       : '<li class="empty">No messages yet. Say hello to your neighbours.</li>'}</ul>
     <form id="chat-form" class="chat-form"><input id="chat-text" maxlength="280" autocomplete="off" placeholder="Message everyone in ${esc(world.name)}" aria-label="Message">
       <button class="btn primary" type="submit">Send</button></form>
@@ -198,8 +284,22 @@ export function worldPanel(ctx) {
   return `${head('World')}
     <div class="world-card"><span class="wbadge">${icon(world.private ? 'i-lock' : 'i-globe')}</span>
       <div><b>${esc(world.name)}</b><small>${world.private ? 'Private world' : 'Everyone plays here'}${ctx.plotCount ? `, ${ctx.plotCount} cities` : ''}</small></div></div>
-    ${world.private && world.code ? `<div class="codebox"><span>Invite code</span><b class="num">${world.code}</b><button class="btn" type="button" data-copy="${world.code}">Copy</button></div>
+    ${ctx.plotCount >= 350 ? `<p class="warn small">This world has ${ctx.plotCount} cities. Only the first 400 are shown live; a private world will feel quicker.</p>` : ''}
+    ${world.private && world.code ? `<div class="codebox"><span>Invite code</span><b class="num">${world.code}</b><button class="btn" type="button" data-copy="${world.code}">Copy code</button><button class="btn primary" type="button" data-copylink="${world.code}">Share link</button></div>
       <p class="soft small">${isOwnerOfWorld ? 'You made this world. ' : ''}Anyone with the code can join and get a plot here.</p>` : ''}
+    ${ctx.weekly ? (() => {
+      const w = ctx.weekly, show = (v) => (w.pct ? pct(v) : w.fmt(v));
+      return `<div class="weekly"><h3 class="sub">${icon('i-trophy')}This week’s world challenge</h3>
+        <p><b>${esc(w.text.replace('{goal}', show(w.goal)))}</b></p>
+        ${bar('Challenge progress', Math.min(1, w.value / w.goal))}<p class="soft small">${show(w.value)} of ${show(w.goal)}. Ends ${w.ends.toLocaleDateString([], { weekday: 'long' })}. Every city that helps gets ${money(600)}.</p>
+        ${w.claimed ? '<p class="good-t small">You’ve collected your reward this week.</p>'
+          : w.done && w.helped ? '<button class="btn primary" type="button" id="weekly-claim">Collect your reward</button>'
+          : w.done ? '<p class="soft small">The world did it! Your city didn’t qualify this time.</p>'
+          : `<p class="soft small">${w.helped ? 'Your city is helping.' : 'Your city isn’t helping yet.'}</p>`}</div>`;
+    })() : ''}
+    ${ctx.isOwnerOfWorld ? `<form id="world-rename" class="miniform"><label class="field"><span>Rename this world</span><span class="inline"><input id="world-newname" maxlength="40" value="${esc(world.name)}"><button class="btn" type="submit">Rename</button></span></label></form>` : ''}
+    ${ctx.news?.length ? `<h3 class="sub">${icon('i-bell')}Around the world</h3><ul class="news compact">${ctx.news.slice(0, 8).map((e) => `<li class="n-info"><span class="ntext">${esc(e.t)}<small>${new Date(e.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</small></span></li>`).join('')}</ul>` : ''}
+    <h3 class="sub">${icon('i-book')}Your guestbook</h3><div id="guestbook" data-book="${ctx.myPlot}">${ctx.bookMine || '<p class="soft small">Loading…</p>'}</div>
     <h3 class="sub">${icon('i-link')}Neighbours</h3>
     <p class="soft small">Put a road on your plot's edge where a neighbour has a road at the same spot. Each link earns trade and lifts mood, for both of you.</p>
     ${neighbours.length ? `<ul class="nlist">${neighbours.map((n) => `<li><button type="button" class="nrow" data-goto="${n.px},${n.py}">
@@ -229,9 +329,42 @@ export function worldPanel(ctx) {
       <form id="world-create" class="miniform"><label class="field"><span>Start a private world</span>
         <span class="inline"><input id="world-name" maxlength="40" placeholder="World name" required><button class="btn primary" type="submit">Create</button></span></label></form>
       <form id="world-join" class="miniform"><label class="field"><span>Join with a code</span>
-        <span class="inline"><input id="world-code" maxlength="6" placeholder="ABC123" autocomplete="off" required><button class="btn" type="submit">Join</button></span></label></form>
+        <span class="inline"><input id="world-code" maxlength="8" placeholder="K7Q2MX" autocomplete="off" autocapitalize="characters" spellcheck="false" required><button class="btn" type="submit">Join</button></span></label></form>
       <p id="world-msg" class="formmsg" role="alert"></p>
     </div>`;
+}
+
+// ---------- region: shared projects and alliances ----------
+export function regionPanel(ctx) {
+  const { projects, alliances, mine, chat, me } = ctx;
+  const proj = (p) => {
+    const t = REGIONAL[p.type] || {}, frac = Math.min(1, p.raised / p.goal);
+    return `<li class="proj ${p.done ? 'done' : ''}"><div class="pmain"><b>${esc(p.name)}</b><small>${esc(t.text || '')} Started by ${esc(p.byName || 'a mayor')}.</small>
+      ${bar(`${p.name} funding`, frac)}<small class="num">${money(p.raised)} of ${money(p.goal)}. ${Object.keys(p.members || {}).length} cities paid in.${p.mine ? ` You: ${money(p.mine)}${p.mine < p.share ? ` (pay ${money(p.share)} in total to share the benefit)` : ''}.` : ` Pay ${money(p.share)} or more to share the benefit.`}</small></div>
+      ${p.done ? `<span class="tag">${p.benefits ? 'Finished: you benefit' : 'Finished'}</span>`
+        : `<div class="actions">${[100, 500, 2000].map((a) => `<button class="btn" type="button" data-pay="${p.id}|${a}">${money(a)}</button>`).join('')}</div>`}</li>`;
+  };
+  const r = ctx.regional;
+  const perks = [r.mood ? `+${Math.round(r.mood * 100)}% mood` : '', r.draw ? `+${r.draw} tourists a day` : '', r.trade ? `+${money(r.trade)} trade a day` : '', r.health ? 'less illness' : ''].filter(Boolean);
+  return `${head('Region')}
+    <p class="soft small">Work with other mayors in this world: pay into shared projects, and team up in alliances.</p>
+    <h3 class="sub">${icon('i-flag')}Regional projects</h3>
+    ${perks.length ? `<p class="good-t small">Your city gets: ${perks.join(', ')}.</p>` : ''}
+    ${projects.length ? `<ul class="nlist projs">${projects.map(proj).join('')}</ul>` : '<p class="empty small">No projects yet. Start one below and invite your neighbours to chip in.</p>'}
+    <form id="project-form" class="miniform"><label class="field"><span>Start a project</span><span class="inline">
+      <select id="project-type">${Object.entries(REGIONAL).map(([k, t]) => `<option value="${k}">${t.name} (${money(t.goal)})</option>`).join('')}</select>
+      <button class="btn" type="submit">Start</button></span></label></form>
+    <p id="region-msg" class="formmsg" role="alert"></p>
+    <h3 class="sub">${icon('i-people')}Alliances</h3>
+    ${mine ? `<div class="world-card"><span class="wbadge">[${esc(mine.tag)}]</span><div><b>${esc(mine.name)}</b><small>${mine.members.length} of 12 members. Each other member adds ${money(ALLIANCE_TRADE)} of trade a day, up to six.</small></div></div>
+      <ul class="nlist">${mine.members.map((m) => `<li><span class="pmain"><b>${esc(ctx.nameOf(m))}</b>${m === mine.owner ? '<small>Founder</small>' : ''}</span></li>`).join('')}</ul>
+      <h3 class="sub">${icon('i-chat')}Alliance chat</h3>
+      <ul class="chat" id="ally-list">${chat.length ? chat.map((m) => `<li class="${m.uid === me ? 'mine' : ''}"><div translate="no"><span class="who"><b>${esc(m.name)}</b></span><p>${esc(m.text)}</p></div></li>`).join('') : '<li class="empty">Only members can read this. Say hello.</li>'}</ul>
+      <form id="ally-chat-form" class="chat-form"><input id="ally-text" maxlength="280" autocomplete="off" placeholder="Message your alliance" aria-label="Alliance message"><button class="btn primary" type="submit">Send</button></form>
+      <div class="actions"><button class="btn danger" type="button" id="ally-leave">${mine.members.length <= 1 ? 'Close the alliance' : 'Leave the alliance'}</button></div>`
+    : `<form id="ally-form" class="miniform"><label class="field"><span>Found an alliance</span><span class="inline"><input id="ally-name" maxlength="30" placeholder="Northern Towns"><input id="ally-tag" maxlength="4" placeholder="TAG" style="max-width:6em" autocapitalize="characters"><button class="btn" type="submit">Found</button></span></label></form>`}
+    ${alliances.length ? `<h3 class="sub">${icon('i-trophy')}Alliances by population</h3><ol class="nlist">${alliances.map((x) => `<li><span class="pmain"><b>[${esc(x.tag)}] ${esc(x.name)}</b><small>${x.members.length} member${x.members.length === 1 ? '' : 's'}, ${x.pop.toLocaleString()} people</small></span>
+      ${!mine && x.members.length < 12 ? `<button class="btn" type="button" data-join="${x.id}">Join</button>` : ''}</li>`).join('')}</ol>` : ''}`;
 }
 
 // ---------- build catalogue ----------
@@ -253,7 +386,7 @@ export function gives(t) {
 export function catalogHtml(ctx) {
   const { s, tile, cat, avail, q = '', afford = false } = ctx;
   const needle = q.trim().toLowerCase();
-  const list = BUILDINGS.filter((t) => (cat === 'all' || B[t].cat === cat) && (!needle || `${B[t].name} ${B[t].blurb} ${gives(t)}`.toLowerCase().includes(needle)) && (!afford || avail(t).ok));
+  const list = BUILDINGS.filter((t) => (cat === 'all' || B[t].cat === cat) && (!needle || `${B[t].name} ${tr(B[t].name)} ${B[t].blurb} ${gives(t)}`.toLowerCase().includes(needle)) && (!afford || avail(t).ok));
   const x = tile % 24 + 1, y = Math.floor(tile / 24) + 1;
   return `<div class="cat-head"><div><h2 id="catalog-title">Build on tile ${x}, ${y}</h2><small class="soft">You have <b>${money(s.money)}</b>. Staffed buildings need people with the right education.</small></div>
       <button class="iconbtn" type="button" data-cat-close aria-label="Close">${icon('i-close')}</button></div>

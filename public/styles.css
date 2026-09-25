@@ -318,7 +318,7 @@ kbd {
 .world-card div { display: flex; flex-direction: column; }
 .world-card small { color: var(--soft); }
 .wbadge { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--accent); color: var(--on-accent); }
-.codebox { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 8px 8px 8px 14px; border-radius: 12px; border: 1.5px dashed var(--line); }
+.codebox { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; padding: 8px 8px 8px 14px; border-radius: 12px; border: 1.5px dashed var(--line); }
 .codebox span { color: var(--soft); font-weight: 700; font-size: .88em; }
 .codebox b { flex: 1; font-size: 1.3em; letter-spacing: .12em; }
 .nlist { list-style: none; margin: 6px 0 0; padding: 0; }
@@ -375,6 +375,15 @@ kbd {
 .ruin-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--plate-2); }
 .ruin-row span { flex: 1; display: flex; flex-direction: column; }
 .ruin-row small { color: var(--soft); }
+.boot-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+#boot-msg { max-width: 34em; text-align: center; line-height: 1.5; }
+.found-joinbox { margin-top: 4px; }
+.savestate { border: 0; background: none; padding: 0; font: inherit; font-size: .72em; font-weight: 800; color: var(--soft); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.savestate::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--good); }
+.savestate.saving::before { background: var(--mid); animation: pulse 1s ease-in-out infinite; }
+.savestate.fail { color: var(--bad); }
+.savestate.fail::before { background: var(--bad); }
+@keyframes pulse { 50% { opacity: .35; } }
 .found-links { display: flex; flex-direction: column; gap: 6px; align-items: center; }
 
 /* ---------- toasts ---------- */
@@ -533,7 +542,7 @@ dialog::backdrop { background: rgba(12, 28, 33, .45); backdrop-filter: blur(3px)
 .brush .ic { width: 22px; height: 22px; }
 .brush small { color: var(--soft); font-weight: 700; }
 .brush[aria-pressed="true"] small { color: var(--accent); }
-.mhint { color: var(--soft); font-weight: 600; font-size: .9em; max-width: 300px; line-height: 1.3; margin: 0 6px; }
+.mhint { color: var(--soft); font-weight: 600; font-size: .9em; min-width: 180px; max-width: 300px; line-height: 1.3; margin: 0 6px; flex: 1 1 180px; }
 .mhint b { color: var(--ink); }
 
 .catalog {
@@ -708,3 +717,83 @@ body.photo #tool-tip, body.photo #coach, body.photo #follow, body.photo #catalog
 .brush.zone-1 .ic { color: #2f9e5a; } .brush.zone-2 .ic { color: #3b7ddd; } .brush.zone-3 .ic { color: #e0892f; }
 .modebar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
 .brush { width: 62px; }
+
+/* Dyslexia-friendly reading: plainer letterforms, more room between letters, words and lines. */
+html[data-font="readable"] body, html[data-font="readable"] button, html[data-font="readable"] input, html[data-font="readable"] textarea {
+  font-family: "Atkinson Hyperlegible", Verdana, Tahoma, system-ui, sans-serif; letter-spacing: .03em; word-spacing: .12em;
+}
+html[data-font="readable"] p, html[data-font="readable"] li { line-height: 1.65; }
+/* Badges on other cities */
+.badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.badge { font-size: .76em; font-weight: 800; padding: 3px 9px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.badge.b-green { background: color-mix(in srgb, var(--good) 22%, transparent); }
+.badge.b-happy { background: color-mix(in srgb, var(--mid) 25%, transparent); }
+.changelog h3 { margin: 12px 0 4px; font-size: 1em; }
+.changelog ul { margin: 0 0 6px 1.1em; line-height: 1.5; }
+
+/* Newspaper, forecast, hotbar */
+.paper { border: 1.5px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 10px 0; }
+.paper .masthead { font-family: Georgia, "Times New Roman", serif; font-weight: 700; font-size: 1.15em; border-bottom: 2px solid var(--line); padding-bottom: 6px; margin: 0 0 8px; display: flex; justify-content: space-between; align-items: baseline; }
+.paper h3 { font-family: Georgia, "Times New Roman", serif; font-size: 1.25em; margin: 4px 0; }
+.paper-cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 8px 0; }
+.paper-cols span, .forecast span { display: flex; flex-direction: column; } .paper-cols small, .forecast small { color: var(--soft); font-size: .75em; }
+.forecast { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; font-size: .85em; }
+.forecast .neg b { color: var(--bad); }
+.hotbar { display: inline-flex; gap: 4px; padding-left: 8px; margin-left: 4px; border-left: 1.5px solid var(--line); }
+.brush.quick canvas { width: 34px; height: 28px; display: block; margin: 0 auto; }
+.brush.quick[aria-pressed="true"] { outline: 2px solid var(--accent); }
+
+/* Weekly challenge, guestbook, chat reactions */
+.weekly { border: 1.5px solid var(--line); border-radius: 12px; padding: 4px 12px 10px; margin: 10px 0; }
+.book { list-style: none; margin: 6px 0; padding: 0; display: grid; gap: 8px; }
+.book li { border-left: 3px solid var(--accent); padding: 2px 0 2px 10px; }
+.book p { margin: 2px 0; }
+.reacts { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 4px; }
+.react { border: 1px solid var(--line); background: none; border-radius: 999px; padding: 1px 7px; font: inherit; font-size: .82em; cursor: pointer; }
+.react.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.react.ghost { border-color: transparent; opacity: .45; padding: 1px 3px; }
+.react-add { display: inline-flex; opacity: 0; transition: opacity .15s; }
+.chat li:hover .react-add, .chat li:focus-within .react-add { opacity: 1; }
+@media (pointer: coarse) { .react-add { opacity: 1; } }
+
+.undo-list { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
+.undo-list li { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.swatches button.locked { opacity: .35; cursor: not-allowed; position: relative; }
+.swatches button.locked::after { content: "🔒"; font-size: 10px; position: absolute; inset: 0; display: grid; place-items: center; }
+
+.tl-canvas { width: 100%; height: auto; aspect-ratio: 720 / 440; display: block; border-radius: 12px; background: var(--bg, #dbe9d2); }
+.tl-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+.tl-bar input[type=range] { flex: 1 1 160px; }
+
+.tech { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
+.tech li { display: flex; gap: 10px; align-items: center; border: 1.5px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.tech li.done { opacity: .7; } .tech li.blocked { opacity: .55; }
+.city-name[data-era]::after { content: attr(data-era); margin-left: 8px; font-size: .55em; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--soft); vertical-align: middle; }
+
+.projs .proj { flex-wrap: wrap; } .proj .pmain { flex: 1 1 100%; } .proj .bar { margin: 6px 0 2px; }
+.proj.done { opacity: .8; }
+#ally-list { max-height: 220px; }
+
+/* Simple mode hides advanced systems; they keep running quietly. */
+html[data-simple="1"] .adv, html[data-simple="1"] [data-brush="zone"] { display: none !important; }
+
+.keymap { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
+.keymap li { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; }
+.keymap kbd { min-width: 3em; text-align: center; }
+/* Thumb layouts: panel buttons in a column down one side, above the dock, with bigger targets. */
+@media (max-width: 860px) {
+  html[data-hand="right"] .rail, html[data-hand="left"] .rail { flex-direction: column; top: auto; bottom: calc(max(8px, env(safe-area-inset-bottom)) + 96px); }
+  html[data-hand="right"] .rail { right: 8px; left: auto; }
+  html[data-hand="left"] .rail { left: 8px; right: auto; }
+  html[data-hand="right"] .rail button, html[data-hand="left"] .rail button { width: 54px; min-height: 50px; }
+  html[data-hand="left"] .pulse { left: auto; right: 8px; }
+  html[data-hand="right"] .drawer, html[data-hand="left"] .drawer { bottom: calc(max(8px, env(safe-area-inset-bottom)) + 96px); }
+  html[data-hand="right"] .drawer { right: 72px; left: 8px; }
+  html[data-hand="left"] .drawer { left: 72px; right: 8px; }
+  html[data-hand="right"] .modes button, html[data-hand="left"] .modes button { min-height: 52px; }
+}
+
+/* Longer words (Greek and others): let labels break and wrap rather than spill. */
+.brush span, .card b, .rail button span, .stat small { overflow-wrap: anywhere; hyphens: auto; }
+html:not([lang="en"]) .brush span { font-size: .9em; line-height: 1.1; text-align: center; }
+html:not([lang="en"]) .card b { font-size: .95em; }

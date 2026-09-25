@@ -37,11 +37,13 @@ const THEMES = {
     bg: '#dbe9d2', bg2: '#cfe0c4', top: '#a9d68b', top2: '#a1cf82', side: '#86b566', side2: '#74a257', soil: '#b08a60', soil2: '#977550',
     road: '#5e6873', mark: '#f5f1e4', wall: '#f8f3ea', stone: '#ebe6da', dirt: '#c9ae86', glass: '#bfe1f4',
     pave: '#d8d4ca', wild: 'rgba(60,96,40,0.22)', wildTree: '#4f8a44', ink: '#17313b', grid: 'rgba(23,49,59,0.10)', labelBg: 'rgba(255,255,255,0.92)', scaffold: '#d99a2b', ruin: '#9a8b7b',
+    water: '#5aa9d6', waterHi: 'rgba(255,255,255,0.45)', shore: '#e9dcae', hill: '#97c57a', hill2: '#92c075',
   },
   dark: {
     bg: '#172327', bg2: '#131e22', top: '#4e7b44', top2: '#4a753f', side: '#3b6234', side2: '#31532b', soil: '#5f4b37', soil2: '#4e3e2e',
     road: '#3b434b', mark: '#cfcbbd', wall: '#e2dccf', stone: '#cfc9bc', dirt: '#7d6a50', glass: '#8fb3c7',
     pave: '#6f7470', wild: 'rgba(0,0,0,0.22)', wildTree: '#2f5a2b', ink: '#e8f0ef', grid: 'rgba(255,255,255,0.08)', labelBg: 'rgba(20,34,40,0.92)', scaffold: '#c98a22', ruin: '#6c6255',
+    water: '#2c5f7c', waterHi: 'rgba(255,255,255,0.25)', shore: '#8a7d58', hill: '#44703b', hill2: '#416b38',
   },
 };
 const CAR_COLS = ['#e94f4f', '#f2f2f2', '#3a7bd5', '#f2c230', '#2f2f36', '#46b37b'];
@@ -65,14 +67,16 @@ const GLYPH_COL = { house: 0, work: 1, shop: 2, school: 3, park: 4, hall: 5 };
 const CODE = { [T.HOUSE]: 'H', [T.APARTMENT]: 'Ap', [T.VILLA]: 'V', [T.WORK]: 'Of', [T.SHOP]: 'G', [T.CAFE]: 'Ca', [T.FACTORY]: 'F', [T.YARD]: 'By',
   [T.DAYCARE]: 'Dc', [T.SCHOOL]: 'PS', [T.HIGH]: 'HS', [T.UNI]: 'U', [T.TUTOR]: 'Tu', [T.LIBRARY]: 'Li', [T.CLINIC]: '+', [T.HOSPITAL]: 'H+',
   [T.POLICE]: 'Po', [T.FIRE]: 'Fi', [T.COURT]: 'Ct', [T.CEMETERY]: 'Ce', [T.PARK]: 'Pk', [T.PLAYGROUND]: 'Pl', [T.SPORTS]: 'Sp', [T.GYM]: 'Gy',
-  [T.DOJO]: 'Do', [T.POOL]: 'Sw', [T.CINEMA]: 'Ci', [T.STATION]: 'St', [T.STOP]: 'Bs', [T.DEPOT]: 'Bd', [T.HALL]: 'TH', [T.POWER]: 'Pw', [T.WATER]: 'Wa', [T.DRAIN]: 'Dr' };
+  [T.DOJO]: 'Do', [T.POOL]: 'Sw', [T.CINEMA]: 'Ci', [T.STATION]: 'St', [T.STOP]: 'Bs', [T.DEPOT]: 'Bd', [T.HALL]: 'TH', [T.POWER]: 'Pw', [T.WATER]: 'Wa', [T.DRAIN]: 'Dr',
+  [T.SOLAR]: 'So', [T.WIND]: 'Wi', [T.MUSEUM]: 'Mu', [T.STADIUM]: 'SD', [T.HOTEL]: 'Ht', [T.FARM]: 'Fa', [T.HARBOUR]: 'Hb', [T.AIRPORT]: 'Ai', [T.LANDFILL]: 'Lf', [T.RECYCLE]: 'Re', [T.SEWAGE]: 'Sw', [T.VET]: 'Vt', [T.METRO]: 'M', [T.MONUMENT]: 'Mo' };
 export const glyphOf = (t) => GLYPH_COL[B[t]?.col];
 // Ground colour for buildings that are mostly open space.
-const GROUND = { [T.SPORTS]: '#6fbf5a', [T.POOL]: '#e9e2cf', [T.CEMETERY]: '#8fb77a', [T.PLAYGROUND]: '#e8d6a3', [T.YARD]: '#c9ae86', [T.VILLA]: '#b8e09a' };
+const GROUND = { [T.SPORTS]: '#6fbf5a', [T.POOL]: '#e9e2cf', [T.CEMETERY]: '#8fb77a', [T.PLAYGROUND]: '#e8d6a3', [T.YARD]: '#c9ae86', [T.VILLA]: '#b8e09a', [T.FARM]: '#9c7a52', [T.STADIUM]: '#6fbf5a', [T.SOLAR]: '#b9d69b', [T.WIND]: '#a9d68b', [T.LANDFILL]: '#a89a78' };
 const MODEL_H = { [T.APARTMENT]: 1.3, [T.VILLA]: 0.8, [T.CAFE]: 0.55, [T.FACTORY]: 1.3, [T.YARD]: 1.1, [T.DAYCARE]: 0.8, [T.HIGH]: 1.1, [T.UNI]: 1.4,
   [T.TUTOR]: 0.7, [T.LIBRARY]: 1, [T.CLINIC]: 0.7, [T.HOSPITAL]: 1.3, [T.POLICE]: 0.8, [T.FIRE]: 1.1, [T.COURT]: 1.2, [T.CEMETERY]: 0.3,
   [T.PLAYGROUND]: 0.5, [T.SPORTS]: 0.3, [T.GYM]: 0.7, [T.DOJO]: 0.9, [T.POOL]: 0.3, [T.CINEMA]: 0.9, [T.PATH]: 0.05,
-  [T.DRAIN]: 0.3, [T.RAIL]: 0.05, [T.STATION]: 0.9, [T.STOP]: 0.5, [T.DEPOT]: 0.8, [T.POWER]: 1.4, [T.WATER]: 1.3 };
+  [T.DRAIN]: 0.3, [T.RAIL]: 0.05, [T.STATION]: 0.9, [T.STOP]: 0.5, [T.DEPOT]: 0.8, [T.POWER]: 1.4, [T.WATER]: 1.3,
+  [T.SOLAR]: 0.3, [T.WIND]: 1.8, [T.MUSEUM]: 1.1, [T.STADIUM]: 0.9, [T.HOTEL]: 1.6, [T.FARM]: 0.4, [T.HARBOUR]: 1.2, [T.AIRPORT]: 1.1, [T.LANDFILL]: 0.4, [T.RECYCLE]: 0.8, [T.SEWAGE]: 0.5, [T.VET]: 0.7, [T.METRO]: 0.6, [T.MONUMENT]: 2 };
 export function glyph(g, kind, x, y, r, col) {
   g.fillStyle = col;
   g.beginPath();
@@ -163,6 +167,7 @@ export class Renderer {
     this.scene = scene;
     this._lights = [];
     const season = scene.season, dark = scene.theme === 'dark';
+    this.snowy = season === 'Winter' && scene.weather !== 'heat';
     this.seasonTop = season === 'Winter' ? (dark ? '#5b6b66' : '#e6eee9') : season === 'Autumn' ? (dark ? '#5d6b3d' : '#c2cf86') : null;
     this.seasonTree = season === 'Autumn' ? '#d9822b' : season === 'Winter' ? (dark ? '#8a9a95' : '#f3f7f5') : null;
     const grd = g.createLinearGradient(0, 0, 0, this.h);
@@ -238,7 +243,7 @@ export class Renderer {
 
     if (z >= 12) {   // subtle lawn stripes
       g.globalAlpha = 0.5;
-      for (let k = 0; k < PLOT; k += 2) poly(g, [P(k, 0), P(k + 1, 0), P(k + 1, PLOT), P(k, PLOT)], th.top2);
+      for (let k = 0; k < PLOT; k += 2) poly(g, [P(k, 0), P(k + 1, 0), P(k + 1, PLOT), P(k, PLOT)], this.seasonTop ? shade(this.seasonTop, -0.03) : th.top2);
       g.globalAlpha = 1;
     }
     if (live && this.scene.prefs.grid && plot.mine) {
@@ -250,6 +255,25 @@ export class Renderer {
       g.stroke();
     }
 
+    // Terrain: water under everything, hills as darker, raised-looking ground.
+    const terr = plot.terr;
+    if (terr) {
+      const wave = live && !this.scene.prefs?.reducedMotion ? performance.now() / 1400 : 0;
+      for (let i = 0; i < terr.length; i++) {
+        const k = terr.charCodeAt(i) - 48;
+        if (!k) continue;
+        const tx = i % PLOT, ty = (i / PLOT) | 0;
+        if (k === 2) {
+          poly(g, [P(tx, ty, -0.06), P(tx + 1, ty, -0.06), P(tx + 1, ty + 1, -0.06), P(tx, ty + 1, -0.06)], th.water);
+          if (z >= 9 && hash(i, 31) < 0.5) { const o = (Math.sin(wave + hash(i, 32) * 6) + 1) * 0.3; poly(g, [P(tx + 0.2 + o * 0.5, ty + 0.35), P(tx + 0.45 + o * 0.5, ty + 0.35), P(tx + 0.45 + o * 0.5, ty + 0.42), P(tx + 0.2 + o * 0.5, ty + 0.42)], th.waterHi); }
+          const dry = (dx, dy) => { const x = tx + dx, y = ty + dy; return x >= 0 && y >= 0 && x < PLOT && y < PLOT && terr.charCodeAt(y * PLOT + x) !== 50; };
+          if (z >= 6) { g.strokeStyle = th.shore; g.lineWidth = Math.max(1, z / 10); g.beginPath();
+            for (const [dx, dy, a, b] of [[0, -1, [tx, ty], [tx + 1, ty]], [1, 0, [tx + 1, ty], [tx + 1, ty + 1]], [0, 1, [tx, ty + 1], [tx + 1, ty + 1]], [-1, 0, [tx, ty], [tx, ty + 1]]]) {
+              if (!dry(dx, dy)) continue; const p1 = P(a[0], a[1], -0.03), p2 = P(b[0], b[1], -0.03); g.moveTo(p1[0], p1[1]); g.lineTo(p2[0], p2[1]); }
+            g.stroke(); }
+        } else poly(g, [P(tx, ty), P(tx + 1, ty), P(tx + 1, ty + 1), P(tx, ty + 1)], this.seasonTop ? shade(this.seasonTop, hash(i, 33) < 0.5 ? -0.07 : -0.09) : hash(i, 33) < 0.5 ? th.hill : th.hill2);
+      }
+    }
     const grid = plot.grid, traffic = live && plot.mine && this.scene.overlay === 'traffic' ? this.scene.traffic : null;
     // Pass 1: ground (roads, plazas, park lawns, building sites)
     for (let i = 0; i < grid.length; i++) {
@@ -268,6 +292,7 @@ export class Renderer {
           poly(g, [P(tx + x0, ty + y0), P(tx + x1, ty + y0), P(tx + x1, ty + y1), P(tx + x0, ty + y1)], col);
         } else poly(g, dia, col);
         if (z >= 10 && !plot.uc?.has(i) && (t === T.ROAD || t === T.LIGHTS)) this.laneMarks(g, P, grid, i, tx, ty, z);
+        if (terr && terr.charCodeAt(i) === 50 && z >= 8) this.railings(g, P, grid, tx, ty, z);
         if (t === T.XING && !plot.uc?.has(i)) this.rail(g, P, grid, i, tx, ty, z, false, true);
         if (t === T.ROUNDABOUT && !plot.uc?.has(i)) {
           const [cx, cy] = P(tx + 0.5, ty + 0.5), r = z * 0.28;
@@ -312,6 +337,13 @@ export class Renderer {
     if (live && plot.mine && this.scene.info) for (const [i, col] of this.scene.info) {
       const x = i % PLOT, y = (i / PLOT) | 0;
       poly(g, [P(x, y), P(x + 1, y), P(x + 1, y + 1), P(x, y + 1)], col);
+      // Patterns as well as colour: more stripes means a stronger value.
+      if (this.scene.prefs?.patterns && z >= 8) {
+        const a = +(col.match(/,\s*([\d.]+)\)$/)?.[1] || 0.3), n = Math.max(1, Math.min(5, Math.round(a * 9)));
+        g.strokeStyle = 'rgba(23,49,59,0.55)'; g.lineWidth = Math.max(1, z / 20); g.beginPath();
+        for (let k = 1; k <= n; k++) { const f = k / (n + 1), p1 = P(x + f, y), p2 = P(x, y + f), p3 = P(x + 1, y + f), p4 = P(x + f, y + 1); g.moveTo(p1[0], p1[1]); g.lineTo(p2[0], p2[1]); g.moveTo(p3[0], p3[1]); g.lineTo(p4[0], p4[1]); }
+        g.stroke();
+      }
     }
     // Pass 2: objects, back to front along diagonals
     const agents = live ? this.scene.agentsByPlot?.get(plot.id) : null;
@@ -319,7 +351,8 @@ export class Renderer {
       for (let tx = Math.max(0, s - PLOT + 1); tx <= Math.min(s, PLOT - 1); tx++) {
         const ty = s - tx, i = ty * PLOT + tx, t = grid[i];
         if (B[t]?.cat || t === T.HALL || t === T.RUBBLE) this.object(g, P, plot, t, i, tx, ty, z, live);
-        else if (t === T.EMPTY && land && !land[Math.floor(ty / CHUNK) * CHUNKS + Math.floor(tx / CHUNK)] && hash(i, 9) < 0.28 && z >= 6) {
+        else if (t === T.EMPTY && terr && terr.charCodeAt(i) === 49 && hash(i, 34) < 0.22 && z >= 6) this.tree(g, P, tx + 0.35 + hash(i, 35) * 0.3, ty + 0.35 + hash(i, 36) * 0.3, 0.3 + hash(i, 37) * 0.2, th.wildTree, z);
+        else if (t === T.EMPTY && (!terr || terr.charCodeAt(i) !== 50) && land && !land[Math.floor(ty / CHUNK) * CHUNKS + Math.floor(tx / CHUNK)] && hash(i, 9) < 0.28 && z >= 6) {
           this.tree(g, P, tx + 0.3 + hash(i, 3) * 0.4, ty + 0.3 + hash(i, 4) * 0.4, 0.34 + hash(i, 5) * 0.22, th.wildTree, z);
         }
         if (agents && agents.has(i)) for (const a of agents.get(i)) this.agent(g, P, a);
@@ -328,6 +361,17 @@ export class Renderer {
     if (live && plot.mine && this.scene.showLand && land) this.landTags(g, P, land);
   }
 
+  // Low walls along a bridge's sides where it doesn't continue.
+  railings(g, P, grid, tx, ty, z) {
+    const go = (dx, dy) => { const x = tx + dx, y = ty + dy; return x >= 0 && y >= 0 && x < PLOT && y < PLOT && grid[y * PLOT + x] !== T.EMPTY; };
+    g.strokeStyle = '#c9ced3'; g.lineWidth = Math.max(1.5, z / 10); g.beginPath();
+    const seg = (a, b) => { const p1 = P(a[0], a[1], 0.12), p2 = P(b[0], b[1], 0.12); g.moveTo(p1[0], p1[1]); g.lineTo(p2[0], p2[1]); };
+    if (!go(0, -1) && (go(-1, 0) || go(1, 0))) seg([tx, ty + 0.06], [tx + 1, ty + 0.06]);
+    if (!go(0, 1) && (go(-1, 0) || go(1, 0))) seg([tx, ty + 0.94], [tx + 1, ty + 0.94]);
+    if (!go(-1, 0) && (go(0, -1) || go(0, 1))) seg([tx + 0.06, ty], [tx + 0.06, ty + 1]);
+    if (!go(1, 0) && (go(0, -1) || go(0, 1))) seg([tx + 0.94, ty], [tx + 0.94, ty + 1]);
+    g.stroke();
+  }
   laneMarks(g, P, grid, i, tx, ty, z) {
     const cx = tx + 0.5, cy = ty + 0.5;
     const dirs = [[1, 0, tx < PLOT - 1 ? i + 1 : -1], [-1, 0, tx > 0 ? i - 1 : -1], [0, 1, ty < PLOT - 1 ? i + PLOT : -1], [0, -1, ty > 0 ? i - PLOT : -1]];
@@ -370,13 +414,16 @@ export class Renderer {
       }
     }
   }
+  roofCol(col) { return this.snowy ? (this.scene?.theme === 'dark' ? '#aab8bf' : '#f1f5f7') : col; }
   gable(g, P, x0, y0, x1, y1, h, r, col, grey) {
+    col = this.roofCol(col);
     const ym = (y0 + y1) / 2;
     poly(g, [P(x0, y0, h), P(x1, y0, h), P(x1, ym, h + r), P(x0, ym, h + r)], shade(col, -0.25, grey));
     poly(g, [P(x0, y1, h), P(x1, y1, h), P(x1, ym, h + r), P(x0, ym, h + r)], shade(col, 0.02, grey));
     poly(g, [P(x1, y0, h), P(x1, y1, h), P(x1, ym, h + r)], shade(this.th.wall, -0.16, grey));
   }
   hip(g, P, x0, y0, x1, y1, h, r, col, grey) {
+    col = this.roofCol(col);
     const a = P((x0 + x1) / 2, (y0 + y1) / 2, h + r);
     poly(g, [P(x0, y0, h), P(x1, y0, h), a], shade(col, -0.25, grey));
     poly(g, [P(x0, y0, h), P(x0, y1, h), a], shade(col, -0.3, grey));
@@ -419,7 +466,9 @@ export class Renderer {
       this.box(g, P, x0, y0, x1, y1, 0, h, th.wall, grey);
       this.windows(g, P, x0, y0, x1, y1, lv, fh, 0.02, shade(glass, 0, grey), 2);
       this.face(g, P, 'S', y1, x0 + 0.26, x0 + 0.38, 0, 0.24, shade(col, -0.45, grey));
-      this.gable(g, P, x0 - 0.03, y0 - 0.03, x1 + 0.03, y1 + 0.03, h, 0.32, col, grey);
+      if (hash(i, 41) < 0.33) this.hip(g, P, x0 - 0.03, y0 - 0.03, x1 + 0.03, y1 + 0.03, h, 0.3, col, grey);
+      else this.gable(g, P, x0 - 0.03, y0 - 0.03, x1 + 0.03, y1 + 0.03, h, 0.32, col, grey);
+      if (hash(i, 42) < 0.4 && lv < 3) this.box(g, P, x1 - 0.2, y0 + 0.1, x1 - 0.1, y0 + 0.2, h, h + 0.34, shade('#9a6b52', 0, grey), grey);
       if (lv === 3) this.box(g, P, x0 + 0.08, y0 + 0.08, x0 + 0.18, y0 + 0.18, h, h + 0.42, shade(col, -0.3), grey);
       top = h + 0.32;
     } else if (t === T.WORK) {
@@ -475,10 +524,17 @@ export class Renderer {
       const [fx, fy] = P(tx + 0.5, ty + 0.5, 1.12), [fx2, fy2] = P(tx + 0.5, ty + 0.5, 1.6);
       g.strokeStyle = '#6b6f73'; g.lineWidth = Math.max(1, z / 16);
       g.beginPath(); g.moveTo(fx, fy); g.lineTo(fx2, fy2); g.stroke();
-      poly(g, [[fx2, fy2], [fx2 + z * 0.4, fy2 + z * 0.1], [fx2, fy2 + z * 0.2]], col);
+      poly(g, [[fx2, fy2], [fx2 + z * 0.4, fy2 + z * 0.1], [fx2, fy2 + z * 0.2]], /^#[0-9a-f]{6}$/i.test(plot.flag || '') ? plot.flag : col, 'rgba(0,0,0,0.25)');
       top = 1.6;
     } else top = this.more(g, P, t, i, tx, ty, z, lv, col, grey, glass, live, cond);
 
+    // Damage shows: cracks on run-down buildings, and a wisp of smoke when they're nearly gone.
+    if (cond > 0 && cond < 40 && t !== T.HALL && z >= 9 && B[t]?.cat) {
+      g.strokeStyle = 'rgba(40,30,25,0.65)'; g.lineWidth = Math.max(1, z / 18); g.beginPath();
+      const [a, b] = P(tx + 0.35 + hash(i, 43) * 0.3, ty + 0.86, Math.min(top, 0.7) * 0.8), [c2, d2] = P(tx + 0.42 + hash(i, 44) * 0.2, ty + 0.86, Math.min(top, 0.7) * 0.45), [e, f] = P(tx + 0.36 + hash(i, 45) * 0.2, ty + 0.86, 0.08);
+      g.moveTo(a, b); g.lineTo(c2, d2); g.lineTo(e, f); g.stroke();
+      if (cond < 20 && live) { const [sx, sy] = P(tx + 0.5, ty + 0.5, top + 0.2 + (performance.now() / 1500) % 0.4); g.fillStyle = 'rgba(90,90,90,0.35)'; g.beginPath(); g.arc(sx, sy, z * 0.12, 0, Math.PI * 2); g.fill(); }
+    }
     if (q && q.up) this.scaffold(g, P, tx, ty, modelHeight(t, Math.min(MAX_LEVEL, lv + 1)), q, t, z);
     if (live && cond > 0 && cond < 40 && z >= 12) this.badgeText(g, P(tx + 0.5, ty + 0.5, top + 0.35), '!', '#e04b3c', z);
     if (live && this.scene.shapes && glyphOf(t) !== undefined && z >= 9) {
@@ -855,6 +911,117 @@ export class Renderer {
         this.box(g, P, tx + 0.6, ty + 0.2, tx + 0.8, ty + 0.4, 0.12, 0.3, sh(col), grey);
         return 0.35;
       }
+      case T.HARBOUR: {
+        this.box(g, P, tx + 0.05, ty + 0.05, tx + 0.95, ty + 0.95, 0, 0.1, sh('#b9ab8e'), grey);
+        this.box(g, P, tx + 0.15, ty + 0.15, tx + 0.55, ty + 0.5, 0.1, 0.5, sh(col, 0.4), grey);
+        for (const [x, y, c] of [[0.62, 0.55, '#e04b3c'], [0.62, 0.72, '#3b7ddd'], [0.8, 0.55, '#f2b233']]) this.box(g, P, tx + x, ty + y, tx + x + 0.14, ty + y + 0.12, 0.1, 0.24, sh(c), grey);
+        const [a, b] = P(tx + 0.3, ty + 0.75, 0.1), [a2, b2] = P(tx + 0.3, ty + 0.75, 1.2), [a3, b3] = P(tx + 0.7, ty + 0.75, 1.2);
+        g.strokeStyle = sh('#e6a23c'); g.lineWidth = Math.max(1.5, z / 12); g.beginPath(); g.moveTo(a, b); g.lineTo(a2, b2); g.lineTo(a3, b3); g.stroke();
+        return 1.2;
+      }
+      case T.AIRPORT: {
+        poly(g, [P(tx + 0.05, ty + 0.35), P(tx + 0.95, ty + 0.35), P(tx + 0.95, ty + 0.62), P(tx + 0.05, ty + 0.62)], '#4a545c');
+        for (let k = 0; k < 4; k++) poly(g, [P(tx + 0.12 + k * 0.2, ty + 0.47), P(tx + 0.22 + k * 0.2, ty + 0.47), P(tx + 0.22 + k * 0.2, ty + 0.5), P(tx + 0.12 + k * 0.2, ty + 0.5)], '#ffffff');
+        this.box(g, P, tx + 0.1, ty + 0.68, tx + 0.7, ty + 0.92, 0, 0.35, sh('#dfe3e6'), grey);
+        this.face(g, P, 'S', ty + 0.92, tx + 0.12, tx + 0.68, 0.08, 0.3, sh(glass));
+        this.box(g, P, tx + 0.78, ty + 0.72, tx + 0.9, ty + 0.84, 0, 0.9, sh(col, 0.3), grey);
+        this.box(g, P, tx + 0.74, ty + 0.68, tx + 0.94, ty + 0.88, 0.9, 1.05, sh(glass), grey);
+        return 1.05;
+      }
+      case T.MONUMENT: {
+        this.box(g, P, tx + 0.08, ty + 0.08, tx + 0.92, ty + 0.92, 0, 0.1, th.stone);
+        this.box(g, P, tx + 0.28, ty + 0.28, tx + 0.72, ty + 0.72, 0.1, 0.35, sh('#d9d2c2'), grey);
+        const [a, b] = P(tx + 0.5, ty + 0.5, 0.35), [a2, b2] = P(tx + 0.5, ty + 0.5, 2.1), w2 = z * 0.12;
+        g.fillStyle = sh('#efe9dc'); g.beginPath(); g.moveTo(a - w2, b); g.lineTo(a2 - w2 * 0.35, b2 + z * 0.1); g.lineTo(a2, b2); g.lineTo(a2 + w2 * 0.35, b2 + z * 0.1); g.lineTo(a + w2, b); g.closePath(); g.fill();
+        g.fillStyle = sh('#c9c1ae'); g.beginPath(); g.moveTo(a, b + z * 0.02); g.lineTo(a2, b2); g.lineTo(a2 + w2 * 0.35, b2 + z * 0.1); g.lineTo(a + w2, b); g.closePath(); g.fill();
+        if (night) { g.fillStyle = 'rgba(255,230,160,0.35)'; g.beginPath(); g.arc(a, b - z * 0.4, z * 0.5, 0, Math.PI * 2); g.fill(); }
+        return 2.1;
+      }
+      case T.METRO: {
+        this.box(g, P, tx + 0.1, ty + 0.1, tx + 0.9, ty + 0.9, 0, 0.06, th.stone);
+        this.box(g, P, tx + 0.28, ty + 0.3, tx + 0.72, ty + 0.62, 0.06, 0.34, sh('#dfe3e6'), grey);
+        poly(g, [P(tx + 0.22, ty + 0.25, 0.4), P(tx + 0.78, ty + 0.25, 0.4), P(tx + 0.78, ty + 0.68, 0.34), P(tx + 0.22, ty + 0.68, 0.34)], sh('rgba(191,225,244,0.85)'));
+        const [a, b] = P(tx + 0.84, ty + 0.84, 0), [a2, b2] = P(tx + 0.84, ty + 0.84, 0.75), r = Math.max(4, z * 0.14);
+        g.strokeStyle = '#6b6f73'; g.lineWidth = Math.max(1, z / 16); g.beginPath(); g.moveTo(a, b); g.lineTo(a2, b2); g.stroke();
+        g.fillStyle = sh(col); g.beginPath(); g.arc(a2, b2, r, 0, Math.PI * 2); g.fill();
+        if (z >= 10) { g.fillStyle = '#fff'; g.font = `800 ${Math.round(r * 1.3)}px Overpass, system-ui`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('M', a2, b2 + 1); }
+        return 0.75;
+      }
+      case T.LANDFILL: {
+        for (const [x, y, r, c] of [[0.35, 0.4, 0.22, '#8d7f62'], [0.62, 0.6, 0.25, '#7f7258'], [0.3, 0.7, 0.14, '#9b8d6c']]) { const [a, b] = P(tx + x, ty + y, 0.12); g.fillStyle = sh(c); g.beginPath(); g.ellipse(a, b, z * r * 1.2, z * r * 0.6, 0, 0, Math.PI * 2); g.fill(); }
+        this.box(g, P, tx + 0.72, ty + 0.15, tx + 0.9, ty + 0.3, 0, 0.22, sh('#e6a23c'), grey);
+        return 0.35;
+      }
+      case T.RECYCLE: {
+        const h = 0.55 + 0.2 * L;
+        this.box(g, P, tx + 0.1, ty + 0.15, tx + 0.7, ty + 0.85, 0, h, sh('#dfe3e6'), grey);
+        this.gable(g, P, tx + 0.08, ty + 0.13, tx + 0.72, ty + 0.87, h, 0.15, sh(col, -0.1), grey);
+        for (const [y, c] of [[0.2, '#2f9e5a'], [0.45, '#3b7ddd'], [0.7, '#f2b233']]) this.box(g, P, tx + 0.76, ty + y, tx + 0.92, ty + y + 0.16, 0, 0.2, sh(c), grey);
+        return h + 0.15;
+      }
+      case T.SEWAGE: {
+        for (const [x, y] of [[0.3, 0.3], [0.7, 0.3], [0.5, 0.72]]) {
+          const [a, b] = P(tx + x, ty + y, 0.18), r = z * 0.2;
+          g.fillStyle = sh('#b9bfc4'); g.beginPath(); g.ellipse(a, b + r * 0.25, r, r * 0.5, 0, 0, Math.PI * 2); g.fill();
+          g.fillStyle = sh('#6f8f6a'); g.beginPath(); g.ellipse(a, b, r * 0.82, r * 0.4, 0, 0, Math.PI * 2); g.fill();
+        }
+        return 0.4;
+      }
+      case T.VET: {
+        const h = 0.4 + 0.15 * L;
+        this.box(g, P, tx + 0.18, ty + 0.2, tx + 0.82, ty + 0.8, 0, h, th.wall, grey);
+        this.face(g, P, 'S', ty + 0.8, tx + 0.25, tx + 0.75, 0.04, h * 0.6, sh(glass));
+        this.hip(g, P, tx + 0.14, ty + 0.16, tx + 0.86, ty + 0.84, h, 0.18, sh(col), grey);
+        const [a, b] = P(tx + 0.5, ty + 0.8, h * 0.85), r = Math.max(2, z * 0.07);
+        g.fillStyle = '#e04b3c'; g.beginPath(); g.arc(a, b, r, 0, Math.PI * 2); for (const [dx, dy] of [[-1.3, -1.2], [0, -1.7], [1.3, -1.2]]) g.arc(a + dx * r, b + dy * r, r * 0.5, 0, Math.PI * 2); g.fill();
+        return h + 0.18;
+      }
+      case T.SOLAR: {
+        for (let r = 0; r < 3; r++) for (let c = 0; c < 2; c++) {
+          const x0 = tx + 0.12 + c * 0.4, y0 = ty + 0.12 + r * 0.26;
+          poly(g, [P(x0, y0, 0.18), P(x0 + 0.34, y0, 0.18), P(x0 + 0.34, y0 + 0.18, 0.06), P(x0, y0 + 0.18, 0.06)], sh(night ? '#1d2a4a' : '#2d4f8a'), 'rgba(255,255,255,0.35)');
+        }
+        return 0.3;
+      }
+      case T.WIND: {
+        const [a, b] = P(tx + 0.5, ty + 0.5, 0), [a2, b2] = P(tx + 0.5, ty + 0.5, 1.6);
+        g.strokeStyle = sh('#eef1f3'); g.lineWidth = Math.max(2, z / 8); g.beginPath(); g.moveTo(a, b); g.lineTo(a2, b2); g.stroke();
+        const spin = live && cond > 0 && !this.scene.prefs?.reducedMotion ? performance.now() / 700 : 0.4, r = z * 0.75;
+        g.strokeStyle = sh('#ffffff'); g.lineWidth = Math.max(1.5, z / 12); g.beginPath();
+        for (let k = 0; k < 3; k++) { const ang = spin + k * 2.094; g.moveTo(a2, b2); g.lineTo(a2 + Math.cos(ang) * r, b2 + Math.sin(ang) * r); }
+        g.stroke();
+        g.fillStyle = sh(col); g.beginPath(); g.arc(a2, b2, Math.max(2, z * 0.07), 0, Math.PI * 2); g.fill();
+        return 1.8;
+      }
+      case T.MUSEUM: {
+        const h = 0.55 + 0.2 * L;
+        this.box(g, P, tx + 0.08, ty + 0.1, tx + 0.92, ty + 0.9, 0, 0.08, sh('#e8e2d4'));
+        this.box(g, P, tx + 0.15, ty + 0.15, tx + 0.85, ty + 0.72, 0.08, h, sh('#f4efe3'), grey);
+        for (let k = 0; k < 5; k++) this.box(g, P, tx + 0.18 + k * 0.15, ty + 0.74, tx + 0.23 + k * 0.15, ty + 0.79, 0.08, h, sh('#ffffff'), grey);
+        this.gable(g, P, tx + 0.12, ty + 0.12, tx + 0.88, ty + 0.82, h, 0.22, sh(col, 0.3), grey);
+        return h + 0.22;
+      }
+      case T.STADIUM: {
+        const h = 0.45 + 0.15 * L;
+        poly(g, [P(tx + 0.25, ty + 0.25, 0.02), P(tx + 0.75, ty + 0.25, 0.02), P(tx + 0.75, ty + 0.75, 0.02), P(tx + 0.25, ty + 0.75, 0.02)], sh('#58b04a'), 'rgba(255,255,255,0.8)');
+        for (const [x0, y0, x1, y1] of [[0.05, 0.05, 0.95, 0.22], [0.05, 0.78, 0.95, 0.95], [0.05, 0.22, 0.22, 0.78], [0.78, 0.22, 0.95, 0.78]]) this.box(g, P, tx + x0, ty + y0, tx + x1, ty + y1, 0, h, sh(col, 0.2), grey);
+        if (night) for (const [x, y] of [[0.08, 0.08], [0.92, 0.92]]) { const [a, b] = P(tx + x, ty + y, h + 0.4); g.fillStyle = '#fff6c8'; g.beginPath(); g.arc(a, b, z * 0.08, 0, Math.PI * 2); g.fill(); }
+        return h;
+      }
+      case T.HOTEL: {
+        const h = 1.2 + 0.4 * L, x0 = tx + 0.18, x1 = tx + 0.82, y0 = ty + 0.18, y1 = ty + 0.82;
+        this.box(g, P, x0, y0, x1, y1, 0, h, sh(col, 0.5), grey);
+        this.windows(g, P, x0, y0, x1, y1, Math.round(h / 0.24), 0.24, 0.1, sh(night ? '#ffe39a' : glass), 3);
+        this.box(g, P, x0 - 0.04, y0 - 0.04, x1 + 0.04, y1 + 0.04, h, h + 0.08, sh(col, -0.2), grey);
+        flag(tx + 0.5, ty + 0.5, h + 0.08, '#e04b3c');
+        return h + 0.7;
+      }
+      case T.FARM: {
+        for (let k = 0; k < 4; k++) poly(g, [P(tx + 0.1, ty + 0.12 + k * 0.2), P(tx + 0.62, ty + 0.12 + k * 0.2), P(tx + 0.62, ty + 0.24 + k * 0.2), P(tx + 0.1, ty + 0.24 + k * 0.2)], sh(k % 2 ? '#6cbf4c' : '#8fd05f'));
+        this.box(g, P, tx + 0.68, ty + 0.2, tx + 0.92, ty + 0.55, 0, 0.35, sh('#c0392b'), grey);
+        this.gable(g, P, tx + 0.66, ty + 0.18, tx + 0.94, ty + 0.57, 0.35, 0.12, sh('#7a3b2e'), grey);
+        return 0.47;
+      }
       case T.POOL: {
         poly(g, [P(tx + 0.15, ty + 0.2), P(tx + 0.85, ty + 0.2), P(tx + 0.85, ty + 0.8), P(tx + 0.15, ty + 0.8)], sh('#3fa9dc'));
         poly(g, [P(tx + 0.2, ty + 0.25), P(tx + 0.8, ty + 0.25), P(tx + 0.8, ty + 0.4), P(tx + 0.2, ty + 0.4)], 'rgba(255,255,255,0.25)');
@@ -892,6 +1059,12 @@ export class Renderer {
       if (plot.land[c]) continue;
       g.fillStyle = th.wild;
       g.fillRect(x0 + (c % CHUNKS) * CHUNK * s, y0 + ((c / CHUNKS) | 0) * CHUNK * s, CHUNK * s, CHUNK * s);
+    }
+    if (plot.terr) for (let i = 0; i < plot.terr.length; i++) {
+      const k = plot.terr.charCodeAt(i) - 48;
+      if (!k || plot.grid[i] !== T.EMPTY && k === 1) continue;
+      g.fillStyle = k === 2 ? th.water : th.hill;
+      g.fillRect(x0 + (i % PLOT) * s, y0 + ((i / PLOT) | 0) * s, s + 0.5, s + 0.5);
     }
     const detailed = s >= FLAT_DETAIL;
     const traffic = plot.mine && this.scene.overlay === 'traffic' ? this.scene.traffic : null;
@@ -988,7 +1161,7 @@ export class Renderer {
   label(g, plot) {
     const ox = plot.px * STRIDE, oy = plot.py * STRIDE;
     const [x, y] = this.view === 'flat' ? this.project(ox + PLOT / 2, oy) : this.project(ox, oy, 0.6);
-    const text = plot.status === 'ruins' ? `Ruins of ${plot.name}` : plot.name;
+    const text = plot.status === 'ruins' ? `Ruins of ${plot.name}` : `${plot.tag ? `[${plot.tag}] ` : ''}${plot.name}`;
     g.font = '700 12px Overpass, system-ui, sans-serif';
     const w = g.measureText(text).width + 16;
     const ly = y - 16;

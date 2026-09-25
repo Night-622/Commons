@@ -9,7 +9,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M16 4 29 11v10L16 28 3 21V11z' fill='%23a9d68b'/><path d='M16 4 29 11 16 18 3 11z' fill='%23ffc933'/><path d='M16 18v10L3 21V11z' fill='%2386b566'/></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;700;800&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;700;800&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
   <link rel="stylesheet" href="styles.css">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icon.svg">
@@ -66,7 +66,27 @@
     </defs>
   </svg>
 
-  <div id="boot" class="screen"><div class="boot-mark" aria-hidden="true"></div><p>Loading Commons…</p></div>
+  <div id="boot" class="screen" role="status" aria-live="polite"><div class="boot-mark" aria-hidden="true"></div><p id="boot-msg">Loading Commons…</p>
+    <div id="boot-actions" class="boot-actions hidden">
+      <button class="btn primary" id="boot-retry" type="button">Try again</button>
+      <button class="btn hidden" id="boot-public" type="button">Go to the public world</button>
+      <button class="linkbtn" id="boot-out" type="button">Sign out</button>
+    </div>
+  </div>
+  <script>
+    // If the game code can't load (offline, blocked script, old browser) say so instead of spinning forever.
+    window.__bootFail = function (why) {
+      var b = document.getElementById('boot'); if (!b || b.classList.contains('hidden')) return;
+      document.getElementById('boot-msg').textContent = why;
+      var a = document.getElementById('boot-actions'); a.classList.remove('hidden');
+      document.getElementById('boot-retry').onclick = function () { location.reload(); };
+      document.getElementById('boot-out').classList.add('hidden');
+    };
+    setTimeout(function () { if (!window.__commonsReady) window.__bootFail('This is taking longer than usual. Check your connection, then try again.'); }, 20000);
+    function early(e) { if (window.__commonsReady) return; console.error(e); window.__bootFail('The game couldn’t start. Check your connection, then try again. If it keeps happening, try another browser.'); }
+    window.addEventListener('error', function (e) { if (e && e.target && e.target !== window) return; early(e.error || e.message); });
+    window.addEventListener('unhandledrejection', function (e) { early(e.reason); });
+  </script>
 
   <!-- sign in -->
   <section id="auth" class="screen auth hidden" aria-labelledby="auth-title">
@@ -108,7 +128,12 @@
       <button class="btn primary wide" type="submit" id="found-go">Claim my plot</button>
       <p id="found-msg" class="formmsg" role="alert"></p>
       <div id="found-ruins" class="found-ruins hidden"></div>
+      <div id="found-joinbox" class="found-joinbox hidden">
+        <label class="field"><span>Invite code from a friend</span>
+          <span class="inline"><input id="found-code" maxlength="8" placeholder="K7Q2MX" autocomplete="off" autocapitalize="characters" spellcheck="false"><button class="btn" type="button" id="found-code-go">Join</button></span></label>
+      </div>
       <div class="found-links">
+        <button class="linkbtn" type="button" id="found-join">Join a friend’s private world</button>
         <button class="linkbtn hidden" type="button" id="found-public">Play in the public world instead</button>
         <button class="linkbtn" type="button" id="found-out">Use a different account</button>
       </div>
@@ -122,8 +147,8 @@
 
     <header class="top">
       <div class="city plate">
-        <button id="city-name" class="city-name" type="button" title="Rename your city"></button>
-        <span class="clockrow"><span id="clock" class="clock num"></span><span id="live" class="live" role="status">Live</span></span>
+        <button id="city-name" class="city-name" type="button" title="Rename your city" translate="no"></button>
+        <span class="clockrow"><span id="clock" class="clock num"></span><span id="live" class="live" role="status">Live</span><button id="savestate" class="savestate" type="button" title="Your city saves automatically">Saved</button></span>
         <span class="daybar" aria-hidden="true"><i id="dayfill"></i></span>
       </div>
       <div class="stats plate" role="group" aria-label="City at a glance">
@@ -168,6 +193,7 @@
       <button type="button" data-panel="news" aria-pressed="false" title="News (N)"><svg class="ic"><use href="#i-bell"/></svg><span>News</span><i id="news-dot" class="dot num hidden"></i></button>
       <button type="button" data-panel="chat" aria-pressed="false" title="Chat (K)"><svg class="ic"><use href="#i-chat"/></svg><span>Chat</span><i id="chat-dot" class="dot num hidden"></i></button>
       <button type="button" data-panel="world" aria-pressed="false" title="World (J)"><svg class="ic"><use href="#i-globe"/></svg><span>World</span></button>
+      <button type="button" data-panel="region" aria-pressed="false" title="Region: projects and alliances (Y)"><svg class="ic"><use href="#i-link"/></svg><span>Region</span></button>
     </nav>
 
     <aside id="drawer" class="drawer plate hidden" aria-label="Panel"></aside>
@@ -199,6 +225,6 @@
 
   <dialog id="modal" aria-labelledby="modal-title"><div id="modal-body"></div></dialog>
 
-  <script type="module" src="js/main.js"></script>
+  <script type="module" src="js/main.js" onerror="window.__bootFail && __bootFail('The game couldn’t load. Check your connection, then try again.')"></script>
 </body>
 </html>

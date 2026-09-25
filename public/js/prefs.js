@@ -26,7 +26,8 @@ export const DEFAULTS = {
   reducedMotion: SYSTEM_REDUCED_MOTION,
   colours: 'standard',
   shapes: false,
-  textSize: 1,            // 1 | 1.15 | 1.3
+  textSize: 1,            // 1 | 1.15 | 1.3 | 1.5
+  font: 'standard',       // standard | readable (dyslexia-friendly: plainer letters, more spacing)
   compact: false,
   minimap: true,
   notes: 'all',           // all | warn | off
@@ -37,6 +38,16 @@ export const DEFAULTS = {
   speak: false,
   mapContrast: false,
   ambient: false,
+  ambientVolume: 0.5,
+  haptics: true,          // phone vibrations on building, errors and goals
+  muteHidden: true,       // silence while the game is in a background tab
+  simple: false,
+  patterns: false,
+  music: false,
+  musicVolume: 0.4,
+  hand: 'off',            // off | right | left: thumb-friendly layout on phones
+  keys: {},
+  lang: 'auto',           // auto | en | el               // remapped shortcut keys, by action        // stripes on info views as well as colour          // hide advanced systems: research, policy, the bank, zoning
 };
 
 export function loadPrefs() {
@@ -68,6 +79,9 @@ export function applyPrefs(p) {
   root.dataset.motion = p.reducedMotion ? 'reduced' : 'full';
   root.dataset.compact = p.compact ? '1' : '0';
   root.style.setProperty('--ui-scale', String(p.textSize));
+  root.dataset.font = p.font;
+  root.dataset.simple = p.simple ? '1' : '0';
+  root.dataset.hand = p.hand;
 }
 
 export const palette = (p) => PALETTES[p.colours].cols;
