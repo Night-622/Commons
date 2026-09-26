@@ -492,6 +492,7 @@ export class Renderer {
       else this.gable(g, P, x0 - 0.03, y0 - 0.03, x1 + 0.03, y1 + 0.03, h, 0.32, col, grey);
       if (hash(i, 42) < 0.4 && lv < 3) this.box(g, P, x1 - 0.2, y0 + 0.1, x1 - 0.1, y0 + 0.2, h, h + 0.34, shade('#9a6b52', 0, grey), grey);
       if (lv === 3) this.box(g, P, x0 + 0.08, y0 + 0.08, x0 + 0.18, y0 + 0.18, h, h + 0.42, shade(col, -0.3), grey);
+      if (z >= 9) this.box(g, P, x0 - 0.03, y0 - 0.03, x1 + 0.03, y1 + 0.03, -0.03, 0.02, shade(th.stone, -0.05, grey), grey); // a low plinth at the base
       top = h + 0.32;
     } else if (t === T.WORK) {
       const x0 = tx + 0.14, x1 = tx + 0.86, y0 = ty + 0.14, y1 = ty + 0.86, h = 0.8 + 0.55 * (lv - 1);
@@ -501,6 +502,7 @@ export class Renderer {
         this.face(g, P, 'E', x1, y0 + 0.05, y1 - 0.05, h0, h0 + 0.1, shade(glass, -0.18, grey));
       }
       this.box(g, P, x0 + 0.15, y0 + 0.15, x0 + 0.35, y0 + 0.35, h, h + 0.1, '#c9ced3', grey);
+      if (z >= 9) this.box(g, P, x0 - 0.02, y0 - 0.02, x1 + 0.02, y1 + 0.02, h - 0.04, h, shade(col, -0.12, grey), grey); // a cornice band at the roofline
       top = h + 0.1;
     } else if (t === T.SHOP) {
       const x0 = tx + 0.12, x1 = tx + 0.88, y0 = ty + 0.16, y1 = ty + 0.84, h = 0.44 + 0.22 * (lv - 1);
@@ -516,6 +518,7 @@ export class Renderer {
         poly(g, [P(x1, e, hA), P(x1, f, hA), P(x1 + out, f, hA - 0.12), P(x1 + out, e, hA - 0.12)], shade(c, -0.15, grey));
       }
       this.box(g, P, x0 + 0.2, y0 + 0.28, x1 - 0.2, y0 + 0.36, h, h + 0.16, col, grey);
+      if (z >= 9) this.box(g, P, x0 + 0.03, y0 + 0.02, x1 - 0.03, y0 + 0.09, h, h + 0.05, shade(col, -0.18, grey), grey); // a parapet strip along the roofline
       top = h + 0.16;
     } else if (t === T.SCHOOL) {
       const x0 = tx + 0.1, x1 = tx + 0.9, y0 = ty + 0.14, y1 = ty + 0.86, h = 0.55 + 0.25 * (lv - 1);
@@ -542,6 +545,7 @@ export class Renderer {
         this.face(g, P, 'S', b1, u, u + 0.05, 0.14, 0.72, shade(th.stone, -0.18));
         this.face(g, P, 'E', a1, b0 + 0.06 + k * 0.15, b0 + 0.11 + k * 0.15, 0.14, 0.72, shade(th.stone, -0.3));
       }
+      if (z >= 9) this.box(g, P, a0 - 0.03, b0 - 0.03, a1 + 0.03, b1 + 0.03, 0.72, 0.78, shade(th.stone, 0.1), 0); // a cornice below the roof
       this.hip(g, P, a0 - 0.04, b0 - 0.04, a1 + 0.04, b1 + 0.04, 0.78, 0.34, col, 0);
       const [fx, fy] = P(tx + 0.5, ty + 0.5, 1.12), [fx2, fy2] = P(tx + 0.5, ty + 0.5, 1.6);
       g.strokeStyle = '#6b6f73'; g.lineWidth = Math.max(1, z / 16);
@@ -770,6 +774,7 @@ export class Renderer {
         this.box(g, P, tx + 0.1, ty + 0.15, tx + 0.9, ty + 0.88, 0, h, sh(shade(col, -0.25, 0.4)), grey);
         for (let k = 0; k < 3; k++) this.gable(g, P, tx + 0.1 + k * 0.27, ty + 0.15, tx + 0.37 + k * 0.27, ty + 0.88, h, 0.16, sh('#9aa3ab'), grey);
         this.box(g, P, tx + 0.72, ty + 0.18, tx + 0.84, ty + 0.3, h, h + 0.55, sh('#8a6f5a'), grey);
+        if (z >= 9) this.box(g, P, tx + 0.08, ty + 0.86, tx + 0.4, ty + 0.94, 0, 0.08, sh('#8a7256'), grey); // a loading dock apron
         if (cond > 0 && live) { const [a, b] = P(tx + 0.78, ty + 0.24, h + 0.7 + (performance.now() / 2000) % 0.3); g.fillStyle = 'rgba(200,200,200,0.6)'; g.beginPath(); g.arc(a, b, z * 0.12, 0, Math.PI * 2); g.arc(a + z * 0.12, b - z * 0.12, z * 0.09, 0, Math.PI * 2); g.fill(); }
         return h + 0.55;
       }
@@ -1066,19 +1071,84 @@ export class Renderer {
         return 0.45;
       }
       case T.MATERIALS: {
-        // A quarry pit, a stack of timber and a shed.
-        poly(g, [P(tx + 0.1, ty + 0.12), P(tx + 0.5, ty + 0.12), P(tx + 0.5, ty + 0.52), P(tx + 0.1, ty + 0.52)], sh('#8d8579'));
+        // A sawmill: a horizontal log pile (with round log-ends), a timber stack, and a mill shed with a saw blade on the gable.
+        for (let k = 0; k < 3; k++) {
+          const ly0 = ty + 0.14 + k * 0.12;
+          this.box(g, P, tx + 0.1, ly0, tx + 0.48, ly0 + 0.09, 0, 0.09, sh('#8a5a34', -k * 0.04), grey);
+          const [lx, ly] = P(tx + 0.48, ly0 + 0.045, 0.045);
+          g.fillStyle = sh('#e0c19a'); g.beginPath(); g.arc(lx, ly, Math.max(2, z * 0.06), 0, Math.PI * 2); g.fill();
+        }
         for (let k = 0; k < 3; k++) this.box(g, P, tx + 0.58, ty + 0.15 + k * 0.1, tx + 0.9, ty + 0.22 + k * 0.1, 0, 0.1 + k * 0.05, sh('#b07a45'), grey);
         this.box(g, P, tx + 0.15, ty + 0.6, tx + 0.6, ty + 0.9, 0, 0.5, sh('#7f8c8d'), grey);
-        this.box(g, P, tx + 0.15, ty + 0.6, tx + 0.6, ty + 0.9, 0.5, 0.56, sh('#5f6b6d'), grey);
-        return 0.9;
+        this.gable(g, P, tx + 0.13, ty + 0.58, tx + 0.62, ty + 0.92, 0.5, 0.16, sh('#5f6b6d'), grey);
+        const [bx, by] = P(tx + 0.375, ty + 0.6, 0.62), r = Math.max(3, z * 0.11);
+        g.fillStyle = sh('#c9ced3'); g.beginPath(); g.arc(bx, by, r, 0, Math.PI * 2); g.fill();
+        g.strokeStyle = sh('#5f6b6d'); g.lineWidth = Math.max(1, z / 22); g.beginPath();
+        for (let k = 0; k < 8; k++) { const a2 = k * Math.PI / 4; g.moveTo(bx, by); g.lineTo(bx + Math.cos(a2) * r, by + Math.sin(a2) * r); }
+        g.stroke();
+        return 0.66;
+      }
+      case T.QUARRY: {
+        // An open pit dug in stepped stages, a spoil heap, a small crane arm and a couple of ore carts.
+        for (let k = 0; k < 3; k++) {
+          const inset = k * 0.1, d0 = -0.14 * (k + 1), d1 = -0.14 * k;
+          this.box(g, P, tx + 0.12 + inset, ty + 0.12 + inset, tx + 0.68 - inset, ty + 0.68 - inset, d0, d1, sh('#948a78', -0.05 * k), grey);
+        }
+        const [mx, my] = P(tx + 0.82, ty + 0.78, 0);
+        g.fillStyle = sh('#8a7256'); g.beginPath(); g.moveTo(mx, my - z * 0.32); g.lineTo(mx - z * 0.22, my + z * 0.08); g.lineTo(mx + z * 0.22, my + z * 0.08); g.closePath(); g.fill();
+        g.fillStyle = sh('#9c815f'); g.beginPath(); g.moveTo(mx, my - z * 0.32); g.lineTo(mx - z * 0.1, my - z * 0.02); g.lineTo(mx + z * 0.08, my - z * 0.02); g.closePath(); g.fill();
+        const [ca, cb] = P(tx + 0.62, ty + 0.14, 0), [ca2, cb2] = P(tx + 0.62, ty + 0.14, 0.55), [ca3, cb3] = P(tx + 0.3, ty + 0.14, 0.4);
+        g.strokeStyle = sh('#e0a52e'); g.lineWidth = Math.max(1.5, z / 12); g.beginPath(); g.moveTo(ca, cb); g.lineTo(ca2, cb2); g.lineTo(ca3, cb3); g.stroke();
+        for (let k = 0; k < 2; k++) this.box(g, P, tx + 0.14 + k * 0.16, ty + 0.82, tx + 0.26 + k * 0.16, ty + 0.92, 0, 0.1, sh('#7a3b2e', k * 0.1), grey);
+        return 0.55;
+      }
+      case T.POULTRY: {
+        // A fenced run around a small gabled coop, with a scatter of chickens.
+        const fence = [P(tx + 0.06, ty + 0.06, 0.1), P(tx + 0.94, ty + 0.06, 0.1), P(tx + 0.94, ty + 0.94, 0.1), P(tx + 0.06, ty + 0.94, 0.1)];
+        g.strokeStyle = sh('#8a6a48'); g.lineWidth = Math.max(1, z / 18); g.beginPath();
+        fence.forEach(([x, y], k) => (k ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); g.stroke();
+        const x0 = tx + 0.6, x1 = tx + 0.9, y0 = ty + 0.62, y1 = ty + 0.9, h = 0.28;
+        this.box(g, P, x0, y0, x1, y1, 0, h, sh('#efe6d2'), grey);
+        this.gable(g, P, x0 - 0.02, y0 - 0.02, x1 + 0.02, y1 + 0.02, h, 0.14, sh('#b03a2e'), grey);
+        for (let k = 0; k < 6; k++) {
+          const a = tx + 0.1 + hash(i, k) * 0.55, b = ty + 0.1 + hash(i, k + 8) * 0.45;
+          if (a > x0 - 0.06 && a < x1 && b > y0 - 0.06 && b < y1) continue;
+          const [px, py] = P(a, b, 0.02);
+          g.fillStyle = hash(i, k + 15) < 0.7 ? '#f4f1ea' : '#8a5a3a';
+          g.beginPath(); g.arc(px, py, Math.max(1.2, z * 0.045), 0, Math.PI * 2); g.fill();
+        }
+        return h + 0.14;
+      }
+      case T.STORE: {
+        // A shopfront with a striped awning, a small sign board, and crates stacked by the door.
+        const h = 0.46 + 0.2 * L, x0 = tx + 0.12, x1 = tx + 0.88, y0 = ty + 0.16, y1 = ty + 0.84;
+        this.box(g, P, x0, y0, x1, y1, 0, h, sh(col, 0.65), grey);
+        this.face(g, P, 'S', y1, x0 + 0.08, x1 - 0.08, 0.04, h * 0.6, sh(night ? '#ffd57a' : glass));
+        const hA = h * 0.78, seg = 4;
+        for (let k = 0; k < seg; k++) {
+          const c = k % 2 ? '#ffffff' : col;
+          const a = x0 + (x1 - x0) * k / seg, b = x0 + (x1 - x0) * (k + 1) / seg;
+          poly(g, [P(a, y1, hA), P(b, y1, hA), P(b, y1 + 0.14, hA - 0.12), P(a, y1 + 0.14, hA - 0.12)], sh(c));
+        }
+        const [sx, sy] = P(tx + 0.5, ty + 0.86, hA + 0.05);
+        g.fillStyle = '#f4f1e8'; roundRect(g, sx - z * 0.16, sy - z * 0.1, z * 0.32, z * 0.2, 3); g.fill();
+        g.fillStyle = sh(col); g.beginPath(); g.moveTo(sx - z * 0.06, sy - z * 0.02); g.lineTo(sx + z * 0.06, sy - z * 0.02); g.lineTo(sx + z * 0.05, sy + z * 0.06); g.lineTo(sx - z * 0.05, sy + z * 0.06); g.closePath(); g.fill();
+        for (let k = 0; k < 2; k++) this.box(g, P, x1 - 0.22 + k * 0.1, y0 - 0.16, x1 - 0.12 + k * 0.1, y0 - 0.06, 0, 0.1 + k * 0.02, sh('#b07a45'), grey);
+        return hA + 0.06;
       }
       case T.WAREHOUSE: {
-        // A long shed with a roller door.
-        this.box(g, P, tx + 0.1, ty + 0.2, tx + 0.9, ty + 0.8, 0, 0.5, sh('#a3b1b8'), grey);
-        this.gable(g, P, tx + 0.08, ty + 0.18, tx + 0.92, ty + 0.82, 0.5, 0.16, sh('#6f7f86'), grey);
-        this.face(g, P, 'S', ty + 0.8, tx + 0.35, tx + 0.65, 0, 0.32, sh('#5b6a70'));
-        return 0.7;
+        // A storage yard: a long shed with a ribbed roller door, pallets and stacked crates out front.
+        this.box(g, P, tx + 0.08, ty + 0.18, tx + 0.92, ty + 0.82, 0, 0.5, sh('#a3b1b8'), grey);
+        this.gable(g, P, tx + 0.06, ty + 0.16, tx + 0.94, ty + 0.84, 0.5, 0.16, sh('#6f7f86'), grey);
+        const dx0 = tx + 0.32, dx1 = tx + 0.68, dh = 0.34;
+        this.face(g, P, 'S', ty + 0.82, dx0, dx1, 0, dh, sh('#4a545c'));
+        for (let r = 0; r < 5; r++) this.face(g, P, 'S', ty + 0.82, dx0 + 0.01, dx1 - 0.01, r * dh / 5 + 0.01, (r + 1) * dh / 5 - 0.01, sh(r % 2 ? '#5b6a70' : '#4a545c'));
+        this.box(g, P, tx + 0.1, ty + 0.86, tx + 0.24, ty + 0.94, 0, 0.03, sh('#9a7248'), grey);
+        this.box(g, P, tx + 0.11, ty + 0.87, tx + 0.21, ty + 0.93, 0.03, 0.11, sh('#d99a2b'), grey);
+        this.box(g, P, tx + 0.11, ty + 0.87, tx + 0.21, ty + 0.93, 0.11, 0.18, sh('#c9ced3'), grey);
+        this.box(g, P, tx + 0.76, ty + 0.86, tx + 0.9, ty + 0.94, 0, 0.03, sh('#9a7248'), grey);
+        this.box(g, P, tx + 0.78, ty + 0.87, tx + 0.88, ty + 0.95, 0.03, 0.14, sh('#b07a45'), grey);
+        return 0.66;
       }
       case T.FARM: {
         for (let k = 0; k < 4; k++) poly(g, [P(tx + 0.1, ty + 0.12 + k * 0.2), P(tx + 0.62, ty + 0.12 + k * 0.2), P(tx + 0.62, ty + 0.24 + k * 0.2), P(tx + 0.1, ty + 0.24 + k * 0.2)], sh(k % 2 ? '#6cbf4c' : '#8fd05f'));
