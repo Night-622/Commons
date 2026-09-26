@@ -85,6 +85,13 @@ const dict = {
 };
 
 const SEASON = { Spring: 'Άνοιξη', Summer: 'Καλοκαίρι', Autumn: 'Φθινόπωρο', Winter: 'Χειμώνας' };
+// Councils, friends and co-mayors (1.11)
+Object.assign(dict, {
+  'Cities': 'Πόλεις', 'Friends': 'Φίλοι', 'Open': 'Άνοιγμα', 'Step down': 'Παραίτηση', 'Co': 'Συν', 'Remove co': 'Αφαίρεση συνδημάρχου', 'Remove': 'Αφαίρεση',
+  'Co-mayor here': 'Συνδήμαρχος εδώ', 'Take the desk': 'Πάρτε το γραφείο', 'Unclaimed land': 'Αδιεκδίκητη γη', 'Price': 'Τιμή',
+  'Your cities here': 'Οι πόλεις σας εδώ', 'New city’s name': 'Όνομα νέας πόλης', "New city's name": 'Όνομα νέας πόλης', 'The world': 'Ο κόσμος', 'Classic world': 'Κλασικός κόσμος',
+  'Start playing': 'Ξεκινήστε να παίζετε', 'Available once they’ve been idle for two minutes': 'Διαθέσιμο όταν μείνουν ανενεργοί για δύο λεπτά',
+});
 // Interface layout (1.10)
 Object.assign(dict, {
   'Interface size': 'Μέγεθος διεπαφής', 'Small': 'Μικρό', 'Menus': 'Μενού', 'Across': 'Οριζόντια', 'Down the sides': 'Κάθετα στα πλάγια',

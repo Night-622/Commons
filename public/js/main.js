@@ -3,7 +3,7 @@ import {
   T, B, PLOT, TICK_MS, MAX_OFFLINE_DAYS, HOURS_PER_DAY, SAVE_EVERY_MS, RUBBLE_CLEAR_COST, MAX_LEVEL, LEVEL, UPGRADABLE,
   REBUILD_MONEY, MOVE_KEEP, TUTORIAL_REWARD, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome, DECISIONS, ZONES, ZONE_COST,
   LOAN_DAYS, HISTORIC_DAYS, BADGES, REGIONAL, REGIONAL_SHARE, ALLIANCE_TRADE, DAILY, DAILY_REWARD, WEEKLY, WEEKLY_REWARD, GIFT_LIMITS, REACTIONS,
-  WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES,
+  WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
 } from './constants.js';
 import { Renderer, STRIDE, thumbnail, modelHeight } from './render.js';
 import { loadPrefs, savePrefs, applyPrefs, resolvedTheme, palette, PALETTES } from './prefs.js';
@@ -264,8 +264,9 @@ function takeInvite() {
 }
 let invite = takeInvite();
 const inviteLink = (code) => `${location.origin}${location.pathname}?join=${code}`;
-async function enter(u) {
+async function enter(u, openId = null) {
   stopLoops();
+  stopDesk();
   worldUnsub?.(); movesUnsub?.(); worldUnsub = movesUnsub = null;
   chatUnsub?.(); chatUnsub = null; giftsUnsub?.(); giftsUnsub = null; worldNews = [];
   projUnsub?.(); allyUnsub?.(); allyChatUnsub?.(); projUnsub = allyUnsub = allyChatUnsub = null; projects = []; alliances = []; allyChat = []; allyChatFor = null;
@@ -284,7 +285,7 @@ async function enter(u) {
     let w = null;
     try { w = await fb.getWorld(world.id); } catch (e) { if (OPEN_WORLDS[world.id]) throw e; console.error(e); }
     setWorld(w || { id: WORLD_ID, name: OPEN_WORLDS[WORLD_ID] });
-    const doc = await fb.findPlot(u, world.id);
+    const doc = openId ? await fb.getPlot(openId) : await fb.findPlot(u, world.id);
     if (doc) startGame(doc);
     else showFound();
   } catch (e) {
@@ -316,13 +317,15 @@ async function startGame(doc) {
   plotId = doc.id;
   lastSaved = ''; saveFails = 0; saveError = null; pendingExtra = null; clearTimeout(retryTimer);
   setSaveState('ok');
-  mayor = doc.ownerName || 'Mayor';
+  coMode = doc.owner !== user.uid;   // running a friend's city as co-mayor: keep your own name
+  if (!coMode) mayor = doc.ownerName || 'Mayor';
   state = sim.migrate(JSON.parse(doc.state));
   const newTerrain = sim.ensureTerrain(state, doc.px, doc.py, world.id);
   if (typeof doc.money === 'number' && state.money > doc.money + 1) state.money = doc.money;   // the checked summary wins
   plots.clear(); byXY.clear(); trips.clear(); bridges.clear();
   selected = null; drawer = null; followCam = false; lastHour = -1; moveFrom = -1; catalog = null; brush = null;
   me = toPlot(doc);
+  me.ownerName = doc.ownerName;
   addPlot(me);
   refreshDerived();
   claimTab();
@@ -342,6 +345,7 @@ async function startGame(doc) {
   startGifts();
   startRegion();
   loadProfile();
+  startDesk();
   if (innerWidth < 860) { $('pulse').classList.add('closed'); $('pulse-toggle').setAttribute('aria-expanded', 'false'); }
   canvas.focus({ preventScroll: true });
   if (notifyLater) { notify(notifyLater, 'warn'); notifyLater = ''; }
@@ -359,10 +363,11 @@ function plotFrom(id, px, py, st, meta) {
     pop: st.people.length, peakPop: st.peakPop, day: st.day, happiness: st.happiness, cityNo: st.cityNo,
     grid: st.grid, cond: st.cond, lv: st.lv, land: st.land, uc: sim.underConstruction(st), terr: st.terr || (id === 'demo' ? null : sim.terrainFor(px, py, world.id)),
     queueMap: new Map(st.queue.map((q) => [q.i, q])), version: meta.version ?? 0, mine: !!meta.mine, owner: meta.owner, out: meta.out || {}, flag: meta.mine ? profile?.colour : meta.flag,
+    co: meta.co || [],
   };
 }
 function toPlot(d) {
-  const meta = { flag: d.flag, ownerName: d.ownerName, version: d.updatedAt?.toMillis?.() ?? Date.now(), mine: d.owner === user.uid, owner: d.owner, out: d.out };
+  const meta = { flag: d.flag, ownerName: d.ownerName, version: d.updatedAt?.toMillis?.() ?? Date.now(), mine: d.owner === user.uid, owner: d.owner, out: d.out, co: d.co };
   if (d.state) {
     try { const p = plotFrom(d.id, d.px, d.py, sim.migrate(JSON.parse(d.state)), meta); p.offer = d.offer; p.active = meta.version; p.badges = d.badges || []; p.green = d.green ?? 1; p.riders = d.riders || 0; p.tourists = d.tourists || 0; p.money = d.money || 0; return p; } catch { return null; }
   }
@@ -374,7 +379,7 @@ function toPlot(d) {
     id: d.id, px: d.px, py: d.py, st: old?.version === meta.version ? old.st : null, name: d.name, ownerName: d.ownerName, status: d.status,
     pop: d.pop || 0, peakPop: d.peakPop || 0, day: d.day || 0, happiness: d.happiness || 0, cityNo: d.cityNo || 1,
     grid: m.grid, cond: m.cond, lv: m.lv, land: m.land, uc: m.uc, terr: m.terr || terrCache(d.id, d.px, d.py), queueMap: new Map(), version: meta.version, mine: meta.mine,
-    owner: d.owner, out: d.out || {}, offer: d.offer, active: meta.version,
+    owner: d.owner, out: d.out || {}, offer: d.offer, active: meta.version, co: d.co || [],
     flag: d.flag, badges: d.badges || [], green: d.green ?? 1, riders: d.riders || 0, tourists: d.tourists || 0, money: d.money || 0,
   };
 }
@@ -400,7 +405,7 @@ function addPlot(p) {
 }
 const plotAt = (px, py) => plots.get(byXY.get(`${px},${py}`));
 function syncMine() {
-  Object.assign(me, plotFrom(me.id, me.px, me.py, state, { ownerName: mayor, mine: true, version: (me.version || 0) + 1, owner: user.uid, out: plan?.out }));
+  Object.assign(me, plotFrom(me.id, me.px, me.py, state, { ownerName: me.ownerName || mayor, mine: true, version: (me.version || 0) + 1, owner: me.owner || user.uid, out: plan?.out, co: me.co }));
   dirty = true;
 }
 // Live: every save by any player in this world arrives here within a second or two.
@@ -987,6 +992,7 @@ function renderLetter(box) {
 }
 function renderDecision() {
   const box = $('decision');
+  if (watching) { box.classList.add('hidden'); return; }
   const d = state?.decision && DECISIONS.find((x) => x.id === state.decision.id);
   if (!d && !document.body.classList.contains('photo')) { renderLetter(box); return; }
   if (!d || document.body.classList.contains('photo')) { box.classList.add('hidden'); box.dataset.id = ''; return; }
@@ -1005,6 +1011,7 @@ function startLoops() {
   stopLoops();
   loopTimer = setInterval(() => {
     if (!state || catching || tabPaused) return;
+    if (watching) { updateHud(); drawMinimap(); renderDeskBar(); return; }
     if (Date.now() - state.lastTick > TICK_MS * HOURS_PER_DAY * 2) { catchUp().then((r) => { if (r) showAway(r); }); return; }
     advance();
     // Builders keep working between hours.
@@ -1051,6 +1058,88 @@ tabChan?.addEventListener('message', (e) => {
   });
 });
 
+// ---------- co-mayors and the desk ----------
+// In a city with co-mayors, one of them plays (sits at the desk) and the rest watch its saves live. The desk
+// frees up when its holder has been idle for DESK_IDLE_MS or their game stops checking in for DESK_STALE_MS.
+let coMode = false, desk = null, deskUnsub = null, deskTimer = null, watching = false, watchUnsub = null, lastInput = Date.now(), deskFirst = true;
+for (const ev of ['pointerdown', 'keydown', 'wheel']) addEventListener(ev, () => { lastInput = Date.now(); }, { passive: true });
+const shared = () => coMode || (me?.co?.length || 0) > 0;
+const deskAt = (d) => d?.at?.toMillis?.() ?? 0;
+const deskFree = (d) => !d || d.uid === user?.uid || d.idle || Date.now() - deskAt(d) > DESK_STALE_MS;
+const watchNote = () => `${desk?.name || 'Another mayor'} is at the desk. You can take over when they’re idle.`;
+function stopDesk() {
+  deskUnsub?.(); watchUnsub?.(); deskUnsub = watchUnsub = null;
+  clearInterval(deskTimer); deskTimer = null;
+  watching = false; desk = null; deskFirst = true;
+  $('desk-bar')?.classList.add('hidden');
+}
+function startDesk() {
+  stopDesk();
+  if (!shared()) return;
+  deskUnsub = fb.listenDesk(plotId, (d) => {
+    desk = d;
+    // Opening the city: take the desk if it's free, otherwise watch. Later: if someone else took it, watch.
+    if (deskFirst) { deskFirst = false; if (deskFree(d)) takeDesk(); else startWatching(); }
+    else if (d && d.uid !== user.uid && !watching) startWatching();
+    renderDeskBar();
+  });
+  deskTimer = setInterval(() => {
+    if (watching || !state) return;
+    if (desk && desk.uid !== user.uid) return;
+    fb.takeDesk(plotId, user, mayor.slice(0, 24), Date.now() - lastInput > DESK_IDLE_MS).catch((e) => console.error('Desk', e));
+  }, DESK_BEAT_MS);
+}
+async function takeDesk() {
+  await fb.takeDesk(plotId, user, mayor.slice(0, 24)).catch((e) => console.error('Desk', e));
+  if (!watching) return;
+  // Pick up exactly where the last mayor left off.
+  const d = await fb.getPlot(plotId);
+  watchUnsub?.(); watchUnsub = null; watching = false;
+  if (d?.state) { state = sim.migrate(JSON.parse(d.state)); lastSaved = ''; }
+  refreshDerived(); syncMine(); updateHud(); renderDrawer(); startLoops(); renderDeskBar();
+  notify('You have the desk. Your changes are saved for everyone.', 'act');
+}
+function startWatching() {
+  watching = true;
+  setMode('select'); closeCatalog();
+  watchUnsub?.();
+  watchUnsub = fb.listenState(plotId, (str) => {
+    if (!watching) return;
+    try { state = sim.migrate(JSON.parse(str)); } catch { return; }
+    refreshDerived(); syncMine(); updateHud(); refreshDrawer(); dirty = true;
+  });
+  renderDeskBar();
+}
+function renderDeskBar() {
+  const bar = $('desk-bar');
+  if (!bar) return;
+  if (!shared() || !state) { bar.classList.add('hidden'); return; }
+  bar.classList.remove('hidden');
+  if (!watching) { bar.innerHTML = `<span>${icon('i-user')}You’re at the desk${coMode ? ` in ${esc(me?.ownerName || 'your friend')}’s city` : ''}. Co-mayors watch until you’ve been idle for two minutes.</span>`; return; }
+  const free = deskFree(desk);
+  bar.innerHTML = `<span>${icon('i-look')}Watching: ${esc(desk?.name || 'another mayor')} is at the desk${desk?.idle ? ' (idle)' : ''}.</span>
+    <button class="btn small ${free ? 'primary' : ''}" type="button" id="desk-take" ${free ? '' : 'disabled'} title="${free ? 'Start playing' : 'Available once they’ve been idle for two minutes'}">Take the desk</button>`;
+  $('desk-take').onclick = () => takeDesk();
+}
+// Friends (kept in your private profile) and making them co-mayors of the city you're in.
+const friends = () => (profile?.friends || []);
+function addFriend(uid, name) {
+  if (!profile || uid === user.uid || friends().some((f) => f.uid === uid)) return;
+  profile.friends = [...friends(), { uid, name: String(name || 'A mayor').slice(0, 24) }].slice(0, 50);
+  profileDirty = true; save();
+  notify(`${name} is now a friend. Make them a co-mayor in Account, Friends.`, 'good');
+}
+async function toggleCo(uid) {
+  if (coMode) { notify('Only the city’s owner can choose co-mayors.', 'act'); return; }
+  const list = me.co || [];
+  const next = list.includes(uid) ? list.filter((x) => x !== uid) : [...list, uid];
+  if (next.length > MAX_CO) { notify(`A city can have up to ${MAX_CO} co-mayors.`, 'act'); return; }
+  await fb.setCoMayors(plotId, next);
+  me.co = next;
+  startDesk();
+  play('goal');
+}
+
 // ---------- saving ----------
 // One save at a time. A failed save isn't marked as done, so the next attempt sends it again, with a growing
 // pause between tries. The player sees a small status next to the clock rather than a stream of warnings.
@@ -1064,7 +1153,7 @@ function setSaveState(kind, title) {
   el.title = title || (kind === 'fail' ? 'Couldn’t save. Tap to try again.' : 'Your city saves automatically');
 }
 async function save(extra) {
-  if (!state || !plotId || !user || tabPaused) return;
+  if (!state || !plotId || !user || tabPaused || watching) return;
   clearTimeout(saveTimer);
   if (extra) pendingExtra = { ...(pendingExtra || {}), ...extra };
   if (saving) { await saving.catch(() => {}); if (!state || !plotId) return; return save(); }
@@ -1077,7 +1166,7 @@ async function save(extra) {
   setSaveState('saving');
   saving = (async () => {
     try {
-      await fb.savePlot(id, st, { ...(ex || {}), out, ...(profile?.colour ? { flag: profile.colour } : {}) });
+      await fb.savePlot(id, st, { ...(ex || {}), out, ...(profile?.colour && !coMode ? { flag: profile.colour } : {}) });
       if (id === plotId) lastSaved = snap;
       if (saveFails) notify('Saved again. Everything is up to date.', 'act');
       saveFails = 0; saveError = null; clearTimeout(retryTimer);
@@ -1131,6 +1220,7 @@ const colourOf = (uid) => acct.COLOURS[Math.floor(sim.h32(uid.length * 31 + uid.
 const isMine = (h) => !!h && !!me && h.px === me.px && h.py === me.py;
 
 function setMode(m) {
+  if (watching && m !== 'select') { notify(watchNote(), 'act'); return; }
   mode = m;
   brush = null; quickType = null;
   if (m !== 'move') moveFrom = -1;
@@ -1311,6 +1401,7 @@ function click(h, sx, sy) {
 }
 
 function undo() {
+  if (watching) { notify(watchNote(), 'act'); return; }
   const last = undoStack.pop();
   if (!last || Date.now() - last.at > UNDO_MS) { undoStack.length = 0; notify('Nothing to undo. You can undo changes from the last five minutes.', 'act'); return; }
   const keep = { hour: state.hour, day: state.day, lastTick: state.lastTick, log: state.log, history: state.history, stats: state.stats, links: state.links, railLinks: state.railLinks, busLinks: state.busLinks };
@@ -2166,6 +2257,7 @@ function wireDrawer(box) {
 // ---------- inspector ----------
 function inspectorAction(what, arg) {
   const i = selected?.i;
+  if (watching && !['follow', 'home', 'friend'].includes(what)) { notify(watchNote(), 'act'); return; }
   if (what === 'tap') tap(i);
   else if (what === 'upgrade') upgradeAt(i);
   else if (what === 'protect') { const r = sim.setProtected(state, i, !sim.isProtected(state, i)); if (r.ok) { play('level'); notify(sim.isProtected(state, i) ? 'Protected. It will stand for good.' : 'Protection lifted.', 'act'); afterChange(); } else notify(r.reason, 'act'); }
@@ -2203,6 +2295,7 @@ function inspectorAction(what, arg) {
     $('cancel-go').onclick = () => { closeModal(); demolish(i, false); };
     return;
   }
+  else if (what === 'friend') { const p = plots.get(arg); if (p) { addFriend(p.owner, p.ownerName); refreshDrawer(); } return; }
   else if (what === 'buyplot') {
     const h = selected, price = sim.plotPrice(state, myCities().length), name = ($('buy-name')?.value || '').trim().slice(0, 40) || 'New city';
     if (state.money < price) { notify(`Needs ${money(price)}.`, 'act'); play('error'); return; }
@@ -2403,7 +2496,7 @@ function otherPlot(h) {
   return `<h2>${esc(p.name)}</h2>${badges.length ? `<p class="badges">${badges.map((b) => `<span class="badge b-${b.id}">${b.name}</span>`).join('')}</p>` : ''}<p class="soft">Mayor ${esc(p.ownerName)}. Running for ${p.day} day${p.day === 1 ? '' : 's'}${p.cityNo > 1 ? `, city number ${p.cityNo} on this plot` : ''}.</p>
     <p class="${idle ? 'warn' : 'good-t'} small">${idle ? `Last active ${ago(p.active)}. Paused until the mayor returns, so it isn't sharing facilities.` : 'Active now'}</p>
     <div class="likes" id="likes" data-plot="${p.id}"></div>
-    ${p.owner && p.owner !== user.uid && state.status === 'alive' ? `<div class="actions"><button class="btn" type="button" data-gift="${p.id}">${icon('i-coin')}Send a gift</button></div>` : ''}
+    ${p.owner && p.owner !== user.uid && state.status === 'alive' ? `<div class="actions"><button class="btn" type="button" data-gift="${p.id}">${icon('i-coin')}Send a gift</button>${friends().some((f) => f.uid === p.owner) ? '' : `<button class="btn" type="button" data-do="friend" data-arg="${p.id}">${icon('i-people')}Add ${esc(p.ownerName)} as a friend</button>`}</div>` : ''}
     ${t && B[t] ? `<p class="soft small">You tapped their ${B[t].name.toLowerCase()}.</p>` : ''}
     ${row('People', p.pop)}${row('Peak', p.peakPop)}${row('Days running', p.day)}${meter('Mood', p.happiness || 0)}
     ${n ? row('Road links with you', n.links || 'None yet') : ''}
@@ -2537,8 +2630,15 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 1.10';
+const VERSION = 'Commons 1.11';
 const CHANGELOG = [
+  ['1.11', [
+    'A new world: plots now touch, rivers and coast run across them, and a thin yellow line marks each border. Your old city is still in the Classic world (World panel).',
+    'Councils: buy the plot next to one of your cities (the dashed yellow outline) to found another city of your council. Switch between them in Account, Cities.',
+    'Friends and co-mayors: add a neighbour as a friend from their city’s panel, then press Co in Account, Friends to let them help run your city.',
+    'The desk: in a shared city one mayor plays at a time and the others watch it live. When the one playing is idle for two minutes, someone else can take over.',
+    'Arrow keys can now step onto the plots next to yours.',
+  ]],
   ['1.10', [
     'Slower days: a day now lasts 30 minutes, with 20 minutes of daylight and 10 of night. Builders still work fast, so a house goes up in about half a minute.',
     'Your city keeps living for up to 48 days (24 hours) while you’re away.',
@@ -2869,9 +2969,14 @@ function showSettings() {
 function showAccount(tab = acctTab) {
   acctTab = tab;
   profile ||= { name: mayor, colour: acct.COLOURS[0], stats: acct.emptyLife(), achievements: {}, base: {} };
-  const cities = myCities().map((p) => ({ id: p.id, name: p.id === plotId ? state.name : p.name, pop: p.id === plotId ? state.people.length : p.pop, status: p.status, here: p.id === plotId }));
-  openModal(`${closeX}<h2 id="modal-title">Account</h2>${acct.accountHtml({ user, mayor, profile, s: state, world, colour: profile.colour || acct.COLOURS[0], cities, maxCities: MAX_CITIES }, tab)}`, 'wide');
+  const cities = [...myCities(), ...[...plots.values()].filter((p) => p.owner !== user.uid && (p.co || []).includes(user.uid))]
+    .map((p) => ({ id: p.id, name: p.id === plotId ? state.name : p.name, pop: p.id === plotId ? state.people.length : p.pop, status: p.status, here: p.id === plotId, co: p.owner !== user.uid, owner: p.ownerName }));
+  const friendList = friends().map((f) => ({ ...f, co: (me?.co || []).includes(f.uid) }));
+  openModal(`${closeX}<h2 id="modal-title">Account</h2>${acct.accountHtml({ user, mayor, profile, s: state, world, colour: profile.colour || acct.COLOURS[0], cities, maxCities: MAX_CITIES, friends: friendList, canCo: !coMode, maxCo: MAX_CO }, tab)}`, 'wide');
   modal.querySelectorAll('[data-open-city]').forEach((b) => { b.onclick = () => { closeModal(); switchCity(b.dataset.openCity); }; });
+  modal.querySelectorAll('[data-co]').forEach((b) => { b.onclick = () => busy(b, async () => { await toggleCo(b.dataset.co); showAccount('friends'); }, $('acct-msg')); });
+  modal.querySelectorAll('[data-unfriend]').forEach((b) => { b.onclick = () => { profile.friends = friends().filter((f) => f.uid !== b.dataset.unfriend); profileDirty = true; save(); showAccount('friends'); }; });
+  modal.querySelectorAll('[data-leave-co]').forEach((b) => { b.onclick = () => busy(b, async () => { await fb.leaveCo(b.dataset.leaveCo, user.uid); notify('You’re no longer a co-mayor there.', 'act'); if (b.dataset.leaveCo === plotId) enter(user); else showAccount('cities'); }, $('acct-msg')); });
   const msg = $('acct-msg');
   modal.querySelectorAll('[data-acct-tab]').forEach((b) => { b.onclick = () => showAccount(b.dataset.acctTab); });
   modal.querySelector(`[data-acct-tab="${tab}"]`)?.focus();
@@ -2879,7 +2984,7 @@ function showAccount(tab = acctTab) {
     const v = $('acct-mayor').value.trim().slice(0, 24);
     if (!v) throw new Error('Type a name first.');
     mayor = v; profile.name = v; profileDirty = true;
-    await save({ ownerName: v });
+    await save(coMode ? undefined : { ownerName: v });
     msg.textContent = 'Saved.'; msg.classList.add('ok');
   }, msg));
   modal.querySelectorAll('[data-colour]').forEach((b) => { b.onclick = () => { profile.colour = b.dataset.colour; profileDirty = true; save(); showAccount('profile'); }; });
@@ -2918,6 +3023,8 @@ function showAccount(tab = acctTab) {
 async function switchCity(id) {
   if (id === plotId) return;
   await save();
+  const p = plots.get(id);
+  if (p && p.owner !== user.uid) { enter(user, id); return; }   // a friend's city you co-run: your home stays yours
   await fb.setHome(user, world.id, id);
   enter(user);
 }

@@ -5,6 +5,9 @@ export const WORLD_ID = 'main';
 export const CLASSIC_WORLD = 'public';
 // A council can own several cities: buy the plot next to one of yours. Priced like land: this many parcels at your
 // current land price, times PLOT_BUY_STEP for each city you already have, and never less than PLOT_BUY_MIN.
+// Co-mayors: friends who can run one of your cities. One mayor sits at the "desk" (plays) at a time; the others watch.
+// The desk frees up when its holder has been idle this long, or their game stops checking in.
+export const MAX_CO = 3, DESK_IDLE_MS = 120000, DESK_STALE_MS = 60000, DESK_BEAT_MS = 20000;
 export const PLOT_BUY_PARCELS = 4, PLOT_BUY_STEP = 1.6, PLOT_BUY_MIN = 1000, MAX_CITIES = 9;
 export const OPEN_WORLDS = { main: 'The world', public: 'Classic world' };
 export const PLOT = 24;          // tiles per side of a plot

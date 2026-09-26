@@ -41,6 +41,9 @@ service cloud.firestore {
         && get(docPath('plots', d.via)).data.owner == me()
         && plotId in getAfter(linkPath(w)).data.plotIds;
     }
+    // Up to 3 co-mayors, never the owner themselves.
+    function coOk(d) { return !('co' in d) || (d.co is list && d.co.size() <= 3 && !(d.owner in d.co)); }
+    function runs(plot) { return plot.owner == me() || me() in plot.get('co', []); }
     // Moving onto ruins keeps half the money of the city being left (see MOVE_KEEP and REBUILD_MONEY).
     function rebuildMoney(world) {
       return 3500 + (exists(linkPath(world)) ? get(docPath('plots', get(linkPath(world)).data.plotId)).data.get('money', 0) / 2 : 0);
@@ -129,7 +132,13 @@ service cloud.firestore {
           // The owner saving. Money, people and days can't jump faster than a busy city could manage (a cheap
           // guard against edits). The flat allowance covers undo refunds, goal rewards and grants in the same save.
           (resource.data.owner == me() && request.resource.data.owner == me()
-            && riseOk(request.resource.data, resource.data))
+            && riseOk(request.resource.data, resource.data)
+            && coOk(request.resource.data))
+          // A co-mayor at the desk saves like the owner, but can't change who owns or co-runs it, except to leave.
+          || (me() in resource.data.get('co', []) && request.resource.data.owner == resource.data.owner
+            && riseOk(request.resource.data, resource.data)
+            && (request.resource.data.get('co', []) == resource.data.get('co', [])
+              || request.resource.data.get('co', []).toSet() == resource.data.get('co', []).toSet().difference([me()].toSet())))
           || (resource.data.status == 'ruins'
             && request.resource.data.owner == me()
             && getAfter(linkPath(resource.data.world)).data.plotId == plotId
@@ -143,10 +152,20 @@ service cloud.firestore {
       allow read: if signedIn();
       // Only in the same write as the plot's summary, so the summary's limits apply to it too.
       allow create, update: if signedIn()
-        && getAfter(docPath('plots', plotId)).data.owner == me()
+        && runs(getAfter(docPath('plots', plotId)).data)
         && getAfter(docPath('plots', plotId)).data.updatedAt == request.time
         && request.resource.data.keys().hasOnly(['state'])
         && request.resource.data.state is string && request.resource.data.state.size() < 900000;
+      allow delete: if false;
+    }
+
+    // The desk of a shared city: who is playing it now. Only its owner and co-mayors see or take it.
+    match /desks/{plotId} {
+      allow read: if signedIn() && runs(get(docPath('plots', plotId)).data);
+      allow create, update: if signedIn() && runs(get(docPath('plots', plotId)).data)
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'at', 'idle'])
+        && request.resource.data.uid == me() && request.resource.data.at == request.time
+        && request.resource.data.idle is bool && request.resource.data.name is string && request.resource.data.name.size() <= 24;
       allow delete: if false;
     }
 

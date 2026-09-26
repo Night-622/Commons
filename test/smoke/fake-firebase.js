@@ -11,7 +11,7 @@ const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; }
 let db = load();
 db.docs ||= {};
 const persist = () => { localStorage.setItem(KEY, JSON.stringify(db)); fire(); };
-const TIME_KEYS = ['createdAt', 'updatedAt', 'endedAt'];
+const TIME_KEYS = ['createdAt', 'updatedAt', 'endedAt', 'at'];
 const ts = (ms) => ({ toMillis: () => ms, toDate: () => new Date(ms), seconds: Math.floor(ms / 1000) });
 const out = (id, d) => { if (!d) return null; const o = { id, ...structuredClone(d) }; for (const k of TIME_KEYS) if (typeof o[k] === 'number') o[k] = ts(o[k]); return o; };
 const get = (path) => db.docs[path] || null;
@@ -31,10 +31,16 @@ addEventListener('storage', (e) => { if (e.key === KEY) { db = load(); db.docs |
 function listen(run) { const l = () => run(); listeners.add(l); queueMicrotask(l); return () => listeners.delete(l); }
 
 // ---------- auth ----------
-let user = db.user || null;
+// Each tab remembers who signed in there (so two tabs can be two players); a new tab starts as the last player.
+const tabUser = () => { try { return JSON.parse(sessionStorage.getItem('fakeuser')); } catch { return null; } };
+let user = tabUser() || db.user || null;
 const authCbs = new Set();
 const mkUser = (o) => ({ uid: o.uid, isAnonymous: !!o.isAnonymous, email: o.email || null, displayName: o.displayName || null, providerData: o.email ? [{ providerId: 'password' }] : [] });
-function setUser(u) { user = u ? mkUser(u) : null; db.user = u; auth.currentUser = user; persist(); for (const cb of authCbs) setTimeout(() => cb(user), 0); }
+function setUser(u) {
+  user = u ? mkUser(u) : null; db.user = u; auth.currentUser = user;
+  try { if (u) sessionStorage.setItem('fakeuser', JSON.stringify(u)); else sessionStorage.removeItem('fakeuser'); } catch { /* ignore */ }
+  persist(); for (const cb of authCbs) setTimeout(() => cb(user), 0);
+}
 export const auth = { currentUser: user ? mkUser(user) : null };
 export const onAuth = (cb) => { authCbs.add(cb); setTimeout(() => cb(user ? mkUser(user) : null), 0); return () => authCbs.delete(cb); };
 export const signInGuest = async () => { setUser({ uid: 'guest' + newId(), isAnonymous: true }); return { user }; };
@@ -155,6 +161,12 @@ export async function buyPlot(u, mayor, via, px, py, cityName, world = WORLD_ID)
 }
 export const setHome = async (u, world, plotId) => { merge(linkPath(u.uid, world), { plotId }); persist(); };
 export async function getPlot(id) { await tick(); const p = get(`plots/${id}`); return p ? { ...out(id, p), state: get(`plotState/${id}`)?.state } : null; }
+export const setCoMayors = async (plotId, uids) => { merge(`plots/${plotId}`, { co: uids, updatedAt: now() }); persist(); };
+export const leaveCo = async (plotId, uid) => { const p = get(`plots/${plotId}`); p.co = (p.co || []).filter((x) => x !== uid); p.updatedAt = now(); persist(); };
+export async function coCities(uid) { return under('plots').filter((p) => (p.co || []).includes(uid)); }
+export const takeDesk = async (plotId, u, name, idle = false) => { set(`desks/${plotId}`, { uid: u.uid, name, at: now(), idle }); persist(); };
+export const listenDesk = (plotId, cb) => listen(() => { const d = get(`desks/${plotId}`); cb(d ? out(plotId, d) : null); });
+export function listenState(plotId, cb) { let last = null; return listen(() => { const s = get(`plotState/${plotId}`)?.state; if (s && s !== last) { last = s; cb(s); } }); }
 export const usingLegacySaves = () => false;
 export async function savePlot(id, state, extra = {}) {
   await tick();

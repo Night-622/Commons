@@ -298,3 +298,54 @@ test('council: buy the plot next door and switch between cities', async ({ page 
   await expect(page.locator('#city-name')).toContainText('Testhaven', { timeout: 20_000 });
   expect(clean(errors)).toEqual([]);
 });
+
+test('co-mayors: befriend a neighbour, make them co-mayor, watch and take the desk', async ({ browser }) => {
+  test.setTimeout(120_000);
+  const ctx = await browser.newContext();
+  const a = await ctx.newPage();
+  const errors = await newGame(a);   // Mona, Testhaven
+  await a.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); db.user = null; localStorage.setItem('fakefb', JSON.stringify(db)); });
+  const b = await ctx.newPage();
+  errors.push(...await watch(b));
+  await b.addInitScript(() => { try { localStorage.setItem('commons-seen-help', '1'); } catch { /* ignore */ } });
+  await found(b, { mayor: 'Nia', city: 'Nextdoor' });
+  await closeModal(b);
+  // Mona walks the keyboard cursor over to Nia's plot and adds her as a friend.
+  const [dx, dy] = await a.evaluate(() => {
+    const ps = Object.entries(JSON.parse(localStorage.getItem('fakefb')).docs).filter(([k]) => k.startsWith('plots/')).map(([, v]) => v);
+    const mona = ps.find((p) => p.name === 'Testhaven'), nia = ps.find((p) => p.name === 'Nextdoor');
+    return [nia.px - mona.px, nia.py - mona.py];
+  });
+  await expect(a.locator('#game')).toBeVisible();
+  await a.locator('#map').focus();
+  const key = dx > 0 ? 'ArrowRight' : dx < 0 ? 'ArrowLeft' : dy > 0 ? 'ArrowDown' : 'ArrowUp';
+  for (let k = 0; k < 14; k++) await a.keyboard.press(key);
+  await a.keyboard.press('Enter');
+  await a.locator('#drawer [data-do="friend"]').click();
+  await a.locator('#btn-account').click();
+  await a.locator('#modal [data-acct-tab="friends"]').click();
+  await a.locator('#modal [data-co]').click();
+  await expect(a.locator('#modal')).toContainText('Co-mayor here');
+  await closeModal(a);
+  await expect(a.locator('#desk-bar')).toContainText('You’re at the desk');
+  // Nia sees Testhaven in her cities, opens it, and watches because Mona is playing.
+  await b.locator('#btn-account').click();
+  await b.locator('#modal [data-acct-tab="cities"]').click();
+  await expect(b.locator('#modal')).toContainText('Co-mayor with Mona');
+  await b.locator('#modal [data-open-city]').click();
+  await expect(b.locator('#city-name')).toContainText('Testhaven', { timeout: 20_000 });
+  await closeModal(b);
+  await expect(b.locator('#desk-bar')).toContainText('Watching: Mona');
+  await expect(b.locator('#desk-take')).toBeDisabled();
+  await b.keyboard.press('b');
+  await expect(b.locator('#dock [data-mode="build"]')).toHaveAttribute('aria-checked', 'false');
+  if (process.env.SHOTS) await b.screenshot({ path: `${process.env.SHOTS}/co-watching.png` });
+  // Mona goes idle: Nia can take the desk, and Mona starts watching.
+  await a.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('desks/')) v.idle = true; localStorage.setItem('fakefb', JSON.stringify(db)); });
+  await expect(b.locator('#desk-take')).toBeEnabled({ timeout: 10_000 });
+  await b.locator('#desk-take').click();
+  await expect(b.locator('#desk-bar')).toContainText('You’re at the desk', { timeout: 10_000 });
+  await expect(a.locator('#desk-bar')).toContainText('Watching: Nia', { timeout: 10_000 });
+  expect(clean(errors)).toEqual([]);
+  await ctx.close();
+});

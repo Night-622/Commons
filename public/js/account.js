@@ -101,7 +101,7 @@ export function accountHtml(ctx, tab) {
   const guest = user.isAnonymous;
   const google = user.providerData.some((p) => p.providerId === 'google.com');
   const unlocked = Object.keys(profile.achievements || {}).length;
-  const tabs = [['profile', 'Profile'], ['cities', 'Cities'], ['stats', 'Stats'], ['achievements', `Achievements ${unlocked}/${ACHIEVEMENTS.length}`], ['security', 'Account']];
+  const tabs = [['profile', 'Profile'], ['cities', 'Cities'], ['friends', 'Friends'], ['stats', 'Stats'], ['achievements', `Achievements ${unlocked}/${ACHIEVEMENTS.length}`], ['security', 'Account']];
   const life = { ...emptyLife(), ...(profile.stats || {}) };
   let body = '';
   if (tab === 'profile') {
@@ -122,8 +122,15 @@ export function accountHtml(ctx, tab) {
   } else if (tab === 'cities') {
     const list = ctx.cities || [];
     body = `<p class="soft small">Your council's cities in ${esc(world.name)}. Buy more by selecting unclaimed land that touches one of them (up to ${ctx.maxCities}).</p>
-      <ul class="picklist">${list.map((c) => `<li><span><b>${esc(c.name)}</b> <small class="soft">${c.status === 'ruins' ? 'Ruins' : `${c.pop} people`}${c.here ? ', open now' : ''}</small></span>
-        ${c.here ? '' : `<button class="btn small" type="button" data-open-city="${c.id}">Open</button>`}</li>`).join('')}</ul>`;
+      <ul class="picklist">${list.map((c) => `<li><span><b>${esc(c.name)}</b> <small class="soft">${c.co ? `Co-mayor with ${esc(c.owner)}; ` : ''}${c.status === 'ruins' ? 'Ruins' : `${c.pop} people`}${c.here ? ', open now' : ''}</small></span>
+        <span class="inline">${c.here ? '' : `<button class="btn small" type="button" data-open-city="${c.id}">Open</button>`}${c.co ? `<button class="btn small" type="button" data-leave-co="${c.id}">Step down</button>` : ''}</span></li>`).join('')}</ul>`;
+  } else if (tab === 'friends') {
+    const list = ctx.friends || [];
+    body = `<p class="soft small">Add friends from a neighbour’s city panel. Press Co to make a friend a co-mayor of ${esc(s.name)} (up to ${ctx.maxCo}): they can run it too. One of you plays at a time; the others watch, and can take over when the one playing is idle.</p>
+      ${list.length ? `<ul class="picklist">${list.map((f) => `<li><span><b>${esc(f.name)}</b>${f.co ? ' <small class="good-t">Co-mayor here</small>' : ''}</span>
+        <span class="inline">${ctx.canCo ? `<button class="btn small ${f.co ? '' : 'primary'}" type="button" data-co="${f.uid}" aria-pressed="${f.co}">${f.co ? 'Remove co' : 'Co'}</button>` : ''}<button class="btn small" type="button" data-unfriend="${f.uid}">Remove</button></span></li>`).join('')}</ul>`
+        : '<p class="soft">No friends yet. Select a neighbour’s city and press “Add as a friend”.</p>'}
+      <p id="acct-msg" class="formmsg" role="alert"></p>`;
   } else if (tab === 'stats') {
     body = `<p class="soft small">Across every city you've run.</p>
       <div class="stat-tiles">${STAT_ROWS.map(([k, label, ic]) => `<div class="tile">${icon(ic)}<b class="num">${(life[k] || 0).toLocaleString()}</b><small>${label}</small></div>`).join('')}</div>`;

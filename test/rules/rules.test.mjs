@@ -402,3 +402,32 @@ test('councils: buy the plot next to your city, switch home, and nothing else', 
   const st = sim.migrate(JSON.parse(east.state)); st.money += 100;
   await a.fb.savePlot(east.id, st);
 });
+
+test('co-mayors: the owner adds friends, who can save and take the desk; others can do neither', async () => {
+  const a = await player(), b = await player(), c = await player();
+  const w = await newWorld(a);
+  const pa = await a.fb.claimPlot(a.user, 'Ana', 'A', w.id);
+  await a.fb.setCoMayors(pa.id, [b.uid]);
+  assert.deepEqual((await b.fb.coCities(b.uid)).map((p) => p.id), [pa.id]);
+  // Ben co-runs it: he can save, and sits at the desk.
+  const st = sim.migrate(JSON.parse(pa.state)); st.money += 200;
+  await b.fb.savePlot(pa.id, st);
+  await b.fb.takeDesk(pa.id, b.user, 'Ben');
+  await a.fb.takeDesk(pa.id, a.user, 'Ana', true);
+  assert.equal((await getDoc(doc(b.db, 'desks', pa.id))).data().uid, a.uid, 'the owner took the desk over');
+  assert.ok(await first((cb) => b.fb.listenDesk(pa.id, cb)), 'co-mayors can listen to the desk');
+  // Watching: the co-mayor sees the full save as it changes.
+  const seen = await first((cb) => b.fb.listenState(pa.id, cb));
+  assert.equal(JSON.parse(seen).money, st.money);
+  // Cy isn't a co-mayor: no saving, no desk, no peeking at the desk.
+  await assert.rejects(c.fb.savePlot(pa.id, st), /permission/i);
+  await assertFails(c.fb.takeDesk(pa.id, c.user, 'Cy'));
+  await assertFails(getDoc(doc(c.db, 'desks', pa.id)));
+  // Co-mayors can't hand the city to themselves or add others; they can step down.
+  await assertFails(updateDoc(doc(b.db, 'plots', pa.id), { owner: b.uid, updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(b.db, 'plots', pa.id), { co: [b.uid, c.uid], updatedAt: serverTimestamp() }));
+  await assertFails(a.fb.setCoMayors(pa.id, [a.uid]));
+  await assertFails(a.fb.setCoMayors(pa.id, ['x1', 'x2', 'x3', 'x4']));
+  await b.fb.leaveCo(pa.id, b.uid);
+  await assert.rejects(b.fb.savePlot(pa.id, st), /permission/i);
+});

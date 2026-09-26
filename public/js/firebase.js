@@ -225,6 +225,26 @@ export async function buyPlot(user, mayor, via, px, py, cityName, world = WORLD_
     return { id, ...data, state: serialize(state) };
   });
 }
+// ---------- co-mayors and the desk ----------
+// The owner sets who else can run a city (plots/{id}.co, up to 3 uids).
+export const setCoMayors = (plotId, uids) => updateDoc(doc(db, 'plots', plotId), { co: uids, updatedAt: serverTimestamp() });
+// A co-mayor stepping down removes only themselves.
+export const leaveCo = (plotId, uid) => updateDoc(doc(db, 'plots', plotId), { co: arrayRemove(uid), updatedAt: serverTimestamp() });
+// Cities you co-run, in any world.
+export async function coCities(uid) {
+  const snap = await getDocs(query(collection(db, 'plots'), where('co', 'array-contains', uid), limit(20)));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+// desks/{plotId}: who is playing a shared city right now, stamped every ~20 seconds.
+export const takeDesk = (plotId, user, name, idle = false) => setDoc(doc(db, 'desks', plotId), { uid: user.uid, name, at: serverTimestamp(), idle });
+export function listenDesk(plotId, cb) {
+  return onSnapshot(doc(db, 'desks', plotId), (d) => cb(d.exists() ? d.data() : null), (e) => console.error('Desk', e));
+}
+// Watching a shared city: its full save, as the mayor at the desk saves it.
+export function listenState(plotId, cb) {
+  return onSnapshot(doc(db, 'plotState', plotId), (d) => { if (d.exists()) cb(d.data().state); }, (e) => console.error('Watching', e));
+}
+
 // Which of your cities opens when you come back.
 export const setHome = (user, world, plotId) => updateDoc(linkRef(user.uid, world), { plotId });
 export async function getPlot(id) {

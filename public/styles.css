@@ -825,6 +825,14 @@ html:not([lang="en"]) .card b { font-size: .95em; }
   [data-menus="down"] .tool-tip { right: 118px; left: auto; }
 }
 
+/* The desk bar: who is playing a shared city */
+.desk-bar { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(max(12px, env(safe-area-inset-bottom)) + 96px); z-index: 7;
+  display: flex; align-items: center; gap: 12px; padding: 8px 12px; font-weight: 600; max-width: calc(100vw - 24px); }
+.desk-bar span { display: flex; align-items: center; gap: 8px; }
+.desk-bar .ic { width: 18px; height: 18px; }
+[data-uimin="1"] .desk-bar { display: none; }
+.picklist .inline { display: flex; gap: 6px; }
+
 /* Staff: vacancies, the staff list and the hire picker */
 .vacancy { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
 .vacancy .actions { flex-direction: row; flex-wrap: wrap; margin-top: 6px; }

@@ -21,6 +21,13 @@ Guests can turn their guest city into a full account later (Account menu). Linki
 - Saves are split: `plots/{id}` is a small public summary everyone listens to; `plotState/{id}` holds the full city and is only fetched for adjacent neighbours.
 - `node test/balance.mjs` runs a scripted city for 100 days.
 
+## New in 1.11: one joined-up world, councils, co-mayors
+- `WORLD_ID` is `main`: a fresh world with `GAP` 0, so plots touch and `terrainFor` runs straight across borders; the renderer draws a thin yellow border round each plot (`plotBorder`). The classic `public` world is kept (`CLASSIC_WORLD`, `OPEN_WORLDS`) and players who were in it start in the new one once (`commons-world-v2` in localStorage). Founding skips spiral slots someone already holds, and the rules let `nextIndex` jump forward by up to 30.
+- Councils: `fb.buyPlot` founds a city on free land touching one of yours (`via`), priced by `sim.plotPrice` (`PLOT_BUY_*`), up to `MAX_CITIES`. The link doc keeps `plotIds`; `plotId` is the home city (`fb.setHome`). Rules: `boughtNextTo` and `citiesOk`.
+- Co-mayors: `plots/{id}.co` (up to `MAX_CO` uids) set by the owner (`fb.setCoMayors`); co-mayors save like the owner but can't change `owner` or `co` except to leave (`fb.leaveCo`). Friends live in the private profile (`profile.friends`).
+- The desk: `desks/{plotId}` {uid, name, at, idle}, readable and writable only by the owner and co-mayors. The holder stamps it every `DESK_BEAT_MS` with `idle` after `DESK_IDLE_MS` without input; others watch (`fb.listenState`, no simulating or saving) and can take it when it's idle or older than `DESK_STALE_MS`.
+- The smoke-test fake keeps the signed-in player per tab (sessionStorage), so one browser can hold two players.
+
 ## New in 1.10: slower days, staff, layout
 - Time: `TICK_MS` is 75 s, so a day is 30 minutes; night runs `DUSK` 22:00 to `DAWN` 06:00 (10 of the 30 minutes). Builders work `BUILD_SPEED` (30x) per hour and progress between hours through `sim.work(s, fractionOfHour)`, called from the game loop; `tick()` does the rest of the hour. `s.wk` tracks how much of the hour's building is done. `MAX_OFFLINE_DAYS` is 48.
 - Staff: `sim.hire`, `sim.fire`, `sim.recruit` (`RECRUIT_COST` by the job's education), `sim.candidates`. Hired people have `lk` set and the daily job shuffle leaves them alone; people let go get `nf`/`nfu` and aren't matched to that building for `FIRED_DAYS`.
