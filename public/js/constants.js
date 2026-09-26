@@ -1,8 +1,11 @@
 // All tunable numbers live here so balancing never means hunting through logic.
 
-export const WORLD_ID = 'public';
+// The shared world everyone starts in. 'public' is the classic world from before 1.11, kept so nobody loses a city.
+export const WORLD_ID = 'main';
+export const CLASSIC_WORLD = 'public';
+export const OPEN_WORLDS = { main: 'The world', public: 'Classic world' };
 export const PLOT = 24;          // tiles per side of a plot
-export const GAP = 2;            // tiles between neighbouring plots on the master map
+export const GAP = 0;            // tiles between neighbouring plots on the master map: none, so the world is one piece
 export const CHUNK = 4;          // land is bought in 4×4 parcels
 export const CHUNKS = PLOT / CHUNK;
 export const START_CHUNKS = [14, 15, 20, 21];   // the 8×8 around the town hall

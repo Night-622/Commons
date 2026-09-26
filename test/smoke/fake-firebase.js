@@ -1,7 +1,7 @@
 // A stand-in for public/js/firebase.js with the same exports, for browser smoke tests.
 // Data lives in localStorage, so tabs in one browser context share it. window.__fakeFb lets a test
 // make saves fail (e.g. __fakeFb.failSaves = 'unavailable') and inspect what was written.
-import { WORLD_ID } from './constants.js';
+import { WORLD_ID, OPEN_WORLDS } from './constants.js';
 import { spiral } from './spiral.js';
 import { newCity, serialize, summary, mapString, ensureTerrain } from './sim.js';
 
@@ -71,13 +71,13 @@ export function authMessage(e) {
 // ---------- worlds ----------
 const linkPath = (uid, world) => (world === 'public' ? `users/${uid}` : `memberships/${uid}_${world}`);
 export async function getWorld(id) {
-  if (id === 'public') return { id, name: 'Public world', private: false };
+  if (OPEN_WORLDS[id]) return { id, name: OPEN_WORLDS[id], private: false };
   const w = get(`worlds/${id}`);
   return w ? { id, ...w } : null;
 }
 export async function myWorlds(u) {
   const mine = Object.entries(db.docs).filter(([k, v]) => k.startsWith('memberships/') && v.uid === u.uid).map(([, v]) => v.world);
-  return [{ id: 'public', name: 'Public world', private: false }, ...(await Promise.all(mine.map(getWorld))).filter(Boolean)];
+  return [...Object.entries(OPEN_WORLDS).map(([id, name]) => ({ id, name, private: false })), ...(await Promise.all(mine.map(getWorld))).filter((w) => w && !OPEN_WORLDS[w.id])];
 }
 export async function createWorld(u, name) {
   const id = 'w' + newId(), code = Array.from({ length: 6 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('');
@@ -116,8 +116,9 @@ export async function claimPlot(u, mayor, cityName, world = WORLD_ID) {
   await tick();
   if (get(linkPath(u.uid, world))) throw new Error('You already have a plot in this world. Reload the page.');
   const w = get(`worlds/${world}`);
-  if (!w && world !== 'public') throw new Error('That world no longer exists.');
-  const n = w ? w.nextIndex : 0, { x, y } = spiral(n), id = `${world}_${x}_${y}`;
+  if (!w && !OPEN_WORLDS[world]) throw new Error('That world no longer exists.');
+  let n = w ? w.nextIndex : 0, x, y, id;
+  for (;;) { ({ x, y } = spiral(n)); id = `${world}_${x}_${y}`; if (!get(`plots/${id}`)) break; n++; }
   const state = newCity(cityName);
   ensureTerrain(state, x, y, world);
   const data = { owner: u.uid, ownerName: mayor, world, px: x, py: y, index: n, createdAt: now(), updatedAt: now(), ...cleanSummary(state), map: mapString(state) };

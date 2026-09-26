@@ -59,15 +59,16 @@ service cloud.firestore {
     match /worlds/{worldId} {
       allow read: if signedIn();
       allow create: if signedIn() && (
-        (worldId == 'public' && request.resource.data.keys().hasOnly(['nextIndex']) && request.resource.data.nextIndex == 1)
-        || (worldId != 'public'
+        ((worldId == 'public' || worldId == 'main') && request.resource.data.keys().hasOnly(['nextIndex']) && request.resource.data.nextIndex == 1)
+        || (worldId != 'public' && worldId != 'main'
           && request.resource.data.keys().hasOnly(['name', 'owner', 'code', 'private', 'nextIndex', 'createdAt'])
           && request.resource.data.owner == me()
           && request.resource.data.nextIndex == 0
           && request.resource.data.name is string && request.resource.data.name.size() <= 40));
       allow update: if signedIn() && (
+        // The frontier counter only moves forward: by one, or past slots someone already bought (up to 30).
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nextIndex'])
-          && request.resource.data.nextIndex == resource.data.nextIndex + 1)
+          && request.resource.data.nextIndex > resource.data.nextIndex && request.resource.data.nextIndex <= resource.data.nextIndex + 30)
         // The world's creator can rename it.
         || (resource.data.owner == me() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
           && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 40));

@@ -194,6 +194,8 @@ export class Renderer {
         } else this.bridge(g, (tx, ty, h = 0) => this.project(ox + tx, oy + ty, h), b.dir, b.k, this.cam.z, b.rail);
       }
     }
+    // Plots touch, so each gets a thin yellow border; your own cities' borders are a little stronger.
+    for (const plot of plots) this.plotBorder(g, plot);
     // Trains between cities travel in world coordinates, across the bridges.
     if (this.view === '3d' && this.cam.z >= 7) for (const tr of scene.worldTrains || []) if (tr.lx !== undefined) this.vehicle(g, (x, y, h = 0) => this.project(x, y, h), tr);
     this.overlays(g, scene);
@@ -1127,6 +1129,18 @@ export class Renderer {
   }
 
   // ---------- overlays ----------
+  plotBorder(g, plot) {
+    const ox = plot.px * STRIDE, oy = plot.py * STRIDE;
+    const pts = [[0, 0], [PLOT, 0], [PLOT, PLOT], [0, PLOT]].map(([x, y]) => this.project(ox + x, oy + y));
+    g.strokeStyle = plot.mine ? 'rgba(255,201,51,0.95)' : 'rgba(255,201,51,0.6)';
+    g.lineWidth = Math.max(1, Math.min(3, this.cam.z / (plot.mine ? 8 : 12)));
+    if (plot.free) g.setLineDash([6, 5]);
+    g.beginPath();
+    pts.forEach(([x, y], k) => (k ? g.lineTo(x, y) : g.moveTo(x, y)));
+    g.closePath();
+    g.stroke();
+    g.setLineDash([]);
+  }
   tileOutline(g, px, py, tx, ty, stroke, fill, dash) {
     const ox = px * STRIDE + tx, oy = py * STRIDE + ty;
     const pts = [this.project(ox, oy), this.project(ox + 1, oy), this.project(ox + 1, oy + 1), this.project(ox, oy + 1)];

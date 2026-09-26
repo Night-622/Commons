@@ -3,7 +3,7 @@ import {
   T, B, PLOT, TICK_MS, MAX_OFFLINE_DAYS, HOURS_PER_DAY, SAVE_EVERY_MS, RUBBLE_CLEAR_COST, MAX_LEVEL, LEVEL, UPGRADABLE,
   REBUILD_MONEY, MOVE_KEEP, TUTORIAL_REWARD, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome, DECISIONS, ZONES, ZONE_COST,
   LOAN_DAYS, HISTORIC_DAYS, BADGES, REGIONAL, REGIONAL_SHARE, ALLIANCE_TRADE, DAILY, DAILY_REWARD, WEEKLY, WEEKLY_REWARD, GIFT_LIMITS, REACTIONS,
-  WASTE_POP, SEWAGE_POP, DAWN, DUSK,
+  WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS,
 } from './constants.js';
 import { Renderer, STRIDE, thumbnail, modelHeight } from './render.js';
 import { loadPrefs, savePrefs, applyPrefs, resolvedTheme, palette, PALETTES } from './prefs.js';
@@ -29,7 +29,13 @@ const hourLabel = (h) => (h === 0 ? 'midnight' : h === 12 ? 'noon' : `${h % 12} 
 // ---------- state ----------
 let prefs = loadPrefs();
 let user = null, plotId = null, me = null, state = null, mayor = '';
-let world = { id: localStorage.getItem('commons-world') || 'public', name: 'Public world' }, worlds = [];
+// 1.11 opened a new, joined-up main world; players who were in the classic public world start there once.
+let world = { id: WORLD_ID, name: OPEN_WORLDS[WORLD_ID] }, worlds = [];
+try {
+  const saved = localStorage.getItem('commons-world');
+  if (saved && (saved !== CLASSIC_WORLD || localStorage.getItem('commons-world-v2'))) world = { id: saved, name: OPEN_WORLDS[saved] || 'World' };
+  localStorage.setItem('commons-world-v2', '1');
+} catch { /* private mode */ }
 let plan = null, totalsNow = null;
 let zoneKind = 1;
 let mode = 'select', brush = null, moveFrom = -1, catalog = null, catCat = 'all', catQ = '', catAfford = false;
@@ -196,7 +202,7 @@ $('found-form').onsubmit = (e) => {
   }, $('found-msg'));
 };
 $('found-out').onclick = () => fb.signOutUser();
-$('found-public').onclick = () => { setWorld({ id: 'public', name: 'Public world' }); enter(user); };
+$('found-public').onclick = () => { setWorld({ id: WORLD_ID, name: OPEN_WORLDS[WORLD_ID] }); enter(user); };
 $('found-join').onclick = () => {
   const box = $('found-joinbox');
   box.classList.toggle('hidden');
@@ -214,10 +220,10 @@ async function showFound() {
   $('found-mayor').value = base.slice(0, 20);
   $('found-city').value = CITY_NAMES[Math.floor(Math.random() * CITY_NAMES.length)];
   $('found-msg').textContent = '';
-  $('found-world').textContent = world.id === 'public' ? 'the public world' : world.name;
-  $('found-public').classList.toggle('hidden', world.id === 'public');
+  $('found-world').textContent = world.id === WORLD_ID ? 'the world' : world.name;
+  $('found-public').classList.toggle('hidden', world.id === WORLD_ID);
   $('found-joinbox').classList.add('hidden');
-  $('found-join').classList.toggle('hidden', world.id !== 'public');
+  $('found-join').classList.toggle('hidden', world.id !== WORLD_ID);
   $('found-ruins').classList.add('hidden');
   show('found');
   (base ? $('found-city') : $('found-mayor')).focus();
@@ -276,8 +282,8 @@ async function enter(u) {
       catch (e) { console.error(e); notifyLater = `That invite didn’t work: ${fb.authMessage(e)}`; }
     }
     let w = null;
-    try { w = await fb.getWorld(world.id); } catch (e) { if (world.id === 'public') throw e; console.error(e); }
-    setWorld(w || { id: 'public', name: 'Public world' });
+    try { w = await fb.getWorld(world.id); } catch (e) { if (OPEN_WORLDS[world.id]) throw e; console.error(e); }
+    setWorld(w || { id: WORLD_ID, name: OPEN_WORLDS[WORLD_ID] });
     const doc = await fb.findPlot(u, world.id);
     if (doc) startGame(doc);
     else showFound();
@@ -292,10 +298,10 @@ function showBootError(text) {
   show('boot');
   $('boot-msg').textContent = text;
   $('boot-actions').classList.remove('hidden');
-  $('boot-public').classList.toggle('hidden', world.id === 'public');
+  $('boot-public').classList.toggle('hidden', world.id === WORLD_ID);
 }
 $('boot-retry').onclick = () => { $('boot-actions').classList.add('hidden'); $('boot-retry').textContent = 'Try again'; tabPaused = false; if (user) enter(user); else location.reload(); };
-$('boot-public').onclick = () => { $('boot-actions').classList.add('hidden'); setWorld({ id: 'public', name: 'Public world' }); if (user) enter(user); };
+$('boot-public').onclick = () => { $('boot-actions').classList.add('hidden'); setWorld({ id: WORLD_ID, name: OPEN_WORLDS[WORLD_ID] }); if (user) enter(user); };
 $('boot-out').onclick = () => { $('boot-actions').classList.add('hidden'); fb.signOutUser().catch(() => location.reload()); };
 fb.onAuth((u) => {
   const same = u && user && u.uid === user.uid && state;

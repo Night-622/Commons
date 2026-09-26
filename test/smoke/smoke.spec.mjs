@@ -251,3 +251,23 @@ test('interface: sizes, menu directions, hiding and a bigger panel', async ({ pa
   await expect(page.locator('#dock')).toBeVisible();
   expect(clean(errors)).toEqual([]);
 });
+
+test('world: neighbours touch, with borders', async ({ browser }) => {
+  // Two players in the same browser storage: the second founds next to the first.
+  const ctx = await browser.newContext();
+  const a = await ctx.newPage();
+  const errors = await newGame(a);
+  await a.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); db.user = null; localStorage.setItem('fakefb', JSON.stringify(db)); });
+  const b = await ctx.newPage();
+  errors.push(...await watch(b));
+  await found(b, { mayor: 'Nia', city: 'Nextdoor' });
+  await closeModal(b);
+  await b.locator('#btn-world').click();
+  await b.waitForTimeout(800);
+  if (process.env.SHOTS) await b.screenshot({ path: `${process.env.SHOTS}/world-borders.png` });
+  const plots = await b.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('fakefb')).docs).filter((k) => k.startsWith('plots/')));
+  expect(plots).toEqual(expect.arrayContaining([expect.stringMatching(/^plots\/main_/)]));
+  expect(plots.length).toBe(2);
+  expect(clean(errors)).toEqual([]);
+  await ctx.close();
+});

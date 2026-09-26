@@ -11,7 +11,7 @@ const {
   getDocs, addDoc, serverTimestamp, setDoc, onSnapshot, deleteDoc, writeBatch, deleteField, getCountFromServer, arrayUnion, arrayRemove,
 } = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-firestore.js`);
 import { firebaseConfig } from './config.js';
-import { WORLD_ID } from './constants.js';
+import { WORLD_ID, OPEN_WORLDS } from './constants.js';
 import { spiral } from './spiral.js';
 import { newCity, serialize, summary, mapString, ensureTerrain } from './sim.js';
 
@@ -94,7 +94,7 @@ export function authMessage(e) {
 const linkRef = (uid, world) => (world === 'public' ? doc(db, 'users', uid) : doc(db, 'memberships', `${uid}_${world}`));
 
 export async function getWorld(id) {
-  if (id === 'public') return { id, name: 'Public world', private: false };
+  if (OPEN_WORLDS[id]) return { id, name: OPEN_WORLDS[id], private: false };
   const w = await getDoc(doc(db, 'worlds', id));
   return w.exists() ? { id, ...w.data() } : null;
 }
@@ -102,7 +102,7 @@ export async function getWorld(id) {
 export async function myWorlds(user) {
   const snap = await getDocs(query(collection(db, 'memberships'), where('uid', '==', user.uid), limit(20)));
   const found = await Promise.all(snap.docs.map((m) => getWorld(m.data().world).catch(() => null)));
-  return [{ id: 'public', name: 'Public world', private: false }, ...found.filter(Boolean)];
+  return [...Object.entries(OPEN_WORLDS).map(([id, name]) => ({ id, name, private: false })), ...found.filter((w) => w && !OPEN_WORLDS[w.id])];
 }
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -159,10 +159,16 @@ async function claimPlotTx(user, mayor, cityName, world, legacy) {
     const w = await tx.get(worldRef);
     const already = await tx.get(lref);
     if (already.exists()) throw new Error('You already have a plot in this world. Reload the page.');
-    if (!w.exists() && world !== 'public') throw new Error('That world no longer exists.');
-    const n = w.exists() ? w.data().nextIndex : 0;
-    const { x, y } = spiral(n);
-    const id = `${world}_${x}_${y}`;
+    if (!w.exists() && !OPEN_WORLDS[world]) throw new Error('That world no longer exists.');
+    // Someone may already hold the next slots (plots bought next to a city): take the first free one.
+    let n = w.exists() ? w.data().nextIndex : 0, x, y, id;
+    for (let tries = 0; ; tries++) {
+      ({ x, y } = spiral(n));
+      id = `${world}_${x}_${y}`;
+      if (!(await tx.get(doc(db, 'plots', id))).exists()) break;
+      if (tries >= 25) throw new Error('The frontier is busy. Please try again.');
+      n++;
+    }
     const state = newCity(cityName);
     ensureTerrain(state, x, y, world);
     const data = {

@@ -29,7 +29,7 @@ onAuthStateChanged(auth, async (u) => {
 async function load() {
   $('msg').textContent = '';
   try {
-    const col = tab === 'chat' ? collection(db, 'worlds', $('world').value.trim() || 'public', 'chat') : collection(db, tab);
+    const col = tab === 'chat' ? collection(db, 'worlds', $('world').value.trim() || 'main', 'chat') : collection(db, tab);
     const snap = await getDocs(query(col, orderBy('createdAt', 'desc'), limit(200)));
     items = snap.docs.map((d) => ({ id: d.id, ref: d.ref, ...d.data() }));
     draw();

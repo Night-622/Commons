@@ -48,7 +48,7 @@ test('private world: create, invite code, join, list, rename', async () => {
   const pa = await a.fb.claimPlot(a.user, 'Ana', 'A', w.id);
   const pb = await b.fb.claimPlot(b.user, 'Ben', 'B', w.id);
   assert.deepEqual([pa.index, pb.index], [0, 1]);
-  assert.deepEqual((await b.fb.myWorlds(b.user)).map((x) => x.id), ['public', w.id]);
+  assert.deepEqual((await b.fb.myWorlds(b.user)).map((x) => x.id), ['main', 'public', w.id]);
   await a.fb.renameWorld(w.id, 'Best friends');
   await assertFails(b.fb.renameWorld(w.id, 'Hijacked'));
   await assertFails(updateDoc(doc(a.db, 'worlds', w.id), { name: '' }));
@@ -349,4 +349,22 @@ test('limits: gifts only from your own plot, fallen records only for your own pl
   await assertFails(a.fb.writeLegacy(a.user, pb.id, 'Ana', { daysSurvived: 0, peakPop: 6 }, w.id));
   await assertFails(a.fb.writeLegacy(a.user, pa.id, 'Ana', { daysSurvived: 0, peakPop: 1e6 }, w.id));
   await a.fb.writeLegacy(a.user, pa.id, 'Ana', { name: 'A', cityNo: 1, daysSurvived: 0, peakPop: 6, outcome: 'test' }, w.id);
+});
+
+// ---------- the main world (1.11) ----------
+test('main world: founding works like the classic world and skips slots already taken', async () => {
+  const { spiral } = await import('../../public/js/spiral.js');
+  const a = await player(), b = await player(), c = await player();
+  const pa = await a.fb.claimPlot(a.user, 'Ana', 'A', 'main');
+  const pb = await b.fb.claimPlot(b.user, 'Ben', 'B', 'main');
+  assert.deepEqual([pa.world, pb.world], ['main', 'main']);
+  // Someone already holds the next slot (as if bought next to their city).
+  const { x, y } = spiral(pb.index + 1);
+  await admin((db) => setDoc(doc(db, 'plots', `main_${x}_${y}`), { owner: 'someone', world: 'main', px: x, py: y }));
+  const pc = await c.fb.claimPlot(c.user, 'Cy', 'C', 'main');
+  assert.equal(pc.index, pb.index + 2);
+  assert.deepEqual((await a.fb.myWorlds(a.user)).map((w) => w.id).slice(0, 2), ['main', 'public']);
+  // The counter can't be pushed far ahead or backwards.
+  await assertFails(updateDoc(doc(a.db, 'worlds', 'main'), { nextIndex: 500 }));
+  await assertFails(updateDoc(doc(a.db, 'worlds', 'main'), { nextIndex: 0 }));
 });
