@@ -3042,8 +3042,12 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 1.4';
+const VERSION = 'Commons 1.5';
 const CHANGELOG = [
+  ['1.5', [
+    'Fixed a layering bug: the low plinth added under houses in 1.3 was drawn after the wall instead of before it, so it painted right over the base of the house instead of sitting under it. Houses now sit properly on the ground.',
+    'A locked feature now says "Locked" instead of "Not yet".',
+  ]],
   ['1.4', [
     'Fixed houses and villas: they were quietly painted the same plain wall colour as everything else instead of their own colour, so a street of homes looked flatter and more alike than it should. Every house now shows its own shade again.',
     'The Settings icon is a proper gear now, not an odd sunburst.',
@@ -3524,7 +3528,7 @@ function showHallUp(lv) {
 // A locked feature: what it is, which chapter opens it, and why it's worth getting to.
 const FEATURE_NEEDS_TECH = (f) => ['market', 'shares', 'region'].includes(f);
 function showLocked(feature) {
-  openModal(`${closeX}<h2 id="modal-title">Not yet</h2>${panels.lockHtml(feature, state)}
+  openModal(`${closeX}<h2 id="modal-title">Locked</h2>${panels.lockHtml(feature, state)}
     <div class="mfoot"><button class="btn" data-close>OK</button><button class="btn primary" id="see-path">${FEATURE_NEEDS_TECH(feature) ? 'Open Research' : 'See the town hall'}</button></div>`);
   $('see-path').onclick = () => { closeModal(); drawer = null; if (FEATURE_NEEDS_TECH(feature)) { statsTab = 'research'; openPanel('stats'); } else openPanel('goals'); };
 }

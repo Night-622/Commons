@@ -67,3 +67,6 @@ main"):
    1.4   Two small fixes: houses and villas were painted the wrong colour
          (a rendering bug, not a data one), and the Settings icon now
          looks like an actual gear. No new deploy steps.
+   1.5   Fixed houses' base plinth painting over the wall instead of
+         under it, and reworded a locked-feature modal title. No new
+         deploy steps.

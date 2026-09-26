@@ -495,6 +495,9 @@ export class Renderer {
 
     if (t === T.HOUSE) {
       const x0 = tx + 0.18, x1 = tx + 0.82, y0 = ty + 0.2, y1 = ty + 0.8, fh = 0.36, h = 0.42 + fh * (lv - 1);
+      // The plinth sits at ground level, under the wall - it has to be painted before the wall (not after, like the
+      // roofline trim on other buildings), or its wider, flat top face paints straight over the wall's base.
+      if (z >= 9) this.box(g, P, x0 - 0.03, y0 - 0.03, x1 + 0.03, y1 + 0.03, -0.03, 0.02, shade(th.stone, -0.05, grey), grey);
       this.box(g, P, x0, y0, x1, y1, 0, h, col, grey);
       this.windows(g, P, x0, y0, x1, y1, lv, fh, 0.02, shade(glass, 0, grey), 2);
       this.face(g, P, 'S', y1, x0 + 0.26, x0 + 0.38, 0, 0.24, shade(col, -0.45, grey));
@@ -502,7 +505,6 @@ export class Renderer {
       else this.gable(g, P, x0 - 0.03, y0 - 0.03, x1 + 0.03, y1 + 0.03, h, 0.32, col, grey);
       if (hash(i, 42) < 0.4 && lv < 3) this.box(g, P, x1 - 0.2, y0 + 0.1, x1 - 0.1, y0 + 0.2, h, h + 0.34, shade('#9a6b52', 0, grey), grey);
       if (lv === 3) this.box(g, P, x0 + 0.08, y0 + 0.08, x0 + 0.18, y0 + 0.18, h, h + 0.42, shade(col, -0.3), grey);
-      if (z >= 9) this.box(g, P, x0 - 0.03, y0 - 0.03, x1 + 0.03, y1 + 0.03, -0.03, 0.02, shade(th.stone, -0.05, grey), grey); // a low plinth at the base
       top = h + 0.32;
     } else if (t === T.WORK) {
       const x0 = tx + 0.14, x1 = tx + 0.86, y0 = ty + 0.14, y1 = ty + 0.86, h = 0.8 + 0.55 * (lv - 1);
