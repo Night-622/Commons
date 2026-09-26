@@ -1,8 +1,9 @@
 // All tunable numbers live here so balancing never means hunting through logic.
 
-// The shared world everyone starts in. 1.18 started every world afresh: the open world is 's2', and private worlds made
-// before RESET_AT are no longer listed. Earlier worlds ('public', 'main') are still in the database, just not shown.
-export const WORLD_ID = 's2';
+// The shared world everyone starts in. 1.2 started every world afresh again for the resource/production redesign:
+// the open world is 's3', and private worlds made before RESET_AT are no longer listed. Earlier worlds are still
+// in the database, just not shown.
+export const WORLD_ID = 's3';
 export const RESET_AT = Date.UTC(2026, 8, 26);
 export const CLASSIC_WORLD = 'public';
 // A council can own several cities: buy the plot next to one of yours. Priced like land: this many parcels at your
@@ -11,7 +12,7 @@ export const CLASSIC_WORLD = 'public';
 // The desk frees up when its holder has been idle this long, or their game stops checking in.
 export const MAX_CO = 3, DESK_IDLE_MS = 120000, DESK_STALE_MS = 60000, DESK_BEAT_MS = 20000;
 export const PLOT_BUY_PARCELS = 4, PLOT_BUY_STEP = 1.6, PLOT_BUY_MIN = 1000, MAX_CITIES = 9;
-export const OPEN_WORLDS = { s2: 'The world' };
+export const OPEN_WORLDS = { s3: 'The world' };
 export const PLOT = 24;          // tiles per side of a plot
 export const GAP = 0;            // tiles between neighbouring plots on the master map: none, so the world is one piece
 export const CHUNK = 4;          // land is bought in 4×4 parcels
@@ -70,6 +71,7 @@ export const T = {
   DOJO: 28, POOL: 29, CINEMA: 30, YARD: 31, RAIL: 32, STATION: 33, STOP: 34, DEPOT: 35, XING: 36, LIGHTS: 37, ROUNDABOUT: 38, POWER: 39, WATER: 40, DRAIN: 41,
   SOLAR: 42, WIND: 43, MUSEUM: 44, STADIUM: 45, HOTEL: 46, FARM: 47, HARBOUR: 48, AIRPORT: 49, LANDFILL: 50, RECYCLE: 51, SEWAGE: 52, VET: 53, METRO: 54, MONUMENT: 55,
   ORCHARD: 56, DAIRY: 57, RANCH: 58, MATERIALS: 59, WAREHOUSE: 60,
+  QUARRY: 61, POULTRY: 62, STORE: 63,
 };
 
 export const CATS = [
@@ -96,7 +98,7 @@ export const B = {
 
   [T.STOP]: { key: 'stop', name: 'Bus stop', cat: 'transport', col: 'hall', cost: 60, work: 6, upkeep: 1, catchment: 4, needs: T.DEPOT, blurb: 'People within 4 tiles ride the bus instead of driving. Needs a bus depot.' },
   [T.DEPOT]: { key: 'depot', name: 'Bus depot', cat: 'transport', col: 'hall', cost: 420, work: 44, upkeep: 7, jobs: [['Bus driver', 1, 4]], blurb: 'Each driver runs one bus between your stops. Every bus holds 40 riders a day.' },
-  [T.HARBOUR]: { key: 'harbour', name: 'Harbour', cat: 'transport', col: 'hall', cost: 900, work: 90, upkeep: 9, jobs: [['Dock worker', 0, 8], ['Harbourmaster', 2, 1]], draw: 8, minPop: 30, shore: true, blurb: 'Build it on the water’s edge. Ships carry your factory goods at the full export price, and cruise visitors come ashore.' },
+  [T.HARBOUR]: { key: 'harbour', name: 'Harbour', cat: 'transport', col: 'hall', cost: 900, work: 90, upkeep: 9, jobs: [['Dock worker', 0, 8], ['Harbourmaster', 2, 1]], draw: 8, minPop: 30, shore: true, blurb: 'Build it on the water’s edge. Cruise visitors come ashore, and it’s the best place to trade with the rest of the world.' },
   [T.AIRPORT]: { key: 'airport', name: 'Airport', cat: 'transport', col: 'hall', cost: 3200, work: 260, upkeep: 30, jobs: [['Pilot', 3, 2], ['Ground crew', 1, 8]], draw: 45, minPop: 150, flat: true, pollution: 3, smog: 0.04, blurb: 'Flights bring crowds of tourists and lift trade. Loud: keep homes away. Needs flat land.' },
   [T.METRO]: { key: 'metro', name: 'Metro station', cat: 'transport', col: 'hall', cost: 1100, work: 110, upkeep: 12, jobs: [['Metro driver', 1, 2], ['Station staff', 0, 2]], catchment: 6, seats: 70, research: 'metro', blurb: 'Underground trains between every staffed metro station: no track to lay, no traffic. People within 6 tiles ride. Needs two stations and the Metro research.' },
   [T.STATION]: { key: 'station', name: 'Train station', cat: 'transport', col: 'hall', cost: 600, work: 60, upkeep: 8, jobs: [['Station staff', 1, 3]], catchment: 5, minPop: 20, blurb: 'People within 5 tiles take the train on long trips. Put it next to a railway.' },
@@ -108,8 +110,8 @@ export const B = {
   [T.WORK]: { key: 'work', name: 'Office', cat: 'work', col: 'work', cost: 220, work: 30, upkeep: 4, jobs: [['Clerk', 1, 8], ['Manager', 3, 2]], blurb: 'Office jobs for people with schooling.' },
   [T.SHOP]: { key: 'shop', name: 'Grocer', cat: 'work', col: 'shop', cost: 160, work: 20, upkeep: 3, jobs: [['Shop assistant', 0, 3]], serves: 30, blurb: 'Food for 30 people. Every household needs one nearby.' },
   [T.CAFE]: { key: 'cafe', name: 'Café', cat: 'work', col: 'shop', cost: 180, work: 20, upkeep: 3, jobs: [['Barista', 0, 3]], visits: { n: 20, who: 'all' }, blurb: 'Jobs, plus somewhere to go in the evening.' },
-  [T.FACTORY]: { key: 'factory', name: 'Factory', cat: 'work', col: 'work', cost: 300, work: 40, upkeep: 5, jobs: [['Factory hand', 0, 14], ['Engineer', 3, 1]], pollution: 3, smog: 0.05, injury: 0.004, blurb: 'Lots of jobs for anyone. Noisy: homes within 3 tiles are less happy.' },
-  [T.FARM]: { key: 'farm', name: 'Urban farm', cat: 'work', col: 'park', cost: 200, work: 22, upkeep: 2, jobs: [['Farmhand', 0, 4]], serves: 15, fresh: 0.02, makes: { veg: 25 }, blurb: 'Grows fresh food for 15 people and cleans the air a little.' },
+  [T.FACTORY]: { key: 'factory', name: 'Factory', cat: 'work', col: 'work', cost: 300, work: 40, upkeep: 5, jobs: [['Factory hand', 0, 14], ['Engineer', 3, 1]], pollution: 3, smog: 0.05, injury: 0.004, makesProducts: true, blurb: 'Pick a recipe once you’ve researched it, and it turns raw resources into a product to sell in a Store or trade. Noisy: homes within 3 tiles are less happy.' },
+  [T.FARM]: { key: 'farm', name: 'Urban farm', cat: 'work', col: 'park', cost: 200, work: 22, upkeep: 2, jobs: [['Farmhand', 0, 4]], serves: 15, fresh: 0.02, makes: { vegetables: 25 }, blurb: 'Grows fresh vegetables for 15 people and cleans the air a little.' },
   [T.HOTEL]: { key: 'hotel', name: 'Hotel', cat: 'work', col: 'shop', cost: 520, work: 56, upkeep: 6, jobs: [['Receptionist', 1, 3], ['Housekeeper', 0, 3]], rooms: 30, minPop: 40, blurb: 'Rooms for 30 tourists a night. Attractions only bring overnight visitors if they have somewhere to stay.' },
   [T.YARD]: { key: 'yard', name: "Builder's yard", cat: 'work', col: 'work', cost: 260, work: 30, upkeep: 4, jobs: [['Builder', 0, 6]], blurb: 'Hires 6 builders, so construction goes faster.' },
 
@@ -142,8 +144,11 @@ export const B = {
   [T.ORCHARD]: { key: 'orchard', name: 'Orchard', cat: 'work', col: 'park', cost: 220, work: 22, upkeep: 2, jobs: [['Fruit picker', 0, 4]], makes: { fruit: 25 }, fresh: 0.02, research: 'orchards', blurb: 'Grows 25 crates of fruit a day. Trees clean the air a little.' },
   [T.DAIRY]: { key: 'dairy', name: 'Dairy farm', cat: 'work', col: 'park', cost: 300, work: 28, upkeep: 3, jobs: [['Dairy hand', 0, 4], ['Vet nurse', 1, 1]], makes: { dairy: 25 }, pollution: 1, research: 'dairy', blurb: 'Milk, cheese and yoghurt for 25 people a day. A little smelly for homes right beside it.' },
   [T.RANCH]: { key: 'ranch', name: 'Ranch', cat: 'work', col: 'park', cost: 340, work: 30, upkeep: 3, jobs: [['Rancher', 0, 5]], makes: { meat: 20 }, pollution: 1, research: 'ranching', blurb: 'Meat for 20 people a day. Needs space; homes right beside it mind the smell.' },
-  [T.MATERIALS]: { key: 'materials', name: 'Materials works', cat: 'work', col: 'work', cost: 280, work: 30, upkeep: 4, jobs: [['Quarry worker', 0, 6], ['Engineer', 2, 1]], makes: { materials: 30 }, pollution: 2, smog: 0.02, blurb: 'Makes 30 loads of bricks and timber a day. With materials in stock, builders work 50% faster.' },
-  [T.WAREHOUSE]: { key: 'warehouse', name: 'Warehouse', cat: 'work', col: 'work', cost: 200, work: 20, upkeep: 2, jobs: [['Storekeeper', 0, 2]], store: 600, research: 'logistics', blurb: 'Stores 600 more of every resource, to use later or sell.' },
+  [T.MATERIALS]: { key: 'sawmill', name: 'Sawmill', cat: 'work', col: 'work', cost: 280, work: 30, upkeep: 4, jobs: [['Sawyer', 0, 6], ['Engineer', 2, 1]], makes: { wood: 32 }, pollution: 2, smog: 0.02, blurb: 'Cuts 32 loads of timber a day. With wood or metal in stock, builders work 50% faster.' },
+  [T.QUARRY]: { key: 'quarry', name: 'Quarry', cat: 'work', col: 'work', cost: 320, work: 34, upkeep: 5, jobs: [['Quarry worker', 0, 6], ['Engineer', 2, 1]], makes: { metal: 22 }, pollution: 2, smog: 0.03, blurb: 'Digs 22 loads of ore and metal a day. With wood or metal in stock, builders work 50% faster.' },
+  [T.POULTRY]: { key: 'poultry', name: 'Poultry farm', cat: 'work', col: 'park', cost: 240, work: 22, upkeep: 2, jobs: [['Poultry keeper', 0, 4]], makes: { eggs: 22 }, pollution: 1, research: 'poultry', blurb: 'Eggs for 22 people a day.' },
+  [T.WAREHOUSE]: { key: 'warehouse', name: 'Storage yard', cat: 'work', col: 'work', cost: 200, work: 20, upkeep: 2, jobs: [['Storekeeper', 0, 2]], store: 600, research: 'logistics', blurb: 'Stores 600 more of every resource and product, to use later or sell.' },
+  [T.STORE]: { key: 'store', name: 'Store', cat: 'work', col: 'shop', cost: 260, work: 26, upkeep: 3, jobs: [['Shopkeeper', 0, 3]], sellsProducts: true, research: 'retail', blurb: 'Sells the products your factories make straight to your own residents, at a better price than the Market pays.' },
   [T.MONUMENT]: { key: 'monument', name: 'Monument', cat: 'fun', col: 'hall', cost: 2600, work: 200, upkeep: 6, visits: { n: 40, who: 'all' }, draw: 25, minPop: 80, blurb: 'A grand landmark for 40 visitors a day. Tourists come to see it, and the whole street becomes a sought-after address.' },
   [T.HALL]: { key: 'hall', name: 'Town hall', col: 'hall', cost: 0, work: 0, upkeep: 0, homes: 6, jobs: [['Builder', 0, 3], ['Clerk', 2, 2]], serves: 10 },
   [T.RUBBLE]: { key: 'rubble', name: 'Rubble', cost: 0, work: 0, upkeep: 0 },
@@ -167,11 +172,11 @@ export const MILESTONES = [25, 50, 100, 200, 300, 500];
 export const HALL_LEVELS = [
   { name: 'Settlement', pop: 0, goals: [], res: {}, land: 8, rp: 1, store: 0 },
   { name: 'Village', pop: 15, goals: [['roads', 'Lay 10 road tiles'], ['homes', 'Build 3 homes'], ['work', 'Open an office or a factory'], ['shop', 'Open a grocer']], res: {}, land: 12, rp: 2, store: 100 },
-  { name: 'Town', pop: 40, goals: [['school', 'Open a primary school'], ['farm', 'Build an urban farm'], ['harvest', 'Collect a harvest: tap a building with a bubble'], ['utilities', 'Build a water tower and a power source']], res: { materials: 40 }, land: 16, rp: 3, store: 200 },
-  { name: 'Large town', pop: 80, goals: [['materials', 'Build a materials works'], ['tech2', 'Research 2 technologies'], ['trade1', 'Make a trade on the Market'], ['clinic', 'Open a clinic']], res: { materials: 120, veg: 60 }, land: 22, rp: 4, store: 300 },
-  { name: 'City', pop: 150, goals: [['highschool', 'Open a high school'], ['invest', 'Own shares in another city, or list your own'], ['land3', 'Buy 3 parcels of land'], ['happy60', 'Keep mood at 60% or more']], res: { materials: 250, veg: 120, fruit: 60 }, land: 28, rp: 6, store: 400 },
-  { name: 'Large city', pop: 250, goals: [['uni', 'Open a university'], ['cities2', 'Found a second city'], ['link', 'Link a road or railway with a neighbour (or make 5 trades)'], ['tech6', 'Research 6 technologies']], res: { materials: 450, veg: 200, dairy: 100 }, land: 36, rp: 8, store: 600 },
-  { name: 'Metropolis', pop: 500, goals: [['monument', 'Build a monument'], ['happy70', 'Keep mood at 70% or more'], ['alliance', 'Be in an alliance']], res: { materials: 900, veg: 300, meat: 150 }, land: 36, rp: 12, store: 900 },
+  { name: 'Town', pop: 40, goals: [['school', 'Open a primary school'], ['farm', 'Build an urban farm'], ['harvest', 'Collect a harvest: tap a building with a bubble'], ['utilities', 'Build a water tower and a power source']], res: { wood: 40 }, land: 16, rp: 3, store: 200 },
+  { name: 'Large town', pop: 80, goals: [['materials', 'Build a sawmill or a quarry'], ['tech2', 'Research 2 technologies'], ['trade1', 'Make a trade on the Market'], ['clinic', 'Open a clinic']], res: { wood: 80, metal: 40, vegetables: 60 }, land: 22, rp: 4, store: 300 },
+  { name: 'City', pop: 150, goals: [['highschool', 'Open a high school'], ['invest', 'Own shares in another city, or list your own'], ['land3', 'Buy 3 parcels of land'], ['happy60', 'Keep mood at 60% or more']], res: { wood: 150, metal: 100, vegetables: 120, fruit: 60 }, land: 28, rp: 6, store: 400 },
+  { name: 'Large city', pop: 250, goals: [['uni', 'Open a university'], ['cities2', 'Found a second city'], ['link', 'Link a road or railway with a neighbour (or make 5 trades)'], ['tech6', 'Research 6 technologies']], res: { wood: 260, metal: 190, vegetables: 200, dairy: 100 }, land: 36, rp: 8, store: 600 },
+  { name: 'Metropolis', pop: 500, goals: [['monument', 'Build a monument'], ['happy70', 'Keep mood at 70% or more'], ['alliance', 'Be in an alliance']], res: { wood: 500, metal: 400, vegetables: 300, meat: 150 }, land: 36, rp: 12, store: 900 },
 ];
 // Styles: the look of the interface and the city. A new one unlocks as the town hall grows (hall: level index);
 // players can switch between any they've unlocked. cols: building colours; map: ground, roads and walls.
@@ -251,13 +256,18 @@ export const TECH = [
   { id: 'university', branch: 'education', name: 'Universities', cost: 30, needs: 'highschool', text: 'Unlocks universities: degrees for doctors, engineers and teachers.' },
   { id: 'trade', branch: 'commerce', name: 'Trade', cost: 10, text: 'Opens the Market: buy and sell resources at the world’s prices, trade with other mayors, lend and borrow.' },
   { id: 'finance', branch: 'commerce', name: 'Finance', cost: 35, needs: 'trade', text: 'Opens city shares: invest in other cities, or list yours to raise money.' },
+  { id: 'retail', branch: 'commerce', name: 'Retail', cost: 25, needs: 'trade', text: 'Unlocks Stores: sell your factories’ products straight to your own residents.' },
   { id: 'diplomacy', branch: 'society', name: 'Diplomacy', cost: 15, text: 'Opens the Region: shared projects with other mayors, and alliances.' },
   { id: 'orchards', branch: 'farming', name: 'Orchards', cost: 30, text: 'Unlocks orchards: fruit.' },
   { id: 'dairy', branch: 'farming', name: 'Dairy farming', cost: 50, needs: 'orchards', text: 'Unlocks dairy farms.' },
   { id: 'ranching', branch: 'farming', name: 'Ranching', cost: 70, needs: 'dairy', text: 'Unlocks ranches: meat.' },
+  { id: 'poultry', branch: 'farming', name: 'Poultry', cost: 25, text: 'Unlocks poultry farms: eggs.' },
   { id: 'vertical', branch: 'farming', name: 'Vertical farming', cost: 70, needs: 'orchards', text: 'Urban farms feed twice as many people and grow twice as much.' },
   { id: 'logistics', branch: 'industry', name: 'Logistics', cost: 40, text: 'Unlocks warehouses: store more to use later or sell.' },
   { id: 'greenconcrete', branch: 'industry', name: 'Green concrete', cost: 40, needs: 'logistics', text: 'Everything costs 10% less to build.' },
+  { id: 'carpentry', branch: 'industry', name: 'Carpentry', cost: 50, needs: 'logistics', text: 'Unlocks Furniture: a factory recipe that turns wood and metal into a product that makes homes comfier.' },
+  { id: 'toolmaking', branch: 'industry', name: 'Toolmaking', cost: 65, needs: 'carpentry', text: 'Unlocks Tools: a factory recipe that turns metal and wood into a product that makes builders faster.' },
+  { id: 'bakery', branch: 'farming', name: 'Bakery', cost: 55, needs: 'poultry', text: 'Unlocks Baked goods: a factory recipe that turns vegetables and eggs into a product that feeds people faster and cheaper.' },
   { id: 'smartgrid', branch: 'energy', name: 'Smart grid', cost: 70, text: 'Power and water reach 3 tiles further.' },
   { id: 'trafficai', branch: 'energy', name: 'Smart traffic lights', cost: 80, needs: 'smartgrid', text: 'Roads carry 20% more traffic.' },
   { id: 'metro', branch: 'energy', name: 'Metro', cost: 120, needs: 'trafficai', text: 'Unlocks metro stations: underground trains across your city.' },
@@ -266,24 +276,41 @@ export const TECH = [
   { id: 'edtech', branch: 'education', name: 'The internet', cost: 60, needs: 'university', text: 'Homes go online: everyone studies 25% faster and research comes 20% quicker.' },
 ];
 // Resources: made each day by buildings (their `makes`), used by people and buildings, kept up to a storage limit.
-// Food that isn't grown here is imported at `import` dollars a unit; surplus food and materials sell for half that.
+// Water and power can't be bought or sold: a shortfall just shows up as illness and unhappiness. Everything else
+// (wood, metal and the five foods) is bought and sold on the Exchange; what isn't grown here is imported at
+// `import` dollars a unit, and surplus sells for half that. There's no separate "food" resource any more — each
+// kind is its own stock, though people still eat from whichever ones are in store (more kinds, happier residents).
 export const RES = {
   water: { name: 'Water', unit: 'kilolitres' },
   power: { name: 'Power', unit: 'megawatt-hours' },
-  veg: { name: 'Vegetables', food: true, import: 0.15 },
+  wood: { name: 'Wood', import: 0.7 },
+  metal: { name: 'Metal', import: 1.4 },
+  vegetables: { name: 'Vegetables', food: true, import: 0.15 },
   fruit: { name: 'Fruit', food: true, import: 0.2 },
   dairy: { name: 'Dairy', food: true, import: 0.25 },
   meat: { name: 'Meat', food: true, import: 0.35 },
-  materials: { name: 'Building materials', import: 1 },
+  eggs: { name: 'Eggs', food: true, import: 0.22 },
 };
-export const FOOD = ['veg', 'fruit', 'dairy', 'meat'];
+export const FOOD = ['vegetables', 'fruit', 'dairy', 'meat', 'eggs'];
 // The market: offers to sell or buy resources, and loan requests, open to every mayor in the world.
-export const TRADE_RES = ['veg', 'fruit', 'dairy', 'meat', 'materials'];
+export const TRADE_RES = ['wood', 'metal', 'vegetables', 'fruit', 'dairy', 'meat', 'eggs'];
 // The exchange. A resource's price follows how scarce it is across the whole world (days of everyone's needs
 // in store) and a demand that swings from day to day, the same for every player. The exchange buys and sells
 // at that price, less or plus `spread`; automatic food imports pay it too, within `importBand` of the base.
 export const EXCHANGE = { spread: 0.08, importBand: [0.6, 1.6], coverDays: 3, demandSwing: 0.35 };
-export const PER_CAPITA = { veg: 0.25, fruit: 0.25, dairy: 0.25, meat: 0.25, materials: 0.3 };   // a day, per person, worldwide
+export const PER_CAPITA = { wood: 0.2, metal: 0.12, vegetables: 0.25, fruit: 0.25, dairy: 0.25, meat: 0.25, eggs: 0.2 };   // a day, per person, worldwide
+// Products: factories turn raw resources into these once you've researched the recipe. A factory with a recipe
+// assigned consumes `recipe` from store each day (scaled by staffing, capped by what's there) and adds `makes` of
+// the product. Sell them in a Store for cash, or trade them on the Market like any resource. `benefit` is what
+// having some in store does for the city.
+export const PRODUCTS = {
+  furniture: { name: 'Furniture', recipe: { wood: 2, metal: 1 }, makes: 1, tech: 'carpentry', import: 4.5, benefit: 'Homes with furniture in store are a little happier.' },
+  tools: { name: 'Tools', recipe: { metal: 2, wood: 1 }, makes: 1, tech: 'toolmaking', import: 5, benefit: 'Builders work faster while tools are in store.' },
+  baked: { name: 'Baked goods', recipe: { vegetables: 2, eggs: 1 }, makes: 1, tech: 'bakery', import: 3, benefit: 'Feeds people faster and cheaper than raw ingredients.' },
+};
+export const PRODUCT_IDS = Object.keys(PRODUCTS);
+export const STORE_SALE_SHARE = 0.85;    // a Store sells products for this share of the import price (vs SURPLUS_SALE on the open market)
+export const FACTORY_BATCHES = 6;        // batches of a recipe a fully-staffed, fully-levelled factory can run a day
 // City shares. Every city is worth what its public figures say (people, money, buildings, resources, growth,
 // mood) and has `shares` shares. A mayor can list between listMin and listMax of them once the city has minPop
 // people, and is paid for them at once (less ipoDiscount); others then buy and sell them on the exchange.

@@ -462,7 +462,7 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = [];
   for (let d = 0; d < 3; d++) for (let h = 0; h < 24; h++) sim.tick(s, rng);
   const r = s.stats.res;
-  assert(r.prod.veg > 0 && r.prod.water > 0 && r.prod.power > 0, 'farms, water towers and wind turbines make things: ' + JSON.stringify(r.prod));
+  assert(r.prod.vegetables > 0 && r.prod.water > 0 && r.prod.power > 0, 'farms, water towers and wind turbines make things: ' + JSON.stringify(r.prod));
   assert(r.need.food > 0 && Math.abs(r.need.food - s.people.length) <= 12, 'everyone eats (measured at the start of the day, before newcomers)');
   assert(r.imported >= 0 && r.importCost === Math.round(r.imported * 0.2375), 'missing food is imported at the average price');
   assert(r.variety >= 1, 'vegetables count as one kind of food');
@@ -473,16 +473,16 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = [];
   for (let h = 0; h < 24 * 3; h++) sim.tick(s, rng);
   assert(s.stats.res.variety >= 2, 'fruit makes a second kind of food: ' + JSON.stringify(s.stats.res.prod) + ' staff ' + sim.staffing(s, sim.idx(19, c + 2)));
-  // Materials speed up builders; the stock goes down as they work.
-  s.res.materials = 100;
+  // Wood speeds up builders (a sawmill's the source now, not one "materials" resource); the stock goes down as they work.
+  s.res.wood = 100;
   put(s, 21, c + 2, T.HOUSE);
-  const before = s.res.materials;
+  const before = s.res.wood;
   sim.work(s, 0.05);
-  assert(s.res.materials < before, 'builders use materials');
+  assert(s.res.wood < before, 'builders use wood');
   // Storage: anything over the limit sells.
-  s.res.veg = 5000;
+  s.res.vegetables = 5000;
   for (let h = 0; h < 24; h++) sim.tick(s, rng);
-  assert(s.res.veg <= s.stats.res.cap && s.stats.res.sold > 0, 'surplus food sells');
+  assert(s.res.vegetables <= s.stats.res.cap && s.stats.res.sold > 0, 'surplus food sells');
   console.log('resources ok:', JSON.stringify(s.stats.res.prod), 'imported', s.stats.res.imported, 'variety', s.stats.res.variety);
 }
 // ---- labour contracts between cities
@@ -516,14 +516,14 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   const s = sim.newCity('Tapper', rng); s.money = 5000; s.land.fill(1);
   for (let x = 4; x <= 12; x++) put(s, x, c + 1, T.ROAD);
   const plain = sim.buildPrice(s, sim.idx(5, c + 2), T.FARM);
-  assert.equal(plain.money, B[T.FARM].cost, 'with no materials in store you pay the list price');
-  s.res = { materials: 3 };
+  assert.equal(plain.money, B[T.FARM].cost, 'with no wood or metal in store you pay the list price');
+  s.res = { wood: 3 };
   const cheaper = sim.buildPrice(s, sim.idx(5, c + 2), T.FARM);
   assert.equal(cheaper.money, B[T.FARM].cost - 3 * 2, 'each load of your own takes $2 off');
   const m0 = s.money;
   put(s, 5, c + 2, T.FARM);
   assert.equal(s.money, m0 - cheaper.money);
-  assert.equal(s.res.materials, 0, 'the materials are used');
+  assert.equal(s.res.wood, 0, 'the wood is used');
   for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = [];
   const farm = sim.idx(5, c + 2);
   const hand = s.people.find((p) => p.a >= 18 && p.a < 65 && !(p.j === sim.HALL_INDEX && p.jt === 0));
@@ -531,27 +531,27 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   for (let h = 0; h < 6; h++) sim.tick(s, rng);
   assert(sim.staffing(s, farm) > 0, 'the farm has staff');
   assert(sim.harvestReady(s, farm), 'after a few hours the farm has a harvest');
-  const v = s.res.veg || 0, r = sim.harvest(s, farm);
-  assert(r.ok && r.got.veg > 0 && s.res.veg === v + r.got.veg, 'collecting adds to the store');
+  const v = s.res.vegetables || 0, r = sim.harvest(s, farm);
+  assert(r.ok && r.got.vegetables > 0 && s.res.vegetables === v + r.got.vegetables, 'collecting adds to the store');
   assert(!sim.harvestReady(s, farm), 'and starts again');
-  console.log('materials prices and harvests ok: harvest gave', r.got.veg, 'veg');
+  console.log('materials prices and harvests ok: harvest gave', r.got.vegetables, 'vegetables');
 }
 // ---- the exchange: resource prices from scarcity and demand, and city shares
 {
-  const cities = (veg) => [{ pop: 100, res: { veg, fruit: 0, dairy: 0, meat: 0, materials: 0 } }];
-  const scarce = sim.worldPrices(cities(0), 50).veg, plenty = sim.worldPrices(cities(5000), 50).veg;
+  const cities = (vegetables) => [{ pop: 100, res: { vegetables, fruit: 0, dairy: 0, meat: 0, eggs: 0, wood: 0, metal: 0 } }];
+  const scarce = sim.worldPrices(cities(0), 50).vegetables, plenty = sim.worldPrices(cities(5000), 50).vegetables;
   assert(scarce > plenty, `scarce vegetables cost more: ${scarce} vs ${plenty}`);
   assert.deepEqual(sim.worldPrices(cities(100), 50), sim.worldPrices(cities(100), 50), 'the same for everyone on the same day');
-  const days = Array.from({ length: 40 }, (_, d) => sim.worldPrices(cities(100), d).veg);
+  const days = Array.from({ length: 40 }, (_, d) => sim.worldPrices(cities(100), d).vegetables);
   assert(Math.max(...days) > Math.min(...days) * 1.2, 'demand moves prices from day to day');
   const s = sim.newCity('Trader', rng); s.money = 5000; s._prices = sim.worldPrices(cities(0), 50);
-  assert(sim.buyResource(s, 'veg', 100).ok && s.res.veg === 100, 'buying from the exchange');
+  assert(sim.buyResource(s, 'vegetables', 100).ok && s.res.vegetables === 100, 'buying from the exchange');
   const m = s.money;
-  assert(sim.sellResource(s, 'veg', 100).ok && s.money > m && s.money < m + 100 * s._prices.veg, 'selling back, less the spread');
-  assert(!sim.sellResource(s, 'veg', 1).ok, 'not what you haven’t got');
+  assert(sim.sellResource(s, 'vegetables', 100).ok && s.money > m && s.money < m + 100 * s._prices.vegetables, 'selling back, less the spread');
+  assert(!sim.sellResource(s, 'vegetables', 1).ok, 'not what you haven’t got');
   // City shares: worth what the city is.
   const small = { pop: 20, peakPop: 20, money: 500, bld: 5, happiness: 0.6, growth: 0 };
-  const big = { pop: 300, peakPop: 320, money: 8000, bld: 90, happiness: 0.7, growth: 40, res: { materials: 200 } };
+  const big = { pop: 300, peakPop: 320, money: 8000, bld: 90, happiness: 0.7, growth: 40, res: { wood: 100, metal: 100 } };
   assert(sim.sharePrice(big) > sim.sharePrice(small) * 5, 'a big city’s shares are worth more');
   assert.equal(sim.sharePrice({ ...big, status: 'ruins' }), 0.5, 'a fallen city’s shares are worth almost nothing');
   const buyer = sim.newCity('Investor', rng); buyer.money = 10000;
@@ -590,10 +590,10 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   // The next level wants resources in store, and uses them.
   s.hallDone = { school: true, farm: true, harvest: true, utilities: true };
   for (let k = 0; k < 30; k++) s.people.push({ ...s.people[0], i: 950 + k });
-  assert.equal(sim.checkHall(s), null, 'not without 40 materials');
-  s.res = { materials: 55 };
+  assert.equal(sim.checkHall(s), null, 'not without 40 wood');
+  s.res = { wood: 55 };
   assert.equal(sim.checkHall(s)?.name, 'Town');
-  assert.equal(s.res.materials, 15, 'the upgrade used 40 materials');
+  assert.equal(s.res.wood, 15, 'the upgrade used 40 wood');
   assert.equal(s.lv[sim.HALL_INDEX], 2, 'a bigger hall');
   // Land: a town can hold 16 parcels.
   s.land.fill(0); for (let k = 0; k < 16; k++) s.land[k] = 1;
@@ -608,5 +608,33 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert.equal(old.hall, 3, 'a 96-person city from before starts as a large town');
   assert(sim.unlocked(old, 'market') && sim.unlocked(old, 'shares') && sim.hasTech(old, 'highschool'), 'and keeps its market, shares and high schools');
   console.log('town hall ok: settlement > village > town; land capped at 16');
+}
+// ---- factories with a recipe turn resources into products; a Store and the Market both sell them
+{
+  seed = 81;
+  const s = sim.newCity('Maker', rng); s.money = 20000; s.land.fill(1);
+  for (let x = 2; x <= 14; x++) put(s, x, c + 1, T.ROAD);
+  [T.HOUSE, T.HOUSE, T.HOUSE, T.HOUSE, T.FACTORY].forEach((t, k) => put(s, 3 + k * 2, c + 2, t));
+  finishAll(s);
+  const factory = sim.idx(11, c + 2);
+  assert(!sim.setRecipe(s, factory, 'furniture').ok, 'furniture needs the carpentry technology');
+  s.tech = [...(s.tech || []), 'logistics', 'carpentry', 'retail'];
+  assert(sim.setRecipe(s, factory, 'furniture').ok, 'recipe assigned once researched');
+  put(s, 13, c + 2, T.STORE);
+  finishAll(s);
+  for (let h = 0; h < 12; h++) sim.tick(s, rng);
+  assert(sim.staffing(s, factory) > 0, 'the factory has staff');
+  s.res ||= {}; s.res.wood = 200; s.res.metal = 200;   // plenty of raw material so the recipe isn't stock-limited
+  for (let h = 0; h < 24; h++) sim.tick(s, rng);
+  assert(s.res.furniture > 0, 'the factory made furniture: ' + JSON.stringify(s.stats.products));
+  assert(s.res.wood < 200 && s.res.metal < 200, 'and used wood and metal to do it');
+  // Selling: the Market takes products; the instant world Exchange doesn't.
+  assert(!sim.buyResource(s, 'furniture', 1).ok, 'furniture isn’t on the instant Exchange');
+  assert(sim.reserve(s, 'f1', 'sell', 'furniture', 1, 4).ok, 'furniture can be posted on the Market');
+  sim.release(s, 'f1');
+  s.res.furniture = 500;   // force a big stockpile so the staffed Store visibly sells some
+  for (let h = 0; h < 24; h++) sim.tick(s, rng);
+  assert(s.res.furniture < 500, 'a staffed Store sells product stock: ' + s.res.furniture);
+  console.log('factories and products ok: store sold down to', s.res.furniture);
 }
 console.log('all tests passed');

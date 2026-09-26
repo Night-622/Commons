@@ -5,9 +5,13 @@ import {
   ROAD_CAP, HALL_CAP, HOURS_PER_DAY, LEVEL, MAX_LEVEL, UPGRADABLE, TAP_SHARE, TAP_CAP, GOALS, TRADE_PER_LINK,
   LINK_MOOD, MAX_LINKS, HISTORY_DAYS, LOG_SIZE, EVENT_CHANCE, CHUNK, CHUNKS, START_CHUNKS, LAND_PRICE, LAND_STEP,
   MOVE_FEE, ADULT, RETIRE, WAGE, isHome, walkable, BUS_SEATS, COMMUTE_JOBS, TICK_MS, isRoad, isRail, POLICY, WANT_REWARD,
-  GOODS_PER_FACTORY, SEASONS, SEASON_DAYS, YEAR_DAYS, UTILITY_POP, DECISIONS, ELECTION_EVERY, ZONES, ZONE_COST,
+  SEASONS, SEASON_DAYS, YEAR_DAYS, UTILITY_POP, DECISIONS, ELECTION_EVERY, ZONES, ZONE_COST,
   HALL_LEVELS, FEATURE_NEEDS, MAT_PER_COST, MAT_BUY, HARVEST, EXCHANGE, PER_CAPITA, STOCK, TRADE_RES, MARKET, RES, FOOD, USE, STORE_BASE, SURPLUS_SALE, MATERIALS_BOOST, MATERIALS_PER_WORK, PLOT_BUY_PARCELS, PLOT_BUY_STEP, PLOT_BUY_MIN, BUILD_SPEED, RECRUIT_COST, FIRED_DAYS, ADULT_STUDY_YEARS, TRAINING_YEARS, EDU, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
+  PRODUCTS, PRODUCT_IDS, FACTORY_BATCHES, STORE_SALE_SHARE,
 } from './constants.js';
+// Products (and raw resources) can be posted or taken on the player-to-player Market; only raw resources trade
+// instantly on the world Exchange (worldPrices/buyResource/sellResource below).
+const TRADEABLE = [...TRADE_RES, ...PRODUCT_IDS];
 
 const N = PLOT * PLOT;
 export const idx = (x, y) => y * PLOT + x;
@@ -335,7 +339,7 @@ function resourcesDay(s, uc) {
     short[k] = Math.round(need[k] - used);
     res[k] = Math.round(Math.min(cap, have - used));
   }
-  for (const k of [...FOOD, 'materials']) res[k] = (res[k] || 0) + prod[k];
+  for (const k of [...FOOD, 'wood', 'metal']) res[k] = (res[k] || 0) + prod[k];
   const inStock = FOOD.reduce((a, k) => a + res[k], 0), eat = Math.min(inStock, need.food);
   for (const k of FOOD) res[k] = inStock ? res[k] - eat * (res[k] / inStock) : 0;
   const variety = FOOD.filter((k) => prod[k] > 0 || res[k] >= 1).length;
@@ -344,11 +348,60 @@ function resourcesDay(s, uc) {
   const imported = Math.round(need.food - eat), avg = FOOD.reduce((a, k) => a + band(k), 0) / FOOD.length;
   const importCost = Math.round(imported * avg);
   let sold = 0;
-  for (const k of [...FOOD, 'materials']) {
+  for (const k of [...FOOD, 'wood', 'metal']) {
     if (res[k] > cap) { sold += (res[k] - cap) * priceOf(s, k) * SURPLUS_SALE; res[k] = cap; }
     res[k] = Math.round(res[k] * 10) / 10;
   }
   return { prod, need, short, imported, importCost, sold: Math.round(sold), variety, cap };
+}
+// Factories with a recipe assigned (setRecipe) turn raw resources into a product each day: limited by staffing
+// and level like any other production, and by whatever ingredient runs out first. Overflow past the storage cap
+// sells automatically, same as a raw resource; a staffed Store on top of that sells product stock to your own
+// residents at a better price than the open market.
+export function productsDay(s, uc) {
+  const res = (s.res ||= {}), rec = s.rec || {}, cap = storeCap(s, uc);
+  const made = {}, used = {};
+  // Automated factories (the "robots" council decision) make 30% more; a carbon tax policy trims 15% off.
+  const factoryK = (s.flags.robots ? 1.3 : 1) * (s.policy?.carbon ? 0.85 : 1);
+  for (let i = 0; i < N; i++) {
+    if (!B[s.grid[i]]?.makesProducts || !active(s, i, uc)) continue;
+    const id = rec[i], p = id && PRODUCTS[id];
+    if (!p || !hasTech(s, p.tech)) continue;
+    const k = staffing(s, i) * LEVEL.capacity[level(s, i)];
+    if (k <= 0) continue;
+    let batches = k * FACTORY_BATCHES * factoryK;
+    for (const [r, n] of Object.entries(p.recipe)) batches = Math.min(batches, (res[r] || 0) / n);
+    if (batches <= 0) continue;
+    for (const [r, n] of Object.entries(p.recipe)) { res[r] = Math.max(0, (res[r] || 0) - n * batches); used[r] = (used[r] || 0) + n * batches; }
+    const out = p.makes * batches;
+    res[id] = (res[id] || 0) + out;
+    made[id] = (made[id] || 0) + out;
+  }
+  let sold = 0;
+  for (const id of PRODUCT_IDS) {
+    if (!res[id]) continue;
+    if (res[id] > cap) { sold += (res[id] - cap) * PRODUCTS[id].import * SURPLUS_SALE; res[id] = cap; }
+  }
+  let storeK = 0;
+  for (let i = 0; i < N; i++) if (s.grid[i] === T.STORE && active(s, i, uc)) storeK += staffing(s, i) * LEVEL.capacity[level(s, i)];
+  if (storeK > 0) for (const id of PRODUCT_IDS) {
+    const sell = Math.min(res[id] || 0, storeK * FACTORY_BATCHES);
+    if (sell > 0) { res[id] -= sell; sold += sell * PRODUCTS[id].import * STORE_SALE_SHARE; }
+  }
+  for (const id of PRODUCT_IDS) if (res[id]) res[id] = Math.round(res[id] * 10) / 10;
+  return { made, used, sold: Math.round(sold) };
+}
+// Assign (or clear, with id null) the recipe a factory runs.
+export function setRecipe(s, i, id) {
+  if (s.grid[i] !== T.FACTORY) return { ok: false, reason: 'That’s not a factory' };
+  if (id !== null) {
+    if (!PRODUCTS[id]) return { ok: false, reason: 'Unknown product' };
+    if (!hasTech(s, PRODUCTS[id].tech)) return { ok: false, reason: 'Research that first' };
+  }
+  s.rec ||= {};
+  if (id === null) delete s.rec[i]; else s.rec[i] = id;
+  s._plan = null;
+  return { ok: true };
 }
 // ---------- the town hall: how big the city is ----------
 // How each objective is checked. `x` has what the city can't know by itself: its alliance and how many cities
@@ -360,7 +413,7 @@ const PATH_TESTS = {
   pop15: (s) => s.people.length >= 15, school: (s) => pathCount(s, T.SCHOOL) >= 1, farm: (s) => pathCount(s, T.FARM) >= 1,
   harvest: (s) => (s.counters.harvests || 0) >= 1,
   pop40: (s) => s.people.length >= 40, utilities: (s) => pathCount(s, T.WATER) >= 1 && pathCount(s, T.POWER, T.SOLAR, T.WIND) >= 1,
-  tech1: (s) => (s.tech || []).length >= 1, tech2: (s) => (s.tech || []).length >= 2, tech6: (s) => (s.tech || []).length >= 6, materials: (s) => pathCount(s, T.MATERIALS) >= 1,
+  tech1: (s) => (s.tech || []).length >= 1, tech2: (s) => (s.tech || []).length >= 2, tech6: (s) => (s.tech || []).length >= 6, materials: (s) => pathCount(s, T.MATERIALS, T.QUARRY) >= 1,
   clinic: (s) => pathCount(s, T.CLINIC) >= 1, highschool: (s) => pathCount(s, T.HIGH) >= 1, land3: (s) => (s.counters.land || 0) >= 3, happy60: (s) => s.people.length >= 20 && s.happiness >= 0.6,
   pop60: (s) => s.people.length >= 60, trade1: (s) => (s.counters.traded || 0) >= 1, land: (s) => (s.counters.land || 0) >= 1,
   pop120: (s) => s.people.length >= 120, invest: (s) => !!s.listed || Object.keys(s.holdings || {}).length > 0,
@@ -441,7 +494,8 @@ export function sellResource(s, k, n) {
 
 // What a city is worth, from the figures everyone can see; a share is a thousandth of it.
 export function cityValue(c) {
-  const res = TRADE_RES.reduce((a, k) => a + (c.res?.[k] || 0) * RES[k].import, 0);
+  const res = TRADE_RES.reduce((a, k) => a + (c.res?.[k] || 0) * RES[k].import, 0)
+    + PRODUCT_IDS.reduce((a, k) => a + (c.res?.[k] || 0) * PRODUCTS[k].import, 0);
   if (c.status === 'ruins') return 0;
   return Math.max(0, (c.pop || 0) * 60 + (c.peakPop || 0) * 10 + Math.max(0, c.money || 0) * 0.6 + (c.bld || 0) * 35 + res
     + Math.max(0, c.growth || 0) * 40 + (c.happiness || 0) * (c.pop || 0) * 20);
@@ -500,7 +554,7 @@ export function reserve(s, offer, kind, res, qty, price) {
     (s.escrow ||= []).push({ offer, kind, res: null, qty, money: 0, e });
     return { ok: true };
   }
-  if (!TRADE_RES.includes(res)) return { ok: false, reason: 'That can’t be traded' };
+  if (!TRADEABLE.includes(res)) return { ok: false, reason: 'That can’t be traded' };
   if (!(Number.isInteger(qty) && qty >= 1 && qty <= MARKET.maxQty)) return { ok: false, reason: `Between 1 and ${MARKET.maxQty}` };
   if (!(price > 0 && price <= MARKET.maxPrice)) return { ok: false, reason: `Price between $0.01 and $${MARKET.maxPrice}` };
   const total = Math.round(qty * price);
@@ -527,7 +581,7 @@ export function release(s, offer, completed = false) {
 export function receive(s, { money = 0, res = null, qty = 0 }) {
   s.counters.traded = (s.counters.traded || 0) + 1;
   if (money) s.money += money;
-  if (res && TRADE_RES.includes(res) && qty > 0) { s.res ||= {}; s.res[res] = (s.res[res] || 0) + qty; }
+  if (res && TRADEABLE.includes(res) && qty > 0) { s.res ||= {}; s.res[res] = (s.res[res] || 0) + qty; }
 }
 // Labour contracts. Hiring: workers from another city fill your empty jobs until the contract ends.
 export function hireCrew(s, { n, e, days, from }) { (s.contracts ||= []).push({ n, e, until: s.day + days, from }); s._plan = null; }
@@ -658,12 +712,15 @@ export function tileCost(s, i, type) {
   return base;
 }
 
-// Materials a building needs, and what it costs: the price includes buying them in, less MAT_BUY for each load from your store.
+// Materials a building needs, and what it costs: the price includes buying them in, less MAT_BUY for each load
+// from your store. Wood is used first, then metal, for whatever's short.
 export const matCost = (type) => (B[type]?.cost ? Math.max(1, Math.round(B[type].cost * MAT_PER_COST)) : 0);
 export function buildPrice(s, i, type) {
-  const mat = matCost(type), use = Math.min(Math.floor(s.res?.materials || 0), mat), bought = mat - use;
+  const mat = matCost(type);
+  const wood = Math.min(mat, Math.floor(s.res?.wood || 0)), metal = Math.min(mat - wood, Math.floor(s.res?.metal || 0));
+  const use = wood + metal, bought = mat - use;
   const base = type === T.XING ? B[type].cost : tileCost(s, i, type);
-  return { money: Math.max(Math.round(base / 2), base - use * MAT_BUY), mat, use, bought, base };
+  return { money: Math.max(Math.round(base / 2), base - use * MAT_BUY), mat, use, wood, metal, bought, base };
 }
 
 // Land value, 0..1 per tile. Parks, services, transit and clean air raise it; noise lowers it.
@@ -1452,15 +1509,16 @@ export function place(s, i, type) {
   if (crossing(s, i, type)) type = T.XING;
   const price = buildPrice(s, i, type), cost = price.money;
   s.money -= cost;
-  if (price.use) s.res.materials -= price.use;
+  if (price.wood) s.res.wood -= price.wood;
+  if (price.metal) s.res.metal -= price.metal;
   if (s.zone) s.zone[i] = 0;   // your own buildings are public: you pay their upkeep
   s.grid[i] = type;
   s.cond[i] = 0;
   s.lv[i] = 1;
-  s.queue.push({ i, left: B[type].work, tap: 0, paid: cost, mat: price.use });
+  s.queue.push({ i, left: B[type].work, tap: 0, paid: cost, mat: price.use, wood: price.wood, metal: price.metal });
   s.counters.built++;
   s._plan = null;
-  return { ok: true, cost, mat: price.mat };
+  return { ok: true, cost, mat: price.mat, wood: price.wood, metal: price.metal };
 }
 
 export function undoPlace(s, i) {
@@ -1470,7 +1528,7 @@ export function undoPlace(s, i) {
   const [q] = s.queue.splice(k, 1);
   const back = q.paid ?? (t === T.XING ? B[t].cost : tileCost(s, i, t));
   s.money += back;
-  if (q.mat) { s.res ||= {}; s.res.materials = (s.res.materials || 0) + q.mat; }
+  if (q.mat) { s.res ||= {}; s.res.wood = (s.res.wood || 0) + (q.wood || 0); s.res.metal = (s.res.metal || 0) + (q.metal || 0); }
   s.grid[i] = T.EMPTY;
   s.cond[i] = 0;
   s.counters.built = Math.max(0, s.counters.built - 1);
@@ -1588,12 +1646,14 @@ function construct(s, hours = 1) {
     else if (p.j < 0 && canWork(p)) labour += VOLUNTEER_RATE;
   }
   labour *= BUILD_SPEED * hours;
-  // Materials in stock: builders work faster, using some as they go.
-  const mat = s.res?.materials || 0;
+  // Wood or metal in stock: builders work faster, using some as they go (wood first).
+  const mat = (s.res?.wood || 0) + (s.res?.metal || 0);
   if (mat > 0 && s.queue.some((q) => !q.priv)) {
     const boosted = labour * MATERIALS_BOOST, use = Math.min(mat, boosted * MATERIALS_PER_WORK / BUILD_SPEED);
     labour = labour + (boosted - labour) * (use / Math.max(1e-9, boosted * MATERIALS_PER_WORK / BUILD_SPEED));
-    s.res.materials = Math.round((mat - use) * 100) / 100;
+    const wUse = Math.min(s.res?.wood || 0, use), mUse = use - wUse;
+    s.res.wood = Math.round(((s.res?.wood || 0) - wUse) * 100) / 100;
+    s.res.metal = Math.round(((s.res?.metal || 0) - mUse) * 100) / 100;
   }
   for (const q of s.queue.filter((x) => x.priv)) { q.left -= 3 * BUILD_SPEED * hours; if (q.left <= 1e-6) finish(s, q); }
   const pub = () => s.queue.find((x) => !x.priv);
@@ -1780,14 +1840,9 @@ function daily(s, plan, rng) {
   by.trade = TRADE_PER_LINK * Math.min(MAX_LINKS * 2, (s.links || 0) + 2 * (s.railLinks || 0)) * Math.min(1, pop / 30)
     + (s._regional?.trade || 0) + (s._allies || 0) * 15;
   const inc = s._incoming || {};
-  // Factories make goods: sold to linked neighbours for $2 each, or locally for $0.50.
-  const factoryK = (s.flags.robots ? 1.3 : 1) * (s.policy?.carbon ? 0.85 : 1);
-  const goods = s.grid.reduce((a, t, i) => a + (t === T.FACTORY && active(s, i, uc) ? Math.round(GOODS_PER_FACTORY * staffing(s, i) * LEVEL.capacity[level(s, i)] * factoryK) : 0), 0);
-  const linked = (s.links || 0) + (s.railLinks || 0);
-  const harbour = s.grid.some((t, i) => t === T.HARBOUR && active(s, i, uc) && staffing(s, i) > 0);
-  by.exports = Math.round(goods * (linked || harbour ? 2 : 0.5));
+  // Factories used to make an abstract "goods" export; 1.2 replaced that with real recipes (productsDay, below),
+  // sold through a Store or the Market instead of counted here.
   if (s.grid.some((t, i) => t === T.AIRPORT && active(s, i, uc) && staffing(s, i) > 0)) by.trade = Math.round(by.trade + 40 + pop * 0.2);
-  st.goods = goods;
   by.visitors = (inc.fun || 0) * 2 + (inc.care || 0) * 4 + (inc.shop || 0) * 1 + (inc.school || 0) * 2 + (inc.tourists || 0) * 8;
   // Tourism: attractions draw visitors, more when the city is pleasant and linked. Hotels turn day trips into stays.
   let draw = 0, rooms = 0;
@@ -1880,7 +1935,10 @@ function daily(s, plan, rng) {
   const rs = resourcesDay(s, uc);
   st.res = rs;
   if (rs.importCost) { st.upkeep += rs.importCost; st.upkeepBy = { ...st.upkeepBy, imports: rs.importCost }; }
-  if (rs.sold) { st.income += rs.sold; st.byClass = { ...st.byClass, produce: rs.sold }; }
+  if (rs.sold) { st.income += rs.sold; st.byClass = { ...st.byClass, produce: (st.byClass.produce || 0) + rs.sold }; }
+  const ps = productsDay(s, uc);
+  st.products = ps;
+  if (ps.sold) { st.income += ps.sold; st.byClass = { ...st.byClass, produce: (st.byClass.produce || 0) + ps.sold }; }
   // Having none at all is already covered by power and water coverage; this is for having some, but not enough.
   const shortOf = (k) => (pop >= UTILITY_POP && rs.prod[k] > 0 ? rs.short[k] / Math.max(1, rs.need[k]) : 0);
   const shortK = { water: shortOf('water'), power: shortOf('power') };
@@ -2382,7 +2440,7 @@ export function advice(s, plan) {
     if (rsd.short.water > 0 && rsd.prod.water > 0) add(6.5, `Water is running short: ${rsd.short.water} kilolitres a day. Build another water tower.`, T.WATER);
     if (rsd.short.power > 0 && rsd.prod.power > 0) add(6, `Power is running short: ${rsd.short.power} megawatt-hours a day. Build a power station, solar farm or wind turbine.`, s.money >= B[T.POWER].cost ? T.POWER : T.WIND);
   }
-  if (s.people.length >= 15 && !tot.counts[T.MATERIALS] && s.queue.length) add(3.5, 'Buying building materials costs extra. A materials works makes them, and builders work faster with materials in store.', T.MATERIALS);
+  if (s.people.length >= 15 && !tot.counts[T.MATERIALS] && !tot.counts[T.QUARRY] && s.queue.length) add(3.5, 'Buying wood and metal costs extra. A sawmill or quarry makes them, and builders work faster with some in store.', T.MATERIALS);
   if (rsd?.importCost >= 8 && s.people.length >= 30) add(2.5, `Imported food costs ${'$'}${rsd.importCost} a day. Farms grow it here, and more kinds of food make people happier.`, T.FARM);
   if (n.leisure < 0.6) add(3 + 3 * (0.6 - n.leisure), 'People have nothing to do in the evenings.', T.PARK);
   if (n.commute < 0.8) add(3.5, 'Roads are jammed. Add routes or footpaths, or a bus service.', tot.counts[T.DEPOT] ? T.STOP : T.DEPOT);
