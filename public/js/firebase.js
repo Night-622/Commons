@@ -225,6 +225,40 @@ export async function buyPlot(user, mayor, via, px, py, cityName, world = WORLD_
     return { id, ...data, state: serialize(state) };
   });
 }
+// ---------- the market ----------
+// worlds/{w}/offers: open offers to sell, buy or borrow. worlds/{w}/deals: money or goods on their way to a mayor.
+export const newOfferId = (world) => doc(collection(db, 'worlds', world, 'offers')).id;
+export function postOffer(world, id, offer) {
+  return setDoc(doc(db, 'worlds', world, 'offers', id), { ...offer, status: 'open', createdAt: serverTimestamp() });
+}
+export const cancelOffer = (world, id) => updateDoc(doc(db, 'worlds', world, 'offers', id), { status: 'cancelled' });
+export const clearOffer = (world, id) => deleteDoc(doc(db, 'worlds', world, 'offers', id));
+export function listenOffers(world, cb) {
+  return onSnapshot(query(collection(db, 'worlds', world, 'offers'), where('status', '==', 'open'), limit(100)),
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), (e) => console.error('Market', e));
+}
+export function listenMyOffers(world, uid, cb) {
+  return onSnapshot(query(collection(db, 'worlds', world, 'offers'), where('owner', '==', uid), limit(30)),
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), (e) => console.error('My offers', e));
+}
+// Taking an offer and sending your side of it happen together, so nobody gets one without the other.
+export async function takeOffer(world, id, user, plotId, name, deal) {
+  const ref = doc(db, 'worlds', world, 'offers', id);
+  return runTransaction(db, async (tx) => {
+    const o = await tx.get(ref);
+    if (!o.exists() || o.data().status !== 'open') throw new Error('Someone got there first.');
+    tx.update(ref, { status: 'taken', takenBy: user.uid, takenPlot: plotId, takenName: name, takenAt: serverTimestamp() });
+    tx.set(doc(collection(db, 'worlds', world, 'deals')), { ...deal, offer: id, from: user.uid, createdAt: serverTimestamp() });
+    return { id, ...o.data() };
+  });
+}
+export const sendDeal = (world, user, deal) => addDoc(collection(db, 'worlds', world, 'deals'), { ...deal, from: user.uid, createdAt: serverTimestamp() });
+export function listenDeals(world, uid, cb) {
+  return onSnapshot(query(collection(db, 'worlds', world, 'deals'), where('toOwner', '==', uid), limit(30)),
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), (e) => console.error('Deals', e));
+}
+export const finishDeal = (world, id) => deleteDoc(doc(db, 'worlds', world, 'deals', id));
+
 // ---------- co-mayors and the desk ----------
 // The owner sets who else can run a city (plots/{id}.co, up to 3 uids).
 export const setCoMayors = (plotId, uids) => updateDoc(doc(db, 'plots', plotId), { co: uids, updatedAt: serverTimestamp() });

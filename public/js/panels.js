@@ -1,8 +1,48 @@
 // HTML for the side drawer and the build catalogue. Pure functions: main.js supplies data and wires up buttons.
-import { REGIONAL, ALLIANCE_TRADE, REACTIONS, T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY, BONDS, INSURANCE, TECH, ERAS, TRAITS, CARBON_TAX, LOANS, LOAN_DAYS, CONGESTION_FEE, BADGES, RES, FOOD, TECH_BRANCHES, STORE_BASE } from './constants.js';
+import { REGIONAL, ALLIANCE_TRADE, REACTIONS, T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY, BONDS, INSURANCE, TECH, ERAS, TRAITS, CARBON_TAX, LOANS, LOAN_DAYS, CONGESTION_FEE, BADGES, RES, FOOD, TECH_BRANCHES, STORE_BASE, TRADE_RES, MARKET } from './constants.js';
 import { t as tr } from './i18n.js';
 import { creditRating, greenShare, traitOf, hasTech, canResearch, eraOf, resourceStock } from './sim.js';
 import { ROLES, roleOf, jobText, family, healthText, moodReasons, thought, personName } from './people.js';
+
+// The market: open offers from other cities, a form to post your own, and what you owe or are owed.
+export function marketPanel(ctx) {
+  const { offers, mine, s, tab, kind, debts, loansOut, stock } = ctx;
+  const nm = (k) => RES[k]?.name.toLowerCase() || k, each = (p) => `$${(+p).toFixed(2)}`;
+  const tabs = [['offers', `Offers ${offers.length ? offers.length : ''}`], ['post', 'Post'], ['yours', 'Yours']];
+  const offerLine = (o) => {
+    if (o.kind === 'sell') return [`<b>${esc(o.city)}</b> sells ${o.qty} ${nm(o.res)} at ${each(o.price)} each`, `Buy for ${money(o.total)}`, s.money >= o.total];
+    if (o.kind === 'buy') return [`<b>${esc(o.city)}</b> wants ${o.qty} ${nm(o.res)}, paying ${each(o.price)} each`, `Sell for ${money(o.total)}`, (stock[o.res] || 0) >= o.qty];
+    return [`<b>${esc(o.city)}</b> asks to borrow ${money(o.total)}, repaying ${money(o.repay)} within ${o.days} days`, `Lend ${money(o.total)}`, s.money >= o.total];
+  };
+  let body = '';
+  if (tab === 'offers') {
+    body = offers.length ? `<ul class="picklist market">${offers.map((o) => { const [text, act, ok] = offerLine(o);
+      return `<li><span>${text}<small class="soft">Mayor ${esc(o.ownerName)}</small></span><button class="btn small ${ok ? 'primary' : ''}" type="button" data-take="${o.id}" ${ok ? '' : 'disabled'}>${act}</button></li>`; }).join('')}</ul>`
+      : '<p class="soft">No offers yet. Post one: sell what you have too much of, ask for what you need, or ask for a loan.</p>';
+  } else if (tab === 'post') {
+    const resOpts = TRADE_RES.map((k) => `<option value="${k}">${RES[k].name} (you have ${Math.floor(stock[k] || 0)})</option>`).join('');
+    body = `<form id="mk-post" class="mk-form">
+      <label class="field"><span>I want to</span><select id="mk-kind" name="kind">${[['sell', 'Sell'], ['buy', 'Buy'], ['loan', 'Borrow money']].map(([v, l]) => `<option value="${v}" ${kind === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      ${kind === 'loan' ? `<label class="field"><span>Amount</span><input name="amount" type="number" min="100" max="${MARKET.maxLoan}" step="50" value="1000" required></label>
+        <label class="field"><span>Repay</span><input name="repay" type="number" min="100" step="10" value="1100" required></label>
+        <label class="field"><span>Within (days)</span><input name="days" type="number" min="1" max="${MARKET.maxLoanDays}" value="7" required></label>
+        <p class="soft small">Loans are on trust: your city repays automatically on the day, and keeps trying if the money isn’t there.</p>`
+      : `<label class="field"><span>What</span><select name="res">${resOpts}</select></label>
+        <label class="field"><span>How many</span><input name="qty" type="number" min="1" max="${MARKET.maxQty}" value="50" required></label>
+        <label class="field"><span>Price each</span><input name="price" type="number" min="0.01" max="${MARKET.maxPrice}" step="0.01" value="1" required></label>
+        <p class="soft small">${kind === 'sell' ? 'The goods are set aside until someone buys them or you withdraw the offer.' : 'The money is set aside until someone sells to you or you withdraw the offer.'}</p>`}
+      <div class="actions"><button class="btn primary" type="submit">Post the offer</button></div></form>`;
+  } else {
+    const own = (o) => (o.kind === 'sell' ? `Selling ${o.qty} ${nm(o.res)} at ${each(o.price)} each` : o.kind === 'buy' ? `Buying ${o.qty} ${nm(o.res)} at ${each(o.price)} each` : `Asking to borrow ${money(o.total)}, repaying ${money(o.repay)} within ${o.days} days`);
+    const line = (o) => `<li><span>${own(o)}</span><button class="btn small" type="button" data-cancel-offer="${o.id}">Withdraw</button></li>`;
+    body = `<h3 class="sub">Your open offers</h3>${mine.length ? `<ul class="picklist">${mine.map(line).join('')}</ul>` : '<p class="soft small">None.</p>'}
+      <h3 class="sub">You owe</h3>${debts.length ? `<ul class="picklist">${debts.map((d) => `<li><span>${money(d.repay)} to ${esc(d.toName)}<small class="${s.day > d.due ? 'warn' : 'soft'}">${s.day > d.due ? `Late by ${s.day - d.due} days` : `Due on day ${d.due}`}</small></span></li>`).join('')}</ul>` : '<p class="soft small">Nothing.</p>'}
+      <h3 class="sub">Owed to you</h3>${loansOut.length ? `<ul class="picklist">${loansOut.map((l) => `<li><span>${money(l.repay)} from ${esc(l.toName)}<small class="soft">By day ${l.due}</small></span></li>`).join('')}</ul>` : '<p class="soft small">Nothing.</p>'}`;
+  }
+  return `${head('Market')}<p class="soft small">Trade food and materials with other cities, and lend or borrow money.</p>
+    <div class="seg tabs" role="tablist">${tabs.map(([k, l]) => `<button type="button" role="tab" aria-selected="${tab === k}" data-mtab="${k}">${l}</button>`).join('')}</div>
+    ${body}<p id="mk-msg" class="formmsg" role="alert"></p>`;
+}
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 export const icon = (id, cls = 'ic') => `<svg class="${cls}" aria-hidden="true"><use href="#${id}"/></svg>`;

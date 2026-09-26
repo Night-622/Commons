@@ -159,6 +159,45 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // The market. Anyone can read open offers; only a city's mayors post for it; only someone else takes an offer,
+    // and only the owner cancels an open one.
+    match /worlds/{worldId}/offers/{offerId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['kind', 'res', 'qty', 'price', 'total', 'repay', 'days', 'owner', 'ownerName', 'plot', 'city', 'status', 'createdAt'])
+        && request.resource.data.owner == me() && runs(get(docPath('plots', request.resource.data.plot)).data)
+        && request.resource.data.status == 'open' && request.resource.data.createdAt == request.time
+        && request.resource.data.kind in ['sell', 'buy', 'loan']
+        && request.resource.data.total is number && request.resource.data.total >= 0 && request.resource.data.total <= 250000
+        && request.resource.data.qty is int && request.resource.data.qty >= 0 && request.resource.data.qty <= 5000
+        && request.resource.data.get('repay', 0) is number && request.resource.data.get('repay', 0) <= request.resource.data.total * 2 + 1
+        && request.resource.data.ownerName is string && request.resource.data.ownerName.size() <= 24
+        && request.resource.data.city is string && request.resource.data.city.size() <= 40;
+      allow update: if signedIn() && (
+        (resource.data.status == 'open' && resource.data.owner != me()
+          && request.resource.data.status == 'taken' && request.resource.data.takenBy == me() && request.resource.data.takenAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'takenBy', 'takenPlot', 'takenName', 'takenAt']))
+        || (resource.data.owner == me() && resource.data.status == 'open' && request.resource.data.status == 'cancelled'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])));
+      allow delete: if signedIn() && ((resource.data.owner == me() && resource.data.status != 'open') || isAdmin());
+    }
+    // Deals: money or goods on their way. Only between the two sides of one offer: the taker pays, delivers or lends
+    // (up to the offer's total), and a borrower repays their lender (up to the agreed amount).
+    function dealOk(o, d) {
+      return (o.get('takenBy', '') == me() && d.toOwner == o.owner && d.money <= o.total && d.qty <= o.qty)
+        || (o.owner == me() && o.kind == 'loan' && d.toOwner == o.get('takenBy', '') && d.money <= o.get('repay', 0) && d.qty == 0);
+    }
+    match /worlds/{worldId}/deals/{dealId} {
+      allow get: if signedIn() && (resource.data.toOwner == me() || resource.data.from == me());
+      allow list: if signedIn() && resource.data.toOwner == me();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['offer', 'kind', 'from', 'fromName', 'toOwner', 'toPlot', 'money', 'res', 'qty', 'createdAt'])
+        && request.resource.data.from == me() && request.resource.data.createdAt == request.time
+        && request.resource.data.money is number && request.resource.data.money >= 0 && request.resource.data.qty is int && request.resource.data.qty >= 0
+        && dealOk(getAfter(/databases/$(database)/documents/worlds/$(worldId)/offers/$(request.resource.data.offer)).data, request.resource.data);
+      allow delete: if signedIn() && resource.data.toOwner == me();
+    }
+
     // The desk of a shared city: who is playing it now. Only its owner and co-mayors see or take it.
     match /desks/{plotId} {
       allow read: if signedIn() && runs(get(docPath('plots', plotId)).data);

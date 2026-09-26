@@ -85,6 +85,15 @@ const dict = {
 };
 
 const SEASON = { Spring: 'Άνοιξη', Summer: 'Καλοκαίρι', Autumn: 'Φθινόπωρο', Winter: 'Χειμώνας' };
+// The market (1.13)
+Object.assign(dict, {
+  'Market': 'Αγορά', 'Offers': 'Προσφορές', 'Post': 'Δημοσίευση', 'Yours': 'Δικές σας', 'Withdraw': 'Απόσυρση', 'I want to': 'Θέλω να',
+  'Sell': 'Πουλήσω', 'Buy': 'Αγοράσω', 'Borrow money': 'Δανειστώ χρήματα', 'What': 'Τι', 'How many': 'Πόσα', 'Price each': 'Τιμή ανά μονάδα',
+  'Amount': 'Ποσό', 'Repay': 'Αποπληρωμή', 'Within (days)': 'Μέσα σε (ημέρες)', 'Post the offer': 'Δημοσίευση προσφοράς',
+  'Your open offers': 'Οι ανοιχτές προσφορές σας', 'You owe': 'Οφείλετε', 'Owed to you': 'Σας οφείλουν', 'Nothing.': 'Τίποτα.', 'None.': 'Καμία.',
+  'Trade food and materials with other cities, and lend or borrow money.': 'Ανταλλάξτε τρόφιμα και υλικά με άλλες πόλεις, και δανείστε ή δανειστείτε χρήματα.',
+  'Your offer is on the market.': 'Η προσφορά σας είναι στην αγορά.',
+});
 // Resources and the technology tree (1.12)
 Object.assign(dict, {
   'Resources': 'Πόροι', 'Resource': 'Πόρος', 'In store': 'Σε απόθεμα', 'Made': 'Παραγωγή', 'Used': 'Κατανάλωση',

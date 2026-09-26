@@ -3,7 +3,7 @@ import {
   T, B, PLOT, TICK_MS, MAX_OFFLINE_DAYS, HOURS_PER_DAY, SAVE_EVERY_MS, RUBBLE_CLEAR_COST, MAX_LEVEL, LEVEL, UPGRADABLE,
   REBUILD_MONEY, MOVE_KEEP, TUTORIAL_REWARD, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome, DECISIONS, ZONES, ZONE_COST,
   LOAN_DAYS, HISTORIC_DAYS, BADGES, REGIONAL, REGIONAL_SHARE, ALLIANCE_TRADE, DAILY, DAILY_REWARD, WEEKLY, WEEKLY_REWARD, GIFT_LIMITS, REACTIONS,
-  WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
+  RES, MARKET, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
 } from './constants.js';
 import { Renderer, STRIDE, thumbnail, modelHeight } from './render.js';
 import { loadPrefs, savePrefs, applyPrefs, resolvedTheme, palette, PALETTES } from './prefs.js';
@@ -270,6 +270,7 @@ async function enter(u, openId = null) {
   worldUnsub?.(); movesUnsub?.(); worldUnsub = movesUnsub = null;
   chatUnsub?.(); chatUnsub = null; giftsUnsub?.(); giftsUnsub = null; worldNews = [];
   projUnsub?.(); allyUnsub?.(); allyChatUnsub?.(); projUnsub = allyUnsub = allyChatUnsub = null; projects = []; alliances = []; allyChat = []; allyChatFor = null;
+  marketUnsub?.(); myOffersUnsub?.(); dealsUnsub?.(); marketUnsub = myOffersUnsub = dealsUnsub = null; offers = []; myOffers = [];
   clearTimeout(liveTimer); clearTimeout(saveTimer); clearTimeout(retryTimer);
   tut.stop();
   closeDrawer(); closeCatalog();
@@ -344,6 +345,7 @@ async function startGame(doc) {
   startChat();
   startGifts();
   startRegion();
+  startMarket();
   loadProfile();
   startDesk();
   if (innerWidth < 860) { $('pulse').classList.add('closed'); $('pulse-toggle').setAttribute('aria-expanded', 'false'); }
@@ -437,6 +439,7 @@ function startLive() {
   movesUnsub = fb.listenMoves(world.id, user.uid, async (moves) => {
     for (const m of moves) {
       if (m.to !== plotId || !state) continue;
+      if (!firstTime(m.id)) { fb.finishMove(world.id, m.id).catch(() => {}); continue; }
       const clean = (m.people || []).slice(0, 8).map((o) => ({
         f: Math.abs(o.f | 0) % sim.FIRST.length, l: Math.abs(o.l | 0) % sim.SURNAMES.length, a: Math.max(0, Math.min(90, o.a | 0)),
         e: Math.max(0, Math.min(3, o.e | 0)), sp: Math.max(0, Math.min(12, +o.sp || 0)), hp: Math.max(1, Math.min(100, +o.hp || 100)), m: Math.max(0, Math.min(1, +o.m || 0.6)),
@@ -501,7 +504,7 @@ function startGifts() {
     for (const g of gifts) {
       if (g.to !== plotId || !state) continue;
       fb.finishGift(world.id, g.id).catch((e) => console.error(e));
-      if (muted().has(g.fromOwner) || state.status !== 'alive') continue;
+      if (!firstTime(g.id) || muted().has(g.fromOwner) || state.status !== 'alive') continue;
       if (state.flags.giftDay !== today()) { state.flags.giftDay = today(); state.flags.giftIn = 0; }
       const amt = Math.max(0, Math.min(Math.floor(+g.amount || 0), GIFT_LIMITS.receive - state.flags.giftIn));
       if (!amt) { notify(`${g.fromName} sent a gift, but you’ve had today’s limit of ${money(GIFT_LIMITS.receive)}.`, 'info'); continue; }
@@ -561,6 +564,111 @@ function wireBook() {
 // ---------- the region: shared projects and alliances ----------
 let tagOf = new Map(), projUnsub = null, allyUnsub = null, allyChatUnsub = null, projects = [], alliances = [], allyChat = [], allyChatFor = null, lastAllyMsg = 0;
 const myAlliance = () => alliances.find((a) => a.members?.includes(user?.uid));
+// Gifts, families and deals can arrive again before their removal lands, or after a reload: each city remembers
+// the ones it has already applied, so they count once.
+function firstTime(id) {
+  if ((state.applied || []).includes(id)) return false;
+  state.applied = [...(state.applied || []), id].slice(-80);
+  return true;
+}
+
+// ---------- the market ----------
+let offers = [], myOffers = [], marketUnsub = null, myOffersUnsub = null, dealsUnsub = null, marketTab = 'offers', marketKind = 'sell';
+const RES_NAME = (k) => RES[k]?.name.toLowerCase() || k;
+function startMarket() {
+  marketUnsub = fb.listenOffers(world.id, (list) => { offers = list; if (drawer === 'market') refreshDrawer(); });
+  // My offers: once one is taken and its deal has arrived, or cancelled and given back, tidy it off the board.
+  myOffersUnsub = fb.listenMyOffers(world.id, user.uid, (list) => {
+    myOffers = list;
+    // (A taken loan stays until it's repaid: the repayment is checked against it.)
+    for (const o of list) if (o.status !== 'open' && o.plot === plotId && !(state.escrow || []).some((e) => e.offer === o.id) && !(state.debts || []).some((d) => d.offer === o.id)) fb.clearOffer(world.id, o.id).catch(() => {});
+    if (drawer === 'market') refreshDrawer();
+  });
+  dealsUnsub = fb.listenDeals(world.id, user.uid, (list) => {
+    for (const d of list) {
+      if (!state || watching || (d.toPlot && d.toPlot !== plotId)) continue;   // for another of your cities: it waits until you open that one
+      // A deal can show up again before its removal lands (or after a reload): the city remembers the ones it has applied.
+      if (!firstTime(d.id)) { fb.finishDeal(world.id, d.id).catch(() => {}); continue; }
+      const e = sim.release(state, d.offer, true);
+      if (d.kind === 'sell') { sim.receive(state, { money: d.money }); notify(`${d.fromName} bought your ${RES_NAME(e?.res)} for ${money(d.money)}.`, 'good'); }
+      else if (d.kind === 'buy') { sim.receive(state, { res: d.res, qty: d.qty }); notify(`${d.fromName} delivered ${d.qty} ${RES_NAME(d.res)}.`, 'good'); }
+      else if (d.kind === 'loan') {
+        sim.receive(state, { money: d.money });
+        sim.addDebt(state, { offer: d.offer, to: d.from, toName: d.fromName, toPlot: myOffers.find((o) => o.id === d.offer)?.takenPlot || '', repay: e?.repay || d.money, due: state.day + (e?.days || 7) });
+        notify(`${d.fromName} lent you ${money(d.money)}. It’s repaid automatically on day ${state.day + (e?.days || 7)}.`, 'good');
+      } else if (d.kind === 'repay') {
+        sim.receive(state, { money: d.money });
+        state.loansOut = (state.loansOut || []).filter((l) => l.offer !== d.offer);
+        notify(`${d.fromName} repaid ${money(d.money)}.`, 'good');
+      }
+      play('coin');
+      if (d.kind === 'sell' || d.kind === 'buy') fb.clearOffer(world.id, d.offer).catch(() => {});   // done: off the board
+      fb.finishDeal(world.id, d.id).catch((err) => console.error(err));
+      afterChange(); save();
+    }
+  });
+}
+// Debts fall due on their day; if the money isn't there, they're paid as soon as it is.
+function repayDebts() {
+  if (!state || watching) return;
+  for (const d of sim.dueDebts(state)) {
+    sim.payDebt(state, d.offer);
+    fb.sendDeal(world.id, user, { offer: d.offer, kind: 'repay', fromName: state.name.slice(0, 40), toOwner: d.to, toPlot: d.toPlot || '', money: d.repay, res: null, qty: 0 })
+      .then(() => { notify(`Repaid ${money(d.repay)} to ${d.toName}.`, 'act'); save(); fb.clearOffer(world.id, d.offer).catch(() => {}); })
+      .catch((e) => { console.error('Repay', e); sim.addDebt(state, d); state.money += d.repay; });
+  }
+}
+async function acceptOffer(o) {
+  const deal = { kind: o.kind, fromName: state.name.slice(0, 40), toOwner: o.owner, toPlot: o.plot, money: 0, res: null, qty: 0 };
+  if (o.kind === 'sell') { if (state.money < o.total) throw new Error(`Needs ${money(o.total)}.`); deal.money = o.total; }
+  if (o.kind === 'buy') { if ((state.res?.[o.res] || 0) < o.qty) throw new Error(`You have ${Math.floor(state.res?.[o.res] || 0)} ${RES_NAME(o.res)} in store.`); deal.res = o.res; deal.qty = o.qty; }
+  if (o.kind === 'loan') { if (state.money < o.total) throw new Error(`Needs ${money(o.total)}.`); deal.money = o.total; }
+  await fb.takeOffer(world.id, o.id, user, plotId, state.name.slice(0, 40), deal);
+  if (o.kind === 'sell') { state.money -= o.total; sim.receive(state, { res: o.res, qty: o.qty }); notify(`Bought ${o.qty} ${RES_NAME(o.res)} from ${o.city}.`, 'good'); }
+  if (o.kind === 'buy') { state.res[o.res] -= o.qty; state.money += o.total; notify(`Sold ${o.qty} ${RES_NAME(o.res)} to ${o.city} for ${money(o.total)}.`, 'good'); }
+  if (o.kind === 'loan') { state.money -= o.total; (state.loansOut ||= []).push({ offer: o.id, to: o.owner, toName: o.city, repay: o.repay, due: state.day + (o.days || 7) }); notify(`Lent ${money(o.total)} to ${o.city}. They repay ${money(o.repay)}.`, 'good'); }
+  play('coin'); afterChange(); await save();
+}
+async function postOffer(form) {
+  const kind = form.kind, id = fb.newOfferId(world.id);
+  const qty = kind === 'loan' ? Math.round(+form.amount) : Math.round(+form.qty), price = kind === 'loan' ? Math.round(+form.repay) : +form.price;
+  if (kind === 'loan') {
+    if (!(price >= qty && price <= qty * 2)) throw new Error('Repay between the amount and twice it.');
+    if (!(+form.days >= 1 && +form.days <= MARKET.maxLoanDays)) throw new Error(`Repay within 1 to ${MARKET.maxLoanDays} days.`);
+  }
+  const r = sim.reserve(state, id, kind, kind === 'loan' ? null : form.res, qty, price);
+  if (!r.ok) throw new Error(r.reason + '.');
+  if (kind === 'loan') state.escrow[state.escrow.length - 1].days = Math.round(+form.days);
+  await save();
+  const offer = kind === 'loan'
+    ? { kind, res: null, qty: 0, price: 0, total: qty, repay: price, days: Math.round(+form.days) }
+    : { kind, res: form.res, qty, price: Math.round(price * 100) / 100, total: r.total };
+  try { await fb.postOffer(world.id, id, { ...offer, owner: user.uid, ownerName: mayor.slice(0, 24), plot: plotId, city: state.name.slice(0, 40) }); }
+  catch (e) { sim.release(state, id); afterChange(); throw e; }
+  play('coin'); notify('Your offer is on the market.', 'act'); afterChange(); marketTab = 'yours';
+}
+function marketCtx() {
+  return { offers: offers.filter((o) => o.owner !== user.uid), mine: myOffers.filter((o) => o.status === 'open'), s: state, tab: marketTab, kind: marketKind,
+    debts: state.debts || [], loansOut: state.loansOut || [], money: state.money, stock: sim.resourceStock(state) };
+}
+function wireMarket(box) {
+  box.querySelectorAll('[data-mtab]').forEach((b) => { b.onclick = () => { marketTab = b.dataset.mtab; renderDrawer(); }; });
+  box.querySelector('#mk-kind')?.addEventListener('change', (e) => { marketKind = e.target.value; renderDrawer(); });
+  box.querySelectorAll('[data-take]').forEach((b) => { b.onclick = () => busy(b, async () => { const o = offers.find((x) => x.id === b.dataset.take); if (o) await acceptOffer(o); }, $('mk-msg')); });
+  box.querySelectorAll('[data-cancel-offer]').forEach((b) => { b.onclick = () => busy(b, async () => {
+    const id = b.dataset.cancelOffer;
+    await fb.cancelOffer(world.id, id);
+    sim.release(state, id);
+    fb.clearOffer(world.id, id).catch(() => {});
+    notify('Offer withdrawn. What you set aside is back.', 'act'); afterChange(); save();
+  }, $('mk-msg')); });
+  const post = box.querySelector('#mk-post');
+  if (post) post.onsubmit = (e) => { e.preventDefault(); busy(post.querySelector('button[type=submit]'), async () => {
+    const f = Object.fromEntries(new FormData(post).entries());
+    await postOffer({ ...f, kind: marketKind });
+  }, $('mk-msg')); };
+}
+
 function startRegion() {
   projUnsub = fb.listenProjects(world.id, (list) => {
     const was = new Set(projects.filter((p) => p.done).map((p) => p.id));
@@ -1027,6 +1135,7 @@ function startLoops() {
     music(prefs.music, prefs.musicVolume, nightAmt() > 0.5);
     if (drawer === 'inspect' || drawer === 'person') refreshDrawer();
     else if (drawer && drawer !== 'world' && drawer !== 'chat' && state.hour !== lastHour) refreshDrawer();
+    if (state.hour !== lastHour) repayDebts();
     lastHour = state.hour;
     if (Date.now() - lastSave > SAVE_EVERY_MS && !saveFails) save();
   }, 500);
@@ -1673,6 +1782,7 @@ const KEY_ACTIONS = {
   chat: { key: 'k', label: 'Chat', run: () => openPanel('chat') },
   world: { key: 'j', label: 'World', run: () => openPanel('world') },
   region: { key: 'y', label: 'Region', run: () => openPanel('region') },
+  market: { key: 'x', label: 'Market', run: () => openPanel('market') },
   views: { key: 't', label: 'Info views', run: () => toggleTraffic() },
   view: { key: 'v', label: '3D or 2D', run: () => toggleView() },
   home: { key: 'h', label: 'Go home', run: () => fitHome() },
@@ -2104,6 +2214,7 @@ function renderDrawer() {
   else if (drawer === 'chat') { const m = muted(); html = panels.chatPanel({ messages: chatMessages.filter((x) => !m.has(x.uid)).map((x) => ({ ...x, text: clean(x.text) })), me: user.uid, world, colourOf, error: chatError && fb.authMessage(chatError) }); }
   else if (drawer === 'world') html = panels.worldPanel(worldCtx());
   else if (drawer === 'region') html = panels.regionPanel(regionCtx());
+  else if (drawer === 'market') html = panels.marketPanel(marketCtx());
   box.innerHTML = html;
   box.classList.remove('hidden');
   box.dataset.mode = drawer;
@@ -2145,6 +2256,7 @@ function wireDrawer(box) {
   box.querySelectorAll('[data-filter]').forEach((b) => { b.onclick = () => { peopleFilter = b.dataset.filter; renderDrawer(); }; });
   box.querySelectorAll('[data-stats-tab]').forEach((b) => { b.onclick = () => { statsTab = b.dataset.statsTab; renderDrawer(); }; });
   if (drawer === 'region') wireRegion(box);
+  if (drawer === 'market') wireMarket(box);
   box.querySelectorAll('[data-gift]').forEach((b) => { b.onclick = () => { const p = plots.get(b.dataset.gift); if (p) giveGift(p); }; });
   const gb = box.querySelector('[data-book]');
   if (gb && gb.dataset.book !== bookFor) loadBook(gb.dataset.book); else if (gb) wireBook();

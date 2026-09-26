@@ -431,3 +431,41 @@ test('co-mayors: the owner adds friends, who can save and take the desk; others 
   await b.fb.leaveCo(pa.id, b.uid);
   await assert.rejects(b.fb.savePlot(pa.id, st), /permission/i);
 });
+
+// ---------- the market (1.13) ----------
+test('market: sell, buy and loan offers; deals only between the two sides', async () => {
+  const a = await player(), b = await player(), c = await player();
+  const w = await newWorld(a);
+  const pa = await a.fb.claimPlot(a.user, 'Ana', 'A', w.id), pb = await b.fb.claimPlot(b.user, 'Ben', 'B', w.id);
+  await c.fb.claimPlot(c.user, 'Cy', 'C', w.id);
+  const offer = (kind, extra) => ({ kind, res: 'fruit', qty: 50, price: 2, total: 100, owner: a.uid, ownerName: 'Ana', plot: pa.id, city: 'A', ...extra });
+  // Ana sells 50 fruit; Ben buys it and pays in the same transaction.
+  const sellId = a.fb.newOfferId(w.id);
+  await a.fb.postOffer(w.id, sellId, offer('sell'));
+  const open = await first((cb) => b.fb.listenOffers(w.id, cb));
+  assert.ok(open.some((o) => o.id === sellId));
+  await assert.rejects(a.fb.takeOffer(w.id, sellId, a.user, pa.id, 'Ana', { kind: 'sell', fromName: 'A', toOwner: a.uid, toPlot: pa.id, money: 100, res: null, qty: 0 }), /permission/i, 'not your own offer');
+  await b.fb.takeOffer(w.id, sellId, b.user, pb.id, 'Ben', { kind: 'sell', fromName: 'B', toOwner: a.uid, toPlot: pa.id, money: 100, res: null, qty: 0 });
+  await assert.rejects(c.fb.takeOffer(w.id, sellId, c.user, 'x', 'Cy', { kind: 'sell', fromName: 'C', toOwner: a.uid, toPlot: pa.id, money: 100, res: null, qty: 0 }), /got there first/);
+  const deals = await first((cb) => a.fb.listenDeals(w.id, a.uid, cb));
+  assert.equal(deals[0].money, 100);
+  await a.fb.finishDeal(w.id, deals[0].id);
+  // Deals must match an offer you're party to, and stay within its total.
+  await assertFails(c.fb.sendDeal(w.id, c.user, { offer: sellId, kind: 'sell', fromName: 'C', toOwner: a.uid, toPlot: pa.id, money: 5, res: null, qty: 0 }));
+  await assertFails(b.fb.sendDeal(w.id, b.user, { offer: sellId, kind: 'sell', fromName: 'B', toOwner: a.uid, toPlot: pa.id, money: 9999, res: null, qty: 0 }));
+  // A loan: Ben lends, Ana repays up to the agreed amount, and nobody else can.
+  const loanId = a.fb.newOfferId(w.id);
+  await a.fb.postOffer(w.id, loanId, offer('loan', { res: null, qty: 0, price: 0, total: 1000, repay: 1150, days: 5 }));
+  await b.fb.takeOffer(w.id, loanId, b.user, pb.id, 'Ben', { kind: 'loan', fromName: 'B', toOwner: a.uid, toPlot: pa.id, money: 1000, res: null, qty: 0 });
+  await a.fb.sendDeal(w.id, a.user, { offer: loanId, kind: 'repay', fromName: 'A', toOwner: b.uid, toPlot: pb.id, money: 1150, res: null, qty: 0 });
+  await assertFails(a.fb.sendDeal(w.id, a.user, { offer: loanId, kind: 'repay', fromName: 'A', toOwner: b.uid, toPlot: pb.id, money: 5000, res: null, qty: 0 }));
+  await assertFails(a.fb.sendDeal(w.id, a.user, { offer: loanId, kind: 'repay', fromName: 'A', toOwner: c.uid, toPlot: 'x', money: 10, res: null, qty: 0 }));
+  // Cancelling: only the owner, only while open; a borrower can't ask to repay more than twice the loan.
+  const buyId = a.fb.newOfferId(w.id);
+  await a.fb.postOffer(w.id, buyId, offer('buy'));
+  await assertFails(b.fb.cancelOffer(w.id, buyId));
+  await a.fb.cancelOffer(w.id, buyId);
+  await a.fb.clearOffer(w.id, buyId);
+  await assertFails(a.fb.postOffer(w.id, a.fb.newOfferId(w.id), offer('loan', { total: 1000, repay: 5000 })));
+  await assertFails(b.fb.postOffer(w.id, b.fb.newOfferId(w.id), offer('sell', { owner: b.uid })));   // for Ana's city
+});

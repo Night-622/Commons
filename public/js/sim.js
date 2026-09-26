@@ -6,7 +6,7 @@ import {
   LINK_MOOD, MAX_LINKS, HISTORY_DAYS, LOG_SIZE, EVENT_CHANCE, CHUNK, CHUNKS, START_CHUNKS, LAND_PRICE, LAND_STEP,
   MOVE_FEE, ADULT, RETIRE, WAGE, isHome, walkable, BUS_SEATS, COMMUTE_JOBS, TICK_MS, isRoad, isRail, POLICY, WANT_REWARD,
   GOODS_PER_FACTORY, SEASONS, SEASON_DAYS, YEAR_DAYS, UTILITY_POP, DECISIONS, ELECTION_EVERY, ZONES, ZONE_COST,
-  RES, FOOD, USE, STORE_BASE, SURPLUS_SALE, MATERIALS_BOOST, MATERIALS_PER_WORK, PLOT_BUY_PARCELS, PLOT_BUY_STEP, PLOT_BUY_MIN, BUILD_SPEED, RECRUIT_COST, FIRED_DAYS, ADULT_STUDY_YEARS, TRAINING_YEARS, EDU, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
+  TRADE_RES, MARKET, RES, FOOD, USE, STORE_BASE, SURPLUS_SALE, MATERIALS_BOOST, MATERIALS_PER_WORK, PLOT_BUY_PARCELS, PLOT_BUY_STEP, PLOT_BUY_MIN, BUILD_SPEED, RECRUIT_COST, FIRED_DAYS, ADULT_STUDY_YEARS, TRAINING_YEARS, EDU, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
 } from './constants.js';
 
 const N = PLOT * PLOT;
@@ -303,6 +303,55 @@ function resourcesDay(s, uc) {
   }
   return { prod, need, short, imported, importCost, sold: Math.round(sold), variety, cap };
 }
+// ---------- the market: escrow, deliveries and debts ----------
+// Posting an offer sets its goods (sell) or money (buy) aside until it's taken or cancelled.
+export function reserve(s, offer, kind, res, qty, price) {
+  if (!['sell', 'buy', 'loan'].includes(kind)) return { ok: false, reason: 'Unknown offer' };
+  if ((s.escrow || []).length >= MARKET.maxOpen) return { ok: false, reason: `You can have ${MARKET.maxOpen} offers open at once` };
+  if (kind === 'loan') {
+    if (!(qty >= 100 && qty <= MARKET.maxLoan)) return { ok: false, reason: `Ask for between $100 and $${MARKET.maxLoan.toLocaleString()}` };
+    (s.escrow ||= []).push({ offer, kind, res: null, qty: 0, money: 0, amount: qty, repay: Math.round(price), days: 0 });
+    return { ok: true };
+  }
+  if (!TRADE_RES.includes(res)) return { ok: false, reason: 'That can’t be traded' };
+  if (!(Number.isInteger(qty) && qty >= 1 && qty <= MARKET.maxQty)) return { ok: false, reason: `Between 1 and ${MARKET.maxQty}` };
+  if (!(price > 0 && price <= MARKET.maxPrice)) return { ok: false, reason: `Price between $0.01 and $${MARKET.maxPrice}` };
+  const total = Math.round(qty * price);
+  if (kind === 'sell') {
+    if ((s.res?.[res] || 0) < qty) return { ok: false, reason: `You have ${Math.floor(s.res?.[res] || 0)} in store` };
+    s.res[res] -= qty;
+    (s.escrow ||= []).push({ offer, kind, res, qty, money: 0 });
+  } else {
+    if (s.money < total) return { ok: false, reason: `Needs $${total}` };
+    s.money -= total;
+    (s.escrow ||= []).push({ offer, kind, res, qty, money: total });
+  }
+  return { ok: true, total };
+}
+// A cancelled offer gives back what was set aside; a completed one just clears it.
+export function release(s, offer, completed = false) {
+  const k = (s.escrow || []).findIndex((e) => e.offer === offer);
+  if (k < 0) return null;
+  const [e] = s.escrow.splice(k, 1);
+  if (!completed) { if (e.res) s.res[e.res] = (s.res[e.res] || 0) + e.qty; s.money += e.money; }
+  return e;
+}
+// Something arriving from another city: money, goods, or both.
+export function receive(s, { money = 0, res = null, qty = 0 }) {
+  if (money) s.money += money;
+  if (res && TRADE_RES.includes(res) && qty > 0) { s.res ||= {}; s.res[res] = (s.res[res] || 0) + qty; }
+}
+// Loans between cities: the borrower's game repays on the due day (and keeps trying if it can't).
+export function addDebt(s, debt) { (s.debts ||= []).push({ ...debt, late: 0 }); }
+export function dueDebts(s) { return (s.debts || []).filter((d) => s.day >= d.due && s.money >= d.repay); }
+export function payDebt(s, offer) {
+  const k = (s.debts || []).findIndex((d) => d.offer === offer);
+  if (k < 0) return null;
+  const [d] = s.debts.splice(k, 1);
+  s.money -= d.repay;
+  return d;
+}
+
 export const resourceStock = (s) => ({ ...Object.fromEntries(Object.keys(RES).map((k) => [k, 0])), ...(s.res || {}) });
 
 export function buyLand(s, c) {
@@ -1600,6 +1649,7 @@ function daily(s, plan, rng) {
   }
 
   // Resources: what was made, what people and buildings used, what had to be imported, and what was left over.
+  for (const d of s.debts || []) if (s.day > d.due) d.late = (d.late || 0) + 1;
   const rs = resourcesDay(s, uc);
   st.res = rs;
   if (rs.importCost) { st.upkeep += rs.importCost; st.upkeepBy = { ...st.upkeepBy, imports: rs.importCost }; }

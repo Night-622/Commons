@@ -239,6 +239,9 @@ export const RES = {
   materials: { name: 'Building materials', import: 1 },
 };
 export const FOOD = ['veg', 'fruit', 'dairy', 'meat'];
+// The market: offers to sell or buy resources, and loan requests, open to every mayor in the world.
+export const TRADE_RES = ['veg', 'fruit', 'dairy', 'meat', 'materials'];
+export const MARKET = { maxQty: 5000, maxPrice: 50, maxLoan: 20000, maxLoanDays: 30, maxOpen: 6 };
 export const USE = { water: 1, power: 0.5, food: 1, powerPerBuilding: 1 };   // a day, per person (and per staffed building for power)
 export const STORE_BASE = 200;          // of each resource, before warehouses
 export const SURPLUS_SALE = 0.5;        // surplus sells for this share of the import price

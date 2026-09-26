@@ -167,6 +167,23 @@ export async function coCities(uid) { return under('plots').filter((p) => (p.co 
 export const takeDesk = async (plotId, u, name, idle = false) => { set(`desks/${plotId}`, { uid: u.uid, name, at: now(), idle }); persist(); };
 export const listenDesk = (plotId, cb) => listen(() => { const d = get(`desks/${plotId}`); cb(d ? out(plotId, d) : null); });
 export function listenState(plotId, cb) { let last = null; return listen(() => { const s = get(`plotState/${plotId}`)?.state; if (s && s !== last) { last = s; cb(s); } }); }
+export const newOfferId = () => 'o' + newId();
+export async function postOffer(world, id, offer) { set(`worlds/${world}/offers/${id}`, { ...offer, status: 'open', createdAt: now() }); persist(); }
+export async function cancelOffer(world, id) { merge(`worlds/${world}/offers/${id}`, { status: 'cancelled' }); persist(); }
+export async function clearOffer(world, id) { del(`worlds/${world}/offers/${id}`); persist(); }
+export const listenOffers = (world, cb) => listen(() => cb(under(`worlds/${world}/offers`).filter((o) => o.status === 'open')));
+export const listenMyOffers = (world, uid, cb) => listen(() => cb(under(`worlds/${world}/offers`).filter((o) => o.owner === uid)));
+export async function takeOffer(world, id, u, plotId, name, deal) {
+  const o = get(`worlds/${world}/offers/${id}`);
+  if (!o || o.status !== 'open') throw new Error('Someone got there first.');
+  Object.assign(o, { status: 'taken', takenBy: u.uid, takenPlot: plotId, takenName: name, takenAt: now() });
+  set(`worlds/${world}/deals/${newId()}`, { ...deal, offer: id, from: u.uid, createdAt: now() });
+  persist();
+  return { id, ...o };
+}
+export async function sendDeal(world, u, deal) { set(`worlds/${world}/deals/${newId()}`, { ...deal, from: u.uid, createdAt: now() }); persist(); }
+export const listenDeals = (world, uid, cb) => listen(() => cb(under(`worlds/${world}/deals`).filter((d) => d.toOwner === uid)));
+export const finishDeal = async (world, id) => { del(`worlds/${world}/deals/${id}`); persist(); };
 export const usingLegacySaves = () => false;
 export async function savePlot(id, state, extra = {}) {
   await tick();

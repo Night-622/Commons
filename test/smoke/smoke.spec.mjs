@@ -364,3 +364,50 @@ test('resources: the Resources tab and research tree after a day', async ({ page
   if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/resources.png` });
   expect(clean(errors)).toEqual([]);
 });
+
+test('market: one mayor sells vegetables, another buys them, and a loan request is lent to', async ({ browser }) => {
+  test.setTimeout(120_000);
+  const ctx = await browser.newContext();
+  const a = await ctx.newPage();
+  const errors = await newGame(a);   // Mona, Testhaven
+  // Give Mona 120 vegetables in store (as if her farms had been busy).
+  await a.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plotState/')) { const s = JSON.parse(v.state); s.res = { veg: 120 }; v.state = JSON.stringify(s); } db.user = null; localStorage.setItem('fakefb', JSON.stringify(db)); });
+  await a.reload();
+  await expect(a.locator('#game')).toBeVisible();
+  await closeModal(a);
+  await a.locator('#rail [data-panel="market"]').click();
+  await a.locator('#drawer [data-mtab="post"]').click();
+  await a.locator('#drawer select[name="res"]').selectOption('veg');
+  await a.locator('#drawer input[name="qty"]').fill('100');
+  await a.locator('#drawer input[name="price"]').fill('0.5');
+  await a.locator('#drawer #mk-post button[type=submit]').click();
+  await expect(a.locator('#drawer')).toContainText('Selling 100 vegetables at $0.50 each');
+  // Nia founds next door, buys the vegetables, and asks for a loan.
+  const b = await ctx.newPage();
+  errors.push(...await watch(b));
+  await b.addInitScript(() => { try { localStorage.setItem('commons-seen-help', '1'); } catch { /* ignore */ } });
+  await found(b, { mayor: 'Nia', city: 'Nextdoor' });
+  await closeModal(b);
+  await b.locator('#rail [data-panel="market"]').click();
+  await expect(b.locator('#drawer')).toContainText('Testhaven');
+  await b.locator('#drawer [data-take]').first().click();
+  await expect(b.locator('#toasts')).toContainText('Bought 100 vegetables');
+  // Mona is paid $50.
+  await expect(a.locator('#toasts')).toContainText('bought your vegetables for $50', { timeout: 10_000 });
+  await b.locator('#drawer [data-mtab="post"]').click();
+  await b.locator('#mk-kind').selectOption('loan');
+  await b.locator('#drawer input[name="amount"]').fill('500');
+  await b.locator('#drawer input[name="repay"]').fill('550');
+  await b.locator('#drawer #mk-post button[type=submit]').click();
+  await a.locator('#drawer [data-mtab="offers"]').click();
+  await a.locator('#drawer [data-take]').first().click();
+  await expect(a.locator('#toasts')).toContainText('Lent $500 to Nextdoor');
+  await expect(b.locator('#toasts')).toContainText('lent you $500', { timeout: 10_000 });
+  await b.locator('#drawer [data-mtab="yours"]').click();
+  await expect(b.locator('#drawer')).toContainText('$550 to Testhaven');
+  await expect(b.locator('#drawer')).not.toContainText('$500 to Testhaven');   // the loan arrives once, not twice
+  await expect(b.locator('#v-money')).toContainText('$3,450');   // 3,000 - 50 for vegetables + 500 lent
+  if (process.env.SHOTS) await b.screenshot({ path: `${process.env.SHOTS}/market.png` });
+  expect(clean(errors)).toEqual([]);
+  await ctx.close();
+});
