@@ -1,6 +1,6 @@
 // Guided tour. Steps with a task wait until the player actually does it, then move on by themselves.
 import { T, TUTORIAL_REWARD } from './constants.js';
-import { HALL_INDEX, neighbours } from './sim.js';
+import { HALL_INDEX, neighbours, hasTech } from './sim.js';
 
 const KEY = 'commons-tutorial';
 const count = (s, t) => s.grid.filter((v) => v === t).length;
@@ -48,10 +48,19 @@ const STEPS = [
   { title: 'Buses and trains', text: 'A bus depot and two or more stops run buses; people near a stop leave the car at home. Stations beside a railway carry people on long trips. Run track or roads into a neighbour’s city and your residents can commute to jobs there.', target: '[data-mode="build"]' },
   { title: 'Meet your people', text: 'Everyone has a name, a family, a job and something on their mind. Click anyone to see their day, or follow them around town.',
     task: 'Open People (P)', target: '[data-panel="people"]', done: (a) => a.panel() === 'people' },
-  { title: 'Move things around', text: 'Move mode picks up a finished building and puts it down somewhere else, residents and all, for a quarter of its price.', target: '[data-mode="move"]' },
-  { title: 'Your resources', text: 'Water, power, food and building materials, always on show here. Farms, water towers and the materials works make them; tap a producing building when a bubble floats over it to collect a harvest.', target: '#resbar' },
+  { title: 'Move things around', text: 'Move mode picks up a finished building and puts it down somewhere else, residents and all, for a quarter of its price.', target: '[data-mode="move"]',
+    task: 'Move a building', base: (a) => a.state().counters.moved, done: (a, b) => a.state().counters.moved > b },
+  { title: 'Your resources', text: 'Water, power, wood, metal and each kind of food, always on show here. Farms, water towers, the Sawmill and Quarry make them.', target: '#resbar',
+    task: 'Tap a producing building when a bubble floats over it to collect a harvest', base: (a) => a.state().counters.harvests, done: (a, b) => a.state().counters.harvests > b },
   { title: 'Your next step', text: 'This line always says what to do next, with a Show me button. Your town hall grows by itself as the city does: Goals shows what the next level needs, and each level lets you buy more land and store more.', target: '#hint' },
-  { title: 'Research', text: 'City stats, Research: spend research points on high schools, universities, the Market, city shares, farming and more. Your town hall earns some every day.', target: '[data-panel="stats"]' },
+  { title: 'Wood and metal', text: 'A Sawmill cuts timber and a Quarry digs ore and metal. Factories turn either into a product once you’ve researched the recipe, and builders work faster with some in stock.',
+    task: 'Build a sawmill or a quarry', base: (a) => count(a.state(), T.MATERIALS) + count(a.state(), T.QUARRY), done: (a, b) => count(a.state(), T.MATERIALS) + count(a.state(), T.QUARRY) > b },
+  { title: 'Research', text: 'City stats, Research: spend research points on high schools, universities, the Market, city shares, farming, factory recipes and more. Your town hall earns some every day.', target: '[data-panel="stats"]',
+    task: 'Research Carpentry, Toolmaking or Bakery to unlock a factory recipe', done: (a) => ['carpentry', 'toolmaking', 'bakery'].some((id) => hasTech(a.state(), id)) },
+  { title: 'Turn resources into products', text: 'A factory with a researched recipe turns wood, metal, vegetables or eggs into a product. Build one if you don’t have one yet, then tap it in Select mode and choose what to make.',
+    task: 'Assign a recipe to a factory', target: '[data-mode="select"]', base: (a) => Object.keys(a.state().rec || {}).length, done: (a, b) => Object.keys(a.state().rec || {}).length > b },
+  { title: 'Sell what you make', text: 'A staffed Store sells your product stock straight to residents. Research Trade to open the Market, where you can trade products, or anything else, with other mayors.',
+    task: 'Make a trade on the Market', base: (a) => a.state().counters.traded, done: (a, b) => a.state().counters.traded > b },
   { title: 'Talk to your neighbours', text: 'Chat reaches everyone in this world. Link roads with a neighbour for trade and a mood boost.', target: '[data-panel="chat"]' },
   { title: 'Your account', text: 'Account has your lifetime stats and achievements to unlock.', target: '#btn-account' },
   { title: 'You’re ready', text: `Here’s $${TUTORIAL_REWARD} to keep going. You can replay this tour from Help.` },
