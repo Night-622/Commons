@@ -303,15 +303,23 @@ export class Renderer {
       const tx = i % PLOT, ty = (i / PLOT) | 0;
       const dia = [P(tx, ty), P(tx + 1, ty), P(tx + 1, ty + 1), P(tx, ty + 1)];
       if (t === T.ROAD || t === T.XING || t === T.LIGHTS || t === T.ROUNDABOUT) {
-        let col = plot.uc?.has(i) ? th.dirt : th.road;
-        if (traffic && traffic.cap[i]) col = jamColour(traffic.load[i] / traffic.cap[i]);
+        let col = plot.uc?.has(i) ? th.dirt : th.road, jammed = false;
+        if (traffic && traffic.cap[i]) { const ratio = traffic.load[i] / traffic.cap[i]; col = jamColour(ratio); jammed = ratio > 1; }
+        // Jammed roads get a soft pulsing red glow (same shadowColor/shadowBlur technique as the selected-building outline).
+        const glow = jammed ? 0.35 + 0.25 * (0.5 + 0.5 * Math.sin(performance.now() / 260)) : 0;
         if (z >= 9 && !plot.uc?.has(i)) {
           // Pavement on the sides that don't continue into more road.
           poly(g, dia, th.pave);
           const road = (dx, dy) => { const x = tx + dx, y = ty + dy; return x >= 0 && y >= 0 && x < PLOT && y < PLOT && [T.ROAD, T.HALL, T.XING, T.LIGHTS, T.ROUNDABOUT].includes(grid[y * PLOT + x]); };
           const e = 0.16, x0 = road(-1, 0) ? 0 : e, x1 = road(1, 0) ? 1 : 1 - e, y0 = road(0, -1) ? 0 : e, y1 = road(0, 1) ? 1 : 1 - e;
+          if (glow) { g.shadowColor = `rgba(224,40,30,${glow})`; g.shadowBlur = z * 0.7; }
           poly(g, [P(tx + x0, ty + y0), P(tx + x1, ty + y0), P(tx + x1, ty + y1), P(tx + x0, ty + y1)], col);
-        } else poly(g, dia, col);
+          if (glow) g.shadowBlur = 0;
+        } else {
+          if (glow) { g.shadowColor = `rgba(224,40,30,${glow})`; g.shadowBlur = z * 0.7; }
+          poly(g, dia, col);
+          if (glow) g.shadowBlur = 0;
+        }
         if (z >= 10 && !plot.uc?.has(i) && (t === T.ROAD || t === T.LIGHTS)) this.laneMarks(g, P, grid, i, tx, ty, z);
         if (terr && terr.charCodeAt(i) === 50 && z >= 8) this.railings(g, P, grid, tx, ty, z);
         if (t === T.XING && !plot.uc?.has(i)) this.rail(g, P, grid, i, tx, ty, z, false, true);
@@ -416,9 +424,9 @@ export class Renderer {
   box(g, P, x0, y0, x1, y1, z0, z1, col, grey = 0) {
     const edge = this.scene?.prefs?.mapContrast ? 'rgba(0,0,0,0.6)' : null;
     if (edge) g.lineWidth = 1;
-    poly(g, [P(x0, y1, z0), P(x1, y1, z0), P(x1, y1, z1), P(x0, y1, z1)], shade(col, -0.02, grey), edge);
-    poly(g, [P(x1, y0, z0), P(x1, y1, z0), P(x1, y1, z1), P(x1, y0, z1)], shade(col, -0.2, grey), edge);
-    poly(g, [P(x0, y0, z1), P(x1, y0, z1), P(x1, y1, z1), P(x0, y1, z1)], shade(col, 0.16, grey), edge);
+    poly(g, [P(x0, y1, z0), P(x1, y1, z0), P(x1, y1, z1), P(x0, y1, z1)], shade(col, -0.05, grey), edge);
+    poly(g, [P(x1, y0, z0), P(x1, y1, z0), P(x1, y1, z1), P(x1, y0, z1)], shade(col, -0.28, grey), edge);
+    poly(g, [P(x0, y0, z1), P(x1, y0, z1), P(x1, y1, z1), P(x0, y1, z1)], shade(col, 0.22, grey), edge);
   }
   // A rectangle painted on the south (S) or east (E) face.
   face(g, P, side, fixed, u0, u1, h0, h1, col) {
@@ -478,7 +486,9 @@ export class Renderer {
     const grey = cond <= 0 ? 0.9 : cond < 40 ? 0.5 : 0;
     const base = pal[B[t].col || B[t].key] || '#999999';
     const col = [T.HOUSE, T.VILLA, T.APARTMENT].includes(t) ? shade(base, (hash(i, 31) - 0.5) * 0.35) : base;
-    if (live && z >= 9 && this.view === '3d' && !this.scene.pulseOnly) poly(g, [P(tx + 0.2, ty + 0.25), P(tx + 1.05, ty + 0.25), P(tx + 1.05, ty + 1.05), P(tx + 0.2, ty + 1.05)], 'rgba(20,30,20,0.10)');
+    // Ground-contact shadow: a soft dark shape under every building (all ~50 types funnel through here),
+    // offset down-right to suggest a light direction, so nothing reads as floating on the tile.
+    if (this.view === '3d' && !this.scene.pulseOnly) poly(g, [P(tx + 0.22, ty + 0.28), P(tx + 1.08, ty + 0.28), P(tx + 1.08, ty + 1.08), P(tx + 0.22, ty + 1.08)], 'rgba(15,25,15,0.2)');
     const night = live && this.scene.nightAmt > 0.15 && cond > 0;
     const glass = night ? '#ffd57a' : th.glass;
     let top = 0.5;
@@ -1218,9 +1228,11 @@ export class Renderer {
       if (x > this.w || y > this.h || x + s < 0 || y + s < 0) continue;
       const uc = plot.uc?.has(i);
       if (!B[t]?.cat && t !== T.HALL && t !== T.RUBBLE) {
-        let col = uc ? th.dirt : t === T.PATH ? th.pave : t === T.RAIL ? '#8f826d' : th.road;
-        if (traffic && traffic.cap[i]) col = jamColour(traffic.load[i] / traffic.cap[i]);
+        let col = uc ? th.dirt : t === T.PATH ? th.pave : t === T.RAIL ? '#8f826d' : th.road, jammed = false;
+        if (traffic && traffic.cap[i]) { const ratio = traffic.load[i] / traffic.cap[i]; col = jamColour(ratio); jammed = ratio > 1; }
+        if (jammed) { g.shadowColor = `rgba(224,40,30,${0.35 + 0.25 * (0.5 + 0.5 * Math.sin(performance.now() / 260))})`; g.shadowBlur = s * 0.5; }
         g.fillStyle = col; g.fillRect(x, y, s + 0.5, s + 0.5);
+        if (jammed) g.shadowBlur = 0;
         continue;
       }
       if (t === T.RUBBLE) { g.fillStyle = th.ruin; g.fillRect(x + s * 0.2, y + s * 0.25, s * 0.2, s * 0.2); g.fillRect(x + s * 0.55, y + s * 0.5, s * 0.22, s * 0.2); continue; }
@@ -1451,7 +1463,9 @@ function jamColour(r) {
   const t = Math.min(1.5, r) / 1.5;
   const a = [67, 170, 110], m = [240, 176, 46], b = [224, 75, 60];
   const mix = (p, q, k) => p.map((v, j) => Math.round(v + (q[j] - v) * k));
-  const c = t < 0.5 ? mix(a, m, t * 2) : mix(m, b, (t - 0.5) * 2);
+  let c = t < 0.5 ? mix(a, m, t * 2) : mix(m, b, (t - 0.5) * 2);
+  if (r > 1) c = mix(c, [255, 45, 32], Math.min(1, (r - 1) * 2));   // genuinely jammed: a hotter, more saturated red
+  else if (r < 0.35) c = mix(c, [86, 214, 140], 0.35);              // flowing well: a touch brighter and healthier
   return `rgb(${c})`;
 }
 
