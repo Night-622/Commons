@@ -271,3 +271,30 @@ test('world: neighbours touch, with borders', async ({ browser }) => {
   expect(clean(errors)).toEqual([]);
   await ctx.close();
 });
+
+test('council: buy the plot next door and switch between cities', async ({ page }) => {
+  const errors = await newGame(page);
+  await page.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plotState/')) { const s = JSON.parse(v.state); s.money = 5000; v.state = JSON.stringify(s); } for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plots/')) v.money = 5000; localStorage.setItem('fakefb', JSON.stringify(db)); });
+  await page.reload();
+  await expect(page.locator('#game')).toBeVisible();
+  await closeModal(page);
+  // Walk the keyboard cursor east off the plot onto the free land next door, and select it.
+  await page.locator('#map').focus();
+  await page.keyboard.press('e');
+  for (let k = 0; k < 14; k++) await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#drawer [data-do="buyplot"]')).toBeVisible();
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/buy-plot.png` });
+  await page.locator('#buy-name').fill('Eastfield');
+  await page.locator('#drawer [data-do="buyplot"]').click();
+  await expect(page.locator('#modal[open]')).toContainText('Eastfield is founded');
+  await page.locator('#open-new').click();
+  await expect(page.locator('#city-name')).toContainText('Eastfield', { timeout: 20_000 });
+  await closeModal(page);
+  await page.locator('#btn-account').click();
+  await page.locator('#modal [data-acct-tab="cities"]').click();
+  await expect(page.locator('#modal [data-open-city]')).toHaveCount(1);
+  await page.locator('#modal [data-open-city]').click();
+  await expect(page.locator('#city-name')).toContainText('Testhaven', { timeout: 20_000 });
+  expect(clean(errors)).toEqual([]);
+});

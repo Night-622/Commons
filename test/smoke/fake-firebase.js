@@ -139,6 +139,22 @@ export async function takeOverRuins(u, mayor, targetId, newState, world = WORLD_
   persist();
   return { ...out(targetId, get(`plots/${targetId}`)), state: serialize(newState) };
 }
+export async function buyPlot(u, mayor, via, px, py, cityName, world = WORLD_ID) {
+  const id = `${world}_${px}_${py}`, link = get(linkPath(u.uid, world));
+  if (get(`plots/${id}`)) throw new Error('Someone has already claimed that plot.');
+  if (!link) throw new Error('Found your first city before buying more land.');
+  const state = newCity(cityName);
+  ensureTerrain(state, px, py, world);
+  state.money = 1500;
+  const data = { owner: u.uid, ownerName: mayor, world, px, py, index: -1, via, createdAt: now(), updatedAt: now(), ...cleanSummary(state), map: mapString(state) };
+  set(`plots/${id}`, data);
+  set(`plotState/${id}`, { state: serialize(state) });
+  link.plotIds = [...(link.plotIds || [link.plotId]), id];
+  persist();
+  return { ...out(id, data), state: serialize(state) };
+}
+export const setHome = async (u, world, plotId) => { merge(linkPath(u.uid, world), { plotId }); persist(); };
+export async function getPlot(id) { await tick(); const p = get(`plots/${id}`); return p ? { ...out(id, p), state: get(`plotState/${id}`)?.state } : null; }
 export const usingLegacySaves = () => false;
 export async function savePlot(id, state, extra = {}) {
   await tick();

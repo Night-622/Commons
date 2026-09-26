@@ -24,6 +24,23 @@ service cloud.firestore {
         && after.peakPop <= before.get('peakPop', 0) + 200 + secs
         && after.day <= before.get('day', 0) + 2 + secs / 60;
     }
+    // A council's list of cities: at most 9, only ever grows by one at a time, and the newest must be yours.
+    function citiesOk(after, before) {
+      let ids = after.get('plotIds', []);
+      let old = before.get('plotIds', [before.plotId]);
+      return !('plotIds' in after) || (ids is list && ids.size() <= 9 && ids.size() <= old.size() + 1 && ids.hasAll(old)
+        && (ids.size() == old.size() || getAfter(docPath('plots', ids[ids.size() - 1])).data.owner == me()));
+    }
+    // Buying the plot next to one of your cities: via names that city, which must be yours and touch the new plot.
+    function boughtNextTo(d, plotId) {
+      let w = d.world;
+      let x = d.px;
+      let y = d.py;
+      return exists(linkPath(w)) && d.via is string
+        && d.via in [w + '_' + string(x + 1) + '_' + string(y), w + '_' + string(x - 1) + '_' + string(y), w + '_' + string(x) + '_' + string(y + 1), w + '_' + string(x) + '_' + string(y - 1)]
+        && get(docPath('plots', d.via)).data.owner == me()
+        && plotId in getAfter(linkPath(w)).data.plotIds;
+    }
     // Moving onto ruins keeps half the money of the city being left (see MOVE_KEEP and REBUILD_MONEY).
     function rebuildMoney(world) {
       return 3500 + (exists(linkPath(world)) ? get(docPath('plots', get(linkPath(world)).data.plotId)).data.get('money', 0) / 2 : 0);
@@ -35,8 +52,9 @@ service cloud.firestore {
       allow create: if signedIn() && me() == uid
         && request.resource.data.keys().hasOnly(['plotId', 'createdAt']);
       allow update: if signedIn() && me() == uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['plotId'])
-        && getAfter(docPath('plots', request.resource.data.plotId)).data.owner == me();
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['plotId', 'plotIds'])
+        && getAfter(docPath('plots', request.resource.data.plotId)).data.owner == me()
+        && citiesOk(request.resource.data, resource.data);
       allow delete: if false;
     }
 
@@ -50,8 +68,9 @@ service cloud.firestore {
         && mid == me() + '_' + request.resource.data.world
         && getAfter(docPath('plots', request.resource.data.plotId)).data.owner == me();
       allow update: if signedIn() && resource.data.uid == me()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['plotId'])
-        && getAfter(docPath('plots', request.resource.data.plotId)).data.owner == me();
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['plotId', 'plotIds'])
+        && getAfter(docPath('plots', request.resource.data.plotId)).data.owner == me()
+        && citiesOk(request.resource.data, resource.data);
       allow delete: if false;
     }
 
@@ -93,8 +112,8 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.owner == me()
         && plotId == request.resource.data.world + '_' + string(request.resource.data.px) + '_' + string(request.resource.data.py)
-        && !exists(linkPath(request.resource.data.world))
-        && getAfter(linkPath(request.resource.data.world)).data.plotId == plotId
+        && ((!exists(linkPath(request.resource.data.world)) && getAfter(linkPath(request.resource.data.world)).data.plotId == plotId)
+          || boughtNextTo(request.resource.data, plotId))
         && !('state' in request.resource.data)
         && nameOk(request.resource.data)
         && stamped(request.resource.data)

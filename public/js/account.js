@@ -101,7 +101,7 @@ export function accountHtml(ctx, tab) {
   const guest = user.isAnonymous;
   const google = user.providerData.some((p) => p.providerId === 'google.com');
   const unlocked = Object.keys(profile.achievements || {}).length;
-  const tabs = [['profile', 'Profile'], ['stats', 'Stats'], ['achievements', `Achievements ${unlocked}/${ACHIEVEMENTS.length}`], ['security', 'Account']];
+  const tabs = [['profile', 'Profile'], ['cities', 'Cities'], ['stats', 'Stats'], ['achievements', `Achievements ${unlocked}/${ACHIEVEMENTS.length}`], ['security', 'Account']];
   const life = { ...emptyLife(), ...(profile.stats || {}) };
   let body = '';
   if (tab === 'profile') {
@@ -119,6 +119,11 @@ export function accountHtml(ctx, tab) {
         <div class="kv"><span>This city</span><b>${esc(s.name)}</b></div><div class="kv"><span>City number</span><b class="num">${s.cityNo}</b></div>
         <div class="kv"><span>Money</span><b class="num">${money(s.money)}</b></div><div class="kv"><span>Goals</span><b class="num">${s.goalsDone.length}</b></div>
       </div>`;
+  } else if (tab === 'cities') {
+    const list = ctx.cities || [];
+    body = `<p class="soft small">Your council's cities in ${esc(world.name)}. Buy more by selecting unclaimed land that touches one of them (up to ${ctx.maxCities}).</p>
+      <ul class="picklist">${list.map((c) => `<li><span><b>${esc(c.name)}</b> <small class="soft">${c.status === 'ruins' ? 'Ruins' : `${c.pop} people`}${c.here ? ', open now' : ''}</small></span>
+        ${c.here ? '' : `<button class="btn small" type="button" data-open-city="${c.id}">Open</button>`}</li>`).join('')}</ul>`;
   } else if (tab === 'stats') {
     body = `<p class="soft small">Across every city you've run.</p>
       <div class="stat-tiles">${STAT_ROWS.map(([k, label, ic]) => `<div class="tile">${icon(ic)}<b class="num">${(life[k] || 0).toLocaleString()}</b><small>${label}</small></div>`).join('')}</div>`;

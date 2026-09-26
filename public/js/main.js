@@ -3,7 +3,7 @@ import {
   T, B, PLOT, TICK_MS, MAX_OFFLINE_DAYS, HOURS_PER_DAY, SAVE_EVERY_MS, RUBBLE_CLEAR_COST, MAX_LEVEL, LEVEL, UPGRADABLE,
   REBUILD_MONEY, MOVE_KEEP, TUTORIAL_REWARD, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome, DECISIONS, ZONES, ZONE_COST,
   LOAN_DAYS, HISTORIC_DAYS, BADGES, REGIONAL, REGIONAL_SHARE, ALLIANCE_TRADE, DAILY, DAILY_REWARD, WEEKLY, WEEKLY_REWARD, GIFT_LIMITS, REACTIONS,
-  WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS,
+  WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES,
 } from './constants.js';
 import { Renderer, STRIDE, thumbnail, modelHeight } from './render.js';
 import { loadPrefs, savePrefs, applyPrefs, resolvedTheme, palette, PALETTES } from './prefs.js';
@@ -1522,13 +1522,22 @@ canvas.addEventListener('wheel', (e) => { e.preventDefault(); renderer.zoomAt(e.
 function moveCursor(dx, dy) {
   if (!me) return;
   if (!cursor) { const c = sim.xy(sim.HALL_INDEX); cursor = { px: me.px, py: me.py, tx: c.x, ty: c.y }; }
-  else { cursor.tx = Math.max(0, Math.min(PLOT - 1, cursor.tx + dx)); cursor.ty = Math.max(0, Math.min(PLOT - 1, cursor.ty + dy)); }
+  else {
+    // Arrow keys can step over the border onto a plot next to yours (a neighbour, or land you could buy), but no further.
+    let { px, py, tx, ty } = cursor;
+    tx += dx; ty += dy;
+    if (tx < 0) { px--; tx = PLOT - 1; } else if (tx >= PLOT) { px++; tx = 0; }
+    if (ty < 0) { py--; ty = PLOT - 1; } else if (ty >= PLOT) { py++; ty = 0; }
+    if (Math.abs(px - me.px) + Math.abs(py - me.py) > 1) return;
+    Object.assign(cursor, { px, py, tx, ty });
+  }
   cursor.i = cursor.ty * PLOT + cursor.tx;
-  const wx = me.px * STRIDE + cursor.tx + 0.5, wy = me.py * STRIDE + cursor.ty + 0.5;
+  const wx = cursor.px * STRIDE + cursor.tx + 0.5, wy = cursor.py * STRIDE + cursor.ty + 0.5;
   const [sx, sy] = renderer.project(wx, wy);
   if (sx < renderer.w * 0.2 || sx > renderer.w * 0.8 || sy < renderer.h * 0.2 || sy > renderer.h * 0.72) renderer.centerOn(wx, wy);
   hover = hoverInfo(cursor);
-  announce(describeTile(cursor.i));
+  const there = plotAt(cursor.px, cursor.py);
+  announce(isMine(cursor) ? describeTile(cursor.i) : there ? `${there.name}, ${there.ownerName}'s city` : 'Unclaimed land. Press Enter for details.');
   dirty = true;
 }
 window.addEventListener('keydown', (e) => {
@@ -1636,7 +1645,7 @@ function frame(now) {
     const wx = sim.weather(sim.worldDay());
     if (dirty || worldTrains.length || agentsByPlot.size || pops.length || pulseTile || pulseTileMove || wx === 'rain' || wx === 'snow') {
       renderer.draw({
-        plots, hover: hv, cursor, selected, overlay, traffic: plan, worldTrains, info: infoTiles(), agentsByPlot, pops, prefs, bridges, pulseTile: pulseTile || pulseTileMove,
+        plots, free: freePlots(), hover: hv, cursor, selected, overlay, traffic: plan, worldTrains, info: infoTiles(), agentsByPlot, pops, prefs, bridges, pulseTile: pulseTile || pulseTileMove,
         showLand: mode === 'build', landPrice: state ? sim.landPrice(state) : 0, season: sim.season(sim.worldDay()), weather: sim.weather(sim.worldDay()),
         theme: resolvedTheme(prefs), palette: palette(prefs), paletteKey: prefs.colours, shapes: prefs.shapes, nightAmt: nightAmt(),
       });
@@ -2194,6 +2203,21 @@ function inspectorAction(what, arg) {
     $('cancel-go').onclick = () => { closeModal(); demolish(i, false); };
     return;
   }
+  else if (what === 'buyplot') {
+    const h = selected, price = sim.plotPrice(state, myCities().length), name = ($('buy-name')?.value || '').trim().slice(0, 40) || 'New city';
+    if (state.money < price) { notify(`Needs ${money(price)}.`, 'act'); play('error'); return; }
+    busy(document.querySelector('[data-do="buyplot"]'), async () => {
+      const d = await fb.buyPlot(user, mayor, arg, h.px, h.py, name, world.id);
+      state.money -= price;
+      sim.note(state, 'info', `Bought the plot next door and founded ${name}.`);
+      addPlot(toPlot(d)); computeLinks(); afterChange(); await save();
+      play('level');
+      openModal(`${closeX}<h2 id="modal-title">${esc(name)} is founded</h2><p>It has a town hall, three builders, three settlers and ${money(REBUILD_MONEY)}. Switch between your cities in Account, Cities.</p>
+        <div class="mfoot"><button class="btn" data-close>Stay in ${esc(state.name)}</button><button class="btn primary" id="open-new">Open ${esc(name)}</button></div>`);
+      $('open-new').onclick = () => { closeModal(); switchCity(d.id); };
+    }, $('buy-msg'));
+    return;
+  }
   else if (what === 'recruit') {
     const r = sim.recruit(state, i, +arg);
     if (!r.ok) { notify(r.reason + '.', 'act'); play('error'); return; }
@@ -2343,9 +2367,30 @@ function ownTile(i) {
   return `<h2>${d.name} ${levelTag}</h2>${heritage}${where}${t !== T.HALL ? meter('Condition', cond / 100) : ''}${condTxt}${body}<div class="actions">${actions}</div>`;
 }
 
+// Your council's cities in this world.
+const myCities = () => [...plots.values()].filter((p) => p.owner === user?.uid);
+// Unclaimed plots touching one of your cities: drawn with a dashed border so you can see what you could buy.
+function freePlots() {
+  if (!state || state.status !== 'alive') return [];
+  const out = new Map();
+  for (const c of myCities()) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const px = c.px + dx, py = c.py + dy;
+    if (!plotAt(px, py)) out.set(`${px},${py}`, { px, py, free: true });
+  }
+  return [...out.values()];
+}
 function otherPlot(h) {
   const p = plotAt(h.px, h.py);
-  if (!p) return '<h2>Unclaimed land</h2><p>New players get plots out here on the frontier.</p>';
+  if (!p) {
+    const via = myCities().find((c) => c.status === 'alive' && Math.abs(c.px - h.px) + Math.abs(c.py - h.py) === 1);
+    if (!via || state.status !== 'alive') return '<h2>Unclaimed land</h2><p>New players get plots out here on the frontier. You can buy plots that touch one of your cities.</p>';
+    const price = sim.plotPrice(state, myCities().length), full = myCities().length >= MAX_CITIES;
+    return `<h2>Unclaimed land</h2><p>This plot touches ${esc(via.name)}. Buy it to start another city of your council here, with its own town hall, settlers and ${money(REBUILD_MONEY)}.</p>
+      ${row('Price', money(price))}${row('Your cities here', myCities().length)}
+      ${full ? `<p class="warn">A council can run up to ${MAX_CITIES} cities.</p>` : `<label class="field"><span>New city's name</span><input id="buy-name" maxlength="40" value="New ${esc(via.name).slice(0, 30)}"></label>
+      <div class="actions"><button class="btn primary" type="button" data-do="buyplot" data-arg="${via.id}" ${state.money < price ? 'disabled' : ''}>${icon('i-flag')}Buy for ${money(price)}</button></div>
+      ${state.money < price ? `<p class="soft small">${esc(state.name)} needs ${money(price - state.money)} more.</p>` : ''}<p id="buy-msg" class="formmsg" role="alert"></p>`}`;
+  }
   if (p.status === 'ruins') {
     return `<div class="plaque"><h2>Ruins of ${esc(p.name)}</h2><p>Built by ${esc(p.ownerName)}. It reached ${p.peakPop} people and lasted ${p.day} days.</p></div>
       <p class="soft small">You can start a new city here. Your current city would become ruins, and you'd bring half your money.</p>
@@ -2824,7 +2869,9 @@ function showSettings() {
 function showAccount(tab = acctTab) {
   acctTab = tab;
   profile ||= { name: mayor, colour: acct.COLOURS[0], stats: acct.emptyLife(), achievements: {}, base: {} };
-  openModal(`${closeX}<h2 id="modal-title">Account</h2>${acct.accountHtml({ user, mayor, profile, s: state, world, colour: profile.colour || acct.COLOURS[0] }, tab)}`, 'wide');
+  const cities = myCities().map((p) => ({ id: p.id, name: p.id === plotId ? state.name : p.name, pop: p.id === plotId ? state.people.length : p.pop, status: p.status, here: p.id === plotId }));
+  openModal(`${closeX}<h2 id="modal-title">Account</h2>${acct.accountHtml({ user, mayor, profile, s: state, world, colour: profile.colour || acct.COLOURS[0], cities, maxCities: MAX_CITIES }, tab)}`, 'wide');
+  modal.querySelectorAll('[data-open-city]').forEach((b) => { b.onclick = () => { closeModal(); switchCity(b.dataset.openCity); }; });
   const msg = $('acct-msg');
   modal.querySelectorAll('[data-acct-tab]').forEach((b) => { b.onclick = () => showAccount(b.dataset.acctTab); });
   modal.querySelector(`[data-acct-tab="${tab}"]`)?.focus();
@@ -2866,6 +2913,13 @@ function showAccount(tab = acctTab) {
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     notify('Downloaded a copy of your city.', 'act');
   });
+}
+// Open another of your cities: it becomes your home in this world, so it's the one that loads next time.
+async function switchCity(id) {
+  if (id === plotId) return;
+  await save();
+  await fb.setHome(user, world.id, id);
+  enter(user);
 }
 function confirmDelete() {
   openModal(`${closeX}<h2 id="modal-title">Delete your account?</h2>

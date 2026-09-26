@@ -195,6 +195,12 @@ export class Renderer {
       }
     }
     // Plots touch, so each gets a thin yellow border; your own cities' borders are a little stronger.
+    // Unclaimed plots you could buy get a faint fill and a dashed border.
+    for (const f of scene.free || []) {
+      const ox = f.px * STRIDE, oy = f.py * STRIDE;
+      poly(g, [[0, 0], [PLOT, 0], [PLOT, PLOT], [0, PLOT]].map(([x, y]) => this.project(ox + x, oy + y)), 'rgba(255,201,51,0.08)', null);
+      this.plotBorder(g, f);
+    }
     for (const plot of plots) this.plotBorder(g, plot);
     // Trains between cities travel in world coordinates, across the bridges.
     if (this.view === '3d' && this.cam.z >= 7) for (const tr of scene.worldTrains || []) if (tr.lx !== undefined) this.vehicle(g, (x, y, h = 0) => this.project(x, y, h), tr);

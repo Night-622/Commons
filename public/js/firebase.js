@@ -11,7 +11,7 @@ const {
   getDocs, addDoc, serverTimestamp, setDoc, onSnapshot, deleteDoc, writeBatch, deleteField, getCountFromServer, arrayUnion, arrayRemove,
 } = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-firestore.js`);
 import { firebaseConfig } from './config.js';
-import { WORLD_ID, OPEN_WORLDS } from './constants.js';
+import { WORLD_ID, OPEN_WORLDS, REBUILD_MONEY } from './constants.js';
 import { spiral } from './spiral.js';
 import { newCity, serialize, summary, mapString, ensureTerrain } from './sim.js';
 
@@ -204,6 +204,35 @@ export async function takeOverRuins(user, mayor, targetId, newState, world = WOR
     else tx.set(lref, { uid: user.uid, world, plotId: targetId, createdAt: serverTimestamp() });
     return { id: targetId, ...p.data(), ...data, state: serialize(newState) };
   });
+}
+
+// Buy the plot next to one of your cities (`via`) and start a new city of your council there.
+export async function buyPlot(user, mayor, via, px, py, cityName, world = WORLD_ID) {
+  const lref = linkRef(user.uid, world), id = `${world}_${px}_${py}`;
+  return runTransaction(db, async (tx) => {
+    const taken = await tx.get(doc(db, 'plots', id));
+    const link = await tx.get(lref);
+    if (taken.exists()) throw new Error('Someone has already claimed that plot.');
+    if (!link.exists()) throw new Error('Found your first city before buying more land.');
+    const ids = link.data().plotIds || [link.data().plotId];
+    const state = newCity(cityName);
+    ensureTerrain(state, px, py, world);
+    state.money = REBUILD_MONEY;
+    const data = { owner: user.uid, ownerName: mayor, world, px, py, index: -1, via, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), ...cleanSummary(state), map: mapString(state) };
+    tx.set(doc(db, 'plots', id), data);
+    tx.set(doc(db, 'plotState', id), { state: serialize(state) });
+    tx.update(lref, { plotIds: [...ids, id] });
+    return { id, ...data, state: serialize(state) };
+  });
+}
+// Which of your cities opens when you come back.
+export const setHome = (user, world, plotId) => updateDoc(linkRef(user.uid, world), { plotId });
+export async function getPlot(id) {
+  const p = await getDoc(doc(db, 'plots', id));
+  if (!p.exists()) return null;
+  const data = { id: p.id, ...p.data() };
+  if (!data.state) data.state = await getState(p.id);
+  return data;
 }
 
 // Firestore rejects undefined anywhere in a write, which an old save missing a field would otherwise trip.

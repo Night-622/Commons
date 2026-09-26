@@ -3,6 +3,9 @@
 // The shared world everyone starts in. 'public' is the classic world from before 1.11, kept so nobody loses a city.
 export const WORLD_ID = 'main';
 export const CLASSIC_WORLD = 'public';
+// A council can own several cities: buy the plot next to one of yours. Priced like land: this many parcels at your
+// current land price, times PLOT_BUY_STEP for each city you already have, and never less than PLOT_BUY_MIN.
+export const PLOT_BUY_PARCELS = 4, PLOT_BUY_STEP = 1.6, PLOT_BUY_MIN = 1000, MAX_CITIES = 9;
 export const OPEN_WORLDS = { main: 'The world', public: 'Classic world' };
 export const PLOT = 24;          // tiles per side of a plot
 export const GAP = 0;            // tiles between neighbouring plots on the master map: none, so the world is one piece

@@ -368,3 +368,37 @@ test('main world: founding works like the classic world and skips slots already 
   await assertFails(updateDoc(doc(a.db, 'worlds', 'main'), { nextIndex: 500 }));
   await assertFails(updateDoc(doc(a.db, 'worlds', 'main'), { nextIndex: 0 }));
 });
+
+test('councils: buy the plot next to your city, switch home, and nothing else', async () => {
+  const a = await player(), b = await player();
+  const pa = await a.fb.claimPlot(a.user, 'Ana', 'A', 'main');
+  // Right next door: allowed. The council's list grows and home can move there.
+  // Other tests share the main world, so use whichever side is still free.
+  const freeSide = async (p) => {
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      let taken;
+      await admin(async (db) => { taken = (await getDoc(doc(db, 'plots', `main_${p.px + dx}_${p.py + dy}`))).exists(); });
+      if (!taken) return [p.px + dx, p.py + dy];
+    }
+    throw new Error('no free side');
+  };
+  const side = await freeSide(pa);
+  const east = await a.fb.buyPlot(a.user, 'Ana', pa.id, side[0], side[1], 'A East', 'main');
+  assert.equal(east.owner, a.uid);
+  const link = (await getDoc(doc(a.db, 'memberships', `${a.uid}_main`))).data();
+  assert.deepEqual(link.plotIds, [pa.id, east.id]);
+  await a.fb.setHome(a.user, 'main', east.id);
+  assert.equal((await a.fb.findPlot(a.user, 'main')).id, east.id);
+  await a.fb.setHome(a.user, 'main', pa.id);
+  // Not touching any of your cities, or "next to" someone else's city: refused.
+  await assert.rejects(a.fb.buyPlot(a.user, 'Ana', pa.id, pa.px + 40, pa.py + 40, 'Far', 'main'), /permission/i);
+  const pb = await b.fb.claimPlot(b.user, 'Ben', 'B', 'main');
+  const bSide = await freeSide(pb);
+  await assert.rejects(a.fb.buyPlot(a.user, 'Ana', pb.id, bSide[0], bSide[1], 'Sneaky', 'main'), /permission/i);
+  // A player can't slip a city into someone else's council, or point home at a plot they don't own.
+  await assertFails(updateDoc(doc(b.db, 'memberships', `${a.uid}_main`), { plotIds: [pa.id, east.id, pb.id] }));
+  await assertFails(a.fb.setHome(a.user, 'main', pb.id));
+  // Saving the new city works like any other.
+  const st = sim.migrate(JSON.parse(east.state)); st.money += 100;
+  await a.fb.savePlot(east.id, st);
+});
