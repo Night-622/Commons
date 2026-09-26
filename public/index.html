@@ -163,7 +163,6 @@
         <div class="seg" role="group" aria-label="View">
           <button type="button" id="view-3d" aria-pressed="true" title="3D view (V)"><svg class="ic"><use href="#i-cube"/></svg><span>3D</span></button>
           <button type="button" id="view-2d" aria-pressed="false" title="2D view (V)"><svg class="ic"><use href="#i-grid"/></svg><span>2D</span></button>
-          <button type="button" id="view-free" aria-pressed="false" title="Free camera: turn, tilt and zoom in real 3D (3)"><svg class="ic"><use href="#i-look"/></svg><span>Free</span></button>
         </div>
         <button class="cbtn" id="btn-traffic" type="button" aria-pressed="false" title="Info views: traffic, mood, services, noise (T)" aria-label="Info views" aria-haspopup="menu"><svg class="ic"><use href="#i-lights"/></svg></button>
         <button class="cbtn" id="btn-home" type="button" title="My plot (H)" aria-label="Go to my plot"><svg class="ic"><use href="#i-target"/></svg></button>
@@ -232,8 +231,6 @@
 
   <dialog id="modal" aria-labelledby="modal-title"><div id="modal-body"></div></dialog>
 
-  <!-- three.js for the free-camera view, pinned and served from this site; only loaded when that view is opened. -->
-  <script type="importmap">{ "imports": { "three": "./vendor/three-0.186.1/three.module.js" } }</script>
   <script type="module" src="js/main.js" onerror="window.__bootFail && __bootFail('The game couldn’t load. Check your connection, then try again.')"></script>
 </body>
 </html>
