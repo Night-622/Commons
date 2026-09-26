@@ -67,6 +67,7 @@ export const T = {
   CLINIC: 19, HOSPITAL: 20, POLICE: 21, FIRE: 22, COURT: 23, CEMETERY: 24, PLAYGROUND: 25, SPORTS: 26, GYM: 27,
   DOJO: 28, POOL: 29, CINEMA: 30, YARD: 31, RAIL: 32, STATION: 33, STOP: 34, DEPOT: 35, XING: 36, LIGHTS: 37, ROUNDABOUT: 38, POWER: 39, WATER: 40, DRAIN: 41,
   SOLAR: 42, WIND: 43, MUSEUM: 44, STADIUM: 45, HOTEL: 46, FARM: 47, HARBOUR: 48, AIRPORT: 49, LANDFILL: 50, RECYCLE: 51, SEWAGE: 52, VET: 53, METRO: 54, MONUMENT: 55,
+  ORCHARD: 56, DAIRY: 57, RANCH: 58, MATERIALS: 59, WAREHOUSE: 60,
 };
 
 export const CATS = [
@@ -81,10 +82,10 @@ export const B = {
   [T.XING]: { key: 'crossing', name: 'Level crossing', cost: 30, work: 2, upkeep: 0.5, blurb: 'Where a road and a railway meet. Cars wait while trains pass.' },
   [T.LIGHTS]: { key: 'lights', name: 'Traffic lights', cost: 80, work: 4, upkeep: 1, blurb: 'Put on a junction. Carries 50% more traffic than an uncontrolled junction.' },
   [T.ROUNDABOUT]: { key: 'roundabout', name: 'Roundabout', cost: 150, work: 8, upkeep: 1.5, blurb: 'Put on a junction. Keeps traffic flowing: 80% more than an uncontrolled junction.' },
-  [T.POWER]: { key: 'power', name: 'Power station', cat: 'utility', col: 'work', cost: 700, work: 70, upkeep: 12, jobs: [['Engineer', 2, 3]], supply: 12, pollution: 2, power: true, fossil: true, smog: 0.12, blurb: 'Powers every building within 12 tiles, but burns fuel: dirty air and noise. Once the town has 25 people, unpowered buildings work at 60%.' },
-  [T.SOLAR]: { key: 'solar', name: 'Solar farm', cat: 'utility', col: 'work', cost: 560, work: 50, upkeep: 4, jobs: [['Technician', 1, 1]], supply: 9, power: true, blurb: 'Clean power for everything within 9 tiles. No smoke, no noise.' },
-  [T.WIND]: { key: 'wind', name: 'Wind turbine', cat: 'utility', col: 'work', cost: 480, work: 44, upkeep: 3, jobs: [['Technician', 1, 1]], supply: 11, power: true, pollution: 1, blurb: 'Clean power for everything within 11 tiles. A gentle hum: homes right beside it mind a little.' },
-  [T.WATER]: { key: 'water', name: 'Water tower', cat: 'utility', col: 'work', cost: 350, work: 36, upkeep: 5, jobs: [['Technician', 1, 1]], supply: 10, water: true, blurb: 'Clean water for every building within 10 tiles. Without it, illness spreads faster.' },
+  [T.POWER]: { key: 'power', makes: { power: 120 }, name: 'Power station', cat: 'utility', col: 'work', cost: 700, work: 70, upkeep: 12, jobs: [['Engineer', 2, 3]], supply: 12, pollution: 2, power: true, fossil: true, smog: 0.12, blurb: 'Powers every building within 12 tiles, but burns fuel: dirty air and noise. Once the town has 25 people, unpowered buildings work at 60%.' },
+  [T.SOLAR]: { key: 'solar', makes: { power: 60 }, name: 'Solar farm', cat: 'utility', col: 'work', cost: 560, work: 50, upkeep: 4, jobs: [['Technician', 1, 1]], supply: 9, power: true, blurb: 'Clean power for everything within 9 tiles. No smoke, no noise.' },
+  [T.WIND]: { key: 'wind', makes: { power: 60 }, name: 'Wind turbine', cat: 'utility', col: 'work', cost: 480, work: 44, upkeep: 3, jobs: [['Technician', 1, 1]], supply: 11, power: true, pollution: 1, blurb: 'Clean power for everything within 11 tiles. A gentle hum: homes right beside it mind a little.' },
+  [T.WATER]: { key: 'water', name: 'Water tower', cat: 'utility', col: 'work', cost: 350, work: 36, upkeep: 5, jobs: [['Technician', 1, 1]], supply: 10, water: true, makes: { water: 80 }, blurb: 'Clean water for every building within 10 tiles. Without it, illness spreads faster.' },
   [T.LANDFILL]: { key: 'landfill', name: 'Landfill', cat: 'utility', col: 'work', cost: 240, work: 24, upkeep: 3, jobs: [['Refuse collector', 0, 2]], waste: 70, pollution: 2, smog: 0.02, blurb: 'Takes the rubbish of 70 people. Smelly: homes nearby are less happy.' },
   [T.RECYCLE]: { key: 'recycle', name: 'Recycling centre', cat: 'utility', col: 'work', cost: 520, work: 50, upkeep: 5, jobs: [['Sorter', 0, 3], ['Manager', 2, 1]], waste: 120, sells: 0.3, blurb: 'Takes the rubbish of 120 people with no smell, and sells what it sorts.' },
   [T.SEWAGE]: { key: 'sewage', name: 'Sewage works', cat: 'utility', col: 'work', cost: 620, work: 60, upkeep: 6, jobs: [['Technician', 1, 2]], sewage: 150, pollution: 1, blurb: 'Treats the sewage of 150 people. Without it, once the town passes 70, illness spreads.' },
@@ -106,7 +107,7 @@ export const B = {
   [T.SHOP]: { key: 'shop', name: 'Grocer', cat: 'work', col: 'shop', cost: 160, work: 20, upkeep: 3, jobs: [['Shop assistant', 0, 3]], serves: 30, blurb: 'Food for 30 people. Every household needs one nearby.' },
   [T.CAFE]: { key: 'cafe', name: 'Café', cat: 'work', col: 'shop', cost: 180, work: 20, upkeep: 3, jobs: [['Barista', 0, 3]], visits: { n: 20, who: 'all' }, blurb: 'Jobs, plus somewhere to go in the evening.' },
   [T.FACTORY]: { key: 'factory', name: 'Factory', cat: 'work', col: 'work', cost: 300, work: 40, upkeep: 5, jobs: [['Factory hand', 0, 14], ['Engineer', 3, 1]], pollution: 3, smog: 0.05, injury: 0.004, blurb: 'Lots of jobs for anyone. Noisy: homes within 3 tiles are less happy.' },
-  [T.FARM]: { key: 'farm', name: 'Urban farm', cat: 'work', col: 'park', cost: 200, work: 22, upkeep: 2, jobs: [['Farmhand', 0, 4]], serves: 15, fresh: 0.02, blurb: 'Grows fresh food for 15 people and cleans the air a little.' },
+  [T.FARM]: { key: 'farm', name: 'Urban farm', cat: 'work', col: 'park', cost: 200, work: 22, upkeep: 2, jobs: [['Farmhand', 0, 4]], serves: 15, fresh: 0.02, makes: { veg: 25 }, blurb: 'Grows fresh food for 15 people and cleans the air a little.' },
   [T.HOTEL]: { key: 'hotel', name: 'Hotel', cat: 'work', col: 'shop', cost: 520, work: 56, upkeep: 6, jobs: [['Receptionist', 1, 3], ['Housekeeper', 0, 3]], rooms: 30, minPop: 40, blurb: 'Rooms for 30 tourists a night. Attractions only bring overnight visitors if they have somewhere to stay.' },
   [T.YARD]: { key: 'yard', name: "Builder's yard", cat: 'work', col: 'work', cost: 260, work: 30, upkeep: 4, jobs: [['Builder', 0, 6]], blurb: 'Hires 6 builders, so construction goes faster.' },
 
@@ -136,6 +137,11 @@ export const B = {
   [T.MUSEUM]: { key: 'museum', name: 'Museum', cat: 'fun', col: 'school', cost: 640, work: 70, upkeep: 7, jobs: [['Curator', 3, 1], ['Guide', 2, 2]], visits: { n: 30, who: 'all', study: 0.2 }, draw: 12, minPop: 50, blurb: 'Culture for 30 a day. Draws tourists, and students who visit learn a little faster.' },
   [T.STADIUM]: { key: 'stadium', name: 'Stadium', cat: 'fun', col: 'park', cost: 1400, work: 150, upkeep: 16, jobs: [['Groundskeeper', 0, 4], ['Coach', 2, 2]], visits: { n: 90, who: 'all' }, draw: 30, minPop: 90, blurb: 'Match days for 90 residents and crowds of fans from out of town. Busy roads on game night.' },
 
+  [T.ORCHARD]: { key: 'orchard', name: 'Orchard', cat: 'work', col: 'park', cost: 220, work: 22, upkeep: 2, jobs: [['Fruit picker', 0, 4]], makes: { fruit: 25 }, fresh: 0.02, research: 'orchards', blurb: 'Grows 25 crates of fruit a day. Trees clean the air a little.' },
+  [T.DAIRY]: { key: 'dairy', name: 'Dairy farm', cat: 'work', col: 'park', cost: 300, work: 28, upkeep: 3, jobs: [['Dairy hand', 0, 4], ['Vet nurse', 1, 1]], makes: { dairy: 25 }, pollution: 1, research: 'dairy', blurb: 'Milk, cheese and yoghurt for 25 people a day. A little smelly for homes right beside it.' },
+  [T.RANCH]: { key: 'ranch', name: 'Ranch', cat: 'work', col: 'park', cost: 340, work: 30, upkeep: 3, jobs: [['Rancher', 0, 5]], makes: { meat: 20 }, pollution: 1, research: 'ranching', blurb: 'Meat for 20 people a day. Needs space; homes right beside it mind the smell.' },
+  [T.MATERIALS]: { key: 'materials', name: 'Materials works', cat: 'work', col: 'work', cost: 280, work: 30, upkeep: 4, jobs: [['Quarry worker', 0, 6], ['Engineer', 2, 1]], makes: { materials: 30 }, pollution: 2, smog: 0.02, blurb: 'Makes 30 loads of bricks and timber a day. With materials in stock, builders work 50% faster.' },
+  [T.WAREHOUSE]: { key: 'warehouse', name: 'Warehouse', cat: 'work', col: 'work', cost: 200, work: 20, upkeep: 2, jobs: [['Storekeeper', 0, 2]], store: 600, research: 'logistics', blurb: 'Stores 600 more of every resource, to use later or sell.' },
   [T.MONUMENT]: { key: 'monument', name: 'Monument', cat: 'fun', col: 'hall', cost: 2600, work: 200, upkeep: 6, visits: { n: 40, who: 'all' }, draw: 25, minPop: 80, blurb: 'A grand landmark for 40 visitors a day. Tourists come to see it, and the whole street becomes a sought-after address.' },
   [T.HALL]: { key: 'hall', name: 'Town hall', col: 'hall', cost: 0, work: 0, upkeep: 0, homes: 6, jobs: [['Builder', 0, 3], ['Clerk', 2, 2]], serves: 10 },
   [T.RUBBLE]: { key: 'rubble', name: 'Rubble', cost: 0, work: 0, upkeep: 0 },
@@ -204,16 +210,39 @@ export const PET_SHARE = 0.4;              // share of households with a pet
 export const PENSION = 1;                  // dollars a day per retiree
 export const WASTE_POP = 45, SEWAGE_POP = 70;   // from this many people, rubbish and sewage need handling
 // Research: educated residents and libraries earn research points; each project unlocks or improves something.
+// The technology tree: each branch unlocks in order (needs). Research points come from graduates, libraries,
+// universities and museums.
+export const TECH_BRANCHES = [['farming', 'Farming'], ['industry', 'Industry'], ['energy', 'Energy and transport'], ['society', 'Society']];
 export const TECH = [
-  { id: 'greenconcrete', name: 'Green concrete', cost: 40, text: 'Everything costs 10% less to build.' },
-  { id: 'telemed', name: 'Telemedicine', cost: 60, text: 'Clinics and hospitals treat 30% more patients.' },
-  { id: 'smartgrid', name: 'Smart grid', cost: 70, text: 'Power and water reach 3 tiles further.' },
-  { id: 'trafficai', name: 'Smart traffic lights', cost: 80, needs: 'smartgrid', text: 'Roads carry 20% more traffic.' },
-  { id: 'vertical', name: 'Vertical farming', cost: 70, text: 'Urban farms feed twice as many people.' },
-  { id: 'metro', name: 'Metro', cost: 120, needs: 'trafficai', text: 'Unlocks metro stations: underground trains across your city.' },
-  { id: 'edtech', name: 'Online learning', cost: 90, needs: 'telemed', text: 'Everyone studies 25% faster.' },
-  { id: 'fusion', name: 'Clean reactors', cost: 200, needs: 'smartgrid', text: 'Fossil power stations stop fouling the air.' },
+  { id: 'orchards', branch: 'farming', name: 'Orchards', cost: 30, text: 'Unlocks orchards: fruit.' },
+  { id: 'dairy', branch: 'farming', name: 'Dairy farming', cost: 50, needs: 'orchards', text: 'Unlocks dairy farms.' },
+  { id: 'ranching', branch: 'farming', name: 'Ranching', cost: 70, needs: 'dairy', text: 'Unlocks ranches: meat.' },
+  { id: 'vertical', branch: 'farming', name: 'Vertical farming', cost: 70, needs: 'orchards', text: 'Urban farms feed twice as many people and grow twice as much.' },
+  { id: 'logistics', branch: 'industry', name: 'Logistics', cost: 40, text: 'Unlocks warehouses: store more to use later or sell.' },
+  { id: 'greenconcrete', branch: 'industry', name: 'Green concrete', cost: 40, needs: 'logistics', text: 'Everything costs 10% less to build.' },
+  { id: 'smartgrid', branch: 'energy', name: 'Smart grid', cost: 70, text: 'Power and water reach 3 tiles further.' },
+  { id: 'trafficai', branch: 'energy', name: 'Smart traffic lights', cost: 80, needs: 'smartgrid', text: 'Roads carry 20% more traffic.' },
+  { id: 'metro', branch: 'energy', name: 'Metro', cost: 120, needs: 'trafficai', text: 'Unlocks metro stations: underground trains across your city.' },
+  { id: 'fusion', branch: 'energy', name: 'Clean reactors', cost: 200, needs: 'smartgrid', text: 'Fossil power stations stop fouling the air.' },
+  { id: 'telemed', branch: 'society', name: 'Telemedicine', cost: 60, text: 'Clinics and hospitals treat 30% more patients.' },
+  { id: 'edtech', branch: 'society', name: 'Online learning', cost: 90, needs: 'telemed', text: 'Everyone studies 25% faster.' },
 ];
+// Resources: made each day by buildings (their `makes`), used by people and buildings, kept up to a storage limit.
+// Food that isn't grown here is imported at `import` dollars a unit; surplus food and materials sell for half that.
+export const RES = {
+  water: { name: 'Water', unit: 'kilolitres' },
+  power: { name: 'Power', unit: 'megawatt-hours' },
+  veg: { name: 'Vegetables', food: true, import: 0.15 },
+  fruit: { name: 'Fruit', food: true, import: 0.2 },
+  dairy: { name: 'Dairy', food: true, import: 0.25 },
+  meat: { name: 'Meat', food: true, import: 0.35 },
+  materials: { name: 'Building materials', import: 1 },
+};
+export const FOOD = ['veg', 'fruit', 'dairy', 'meat'];
+export const USE = { water: 1, power: 0.5, food: 1, powerPerBuilding: 1 };   // a day, per person (and per staffed building for power)
+export const STORE_BASE = 200;          // of each resource, before warehouses
+export const SURPLUS_SALE = 0.5;        // surplus sells for this share of the import price
+export const MATERIALS_BOOST = 1.5, MATERIALS_PER_WORK = 0.2;   // builders with materials in stock, and what a unit of work uses
 // Eras: a city's size gives it a title and a one-off grant, and speeds research.
 export const ERAS = [
   { id: 'village', name: 'Village', pop: 0, grant: 0 },

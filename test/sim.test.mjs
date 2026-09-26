@@ -451,4 +451,38 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(learner.e >= 1, 'an adult with no schooling can earn a primary certificate at the library');
   console.log('hiring ok: recruit, hire, fire; evening classes took', days, 'days');
 }
+// ---- resources: farms, water, power, imports, variety, storage and materials
+{
+  seed = 33;
+  const s = sim.newCity('Harvest', rng); s.money = 50000; s.land.fill(1);
+  for (let x = 2; x <= 21; x++) put(s, x, c + 1, T.ROAD);
+  const row = [T.HOUSE, T.HOUSE, T.HOUSE, T.FARM, T.WATER, T.WIND, T.SHOP, T.MATERIALS];
+  row.forEach((t, k) => put(s, 3 + k * 2, c + 2, t));
+  for (const x of [3, 5, 7, 9, 15, 17]) put(s, x, c, T.HOUSE);   // enough people to staff everything
+  for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = [];
+  for (let d = 0; d < 3; d++) for (let h = 0; h < 24; h++) sim.tick(s, rng);
+  const r = s.stats.res;
+  assert(r.prod.veg > 0 && r.prod.water > 0 && r.prod.power > 0, 'farms, water towers and wind turbines make things: ' + JSON.stringify(r.prod));
+  assert(r.need.food > 0 && Math.abs(r.need.food - s.people.length) <= 12, 'everyone eats (measured at the start of the day, before newcomers)');
+  assert(r.imported >= 0 && r.importCost === Math.round(r.imported * 0.2375), 'missing food is imported at the average price');
+  assert(r.variety >= 1, 'vegetables count as one kind of food');
+  // Orchards need research; with it, a second kind of food.
+  assert(!sim.availability(s, T.ORCHARD).ok, 'orchards need research');
+  s.tech = [...(s.tech || []), 'orchards'];
+  put(s, 19, c + 2, T.ORCHARD);
+  for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = [];
+  for (let h = 0; h < 24 * 3; h++) sim.tick(s, rng);
+  assert(s.stats.res.variety >= 2, 'fruit makes a second kind of food: ' + JSON.stringify(s.stats.res.prod) + ' staff ' + sim.staffing(s, sim.idx(19, c + 2)));
+  // Materials speed up builders; the stock goes down as they work.
+  s.res.materials = 100;
+  put(s, 21, c + 2, T.HOUSE);
+  const before = s.res.materials;
+  sim.work(s, 0.05);
+  assert(s.res.materials < before, 'builders use materials');
+  // Storage: anything over the limit sells.
+  s.res.veg = 5000;
+  for (let h = 0; h < 24; h++) sim.tick(s, rng);
+  assert(s.res.veg <= s.stats.res.cap && s.stats.res.sold > 0, 'surplus food sells');
+  console.log('resources ok:', JSON.stringify(s.stats.res.prod), 'imported', s.stats.res.imported, 'variety', s.stats.res.variety);
+}
 console.log('all tests passed');

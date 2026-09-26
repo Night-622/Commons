@@ -1,7 +1,7 @@
 // HTML for the side drawer and the build catalogue. Pure functions: main.js supplies data and wires up buttons.
-import { REGIONAL, ALLIANCE_TRADE, REACTIONS, T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY, BONDS, INSURANCE, TECH, ERAS, TRAITS, CARBON_TAX, LOANS, LOAN_DAYS, CONGESTION_FEE, BADGES } from './constants.js';
+import { REGIONAL, ALLIANCE_TRADE, REACTIONS, T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY, BONDS, INSURANCE, TECH, ERAS, TRAITS, CARBON_TAX, LOANS, LOAN_DAYS, CONGESTION_FEE, BADGES, RES, FOOD, TECH_BRANCHES, STORE_BASE } from './constants.js';
 import { t as tr } from './i18n.js';
-import { creditRating, greenShare, traitOf, hasTech, canResearch, eraOf } from './sim.js';
+import { creditRating, greenShare, traitOf, hasTech, canResearch, eraOf, resourceStock } from './sim.js';
 import { ROLES, roleOf, jobText, family, healthText, moodReasons, thought, personName } from './people.js';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -110,7 +110,7 @@ function spark(values, colour, fmt) {
 }
 export function statsPanel(ctx, tab) {
   const { state: s, totals, plan, census: c } = ctx;
-  const tabs = [['overview', 'People'], ['services', 'Services'], ['budget', 'Budget'], ['policy', 'Policy', 'adv'], ['research', 'Research', 'adv'], ['history', 'History']];
+  const tabs = [['overview', 'People'], ['services', 'Services'], ['resources', 'Resources'], ['budget', 'Budget'], ['policy', 'Policy', 'adv'], ['research', 'Research', 'adv'], ['history', 'History']];
   let body = '';
   if (tab === 'overview') {
     const ages = [['Under 5', c.toddlers, '#f2a3c0'], ['5 to 11', c.kids, '#e0588e'], ['12 to 17', c.teens, '#c04a86'], ['18 to 64', c.adults, '#3b7ddd'], ['65 and over', c.seniors, '#7c8a90']];
@@ -188,9 +188,23 @@ export function statsPanel(ctx, tab) {
         <small>${next ? `${next.name} at ${next.pop} people (you’ve reached ${s.peakPop}). Each era sends a grant and speeds up research.` : 'The biggest there is.'}</small></div></div>
       <div class="grid2"><div class="kv"><span>Research points</span><b class="num">${Math.floor(s.rp || 0)}</b></div><div class="kv"><span>Earned yesterday</span><b class="num">+${s.stats.rp || 0}</b></div></div>
       <p class="soft small">Graduates, libraries, universities and museums earn research points.</p>
-      <ul class="tech">${TECH.map((t) => { const done = hasTech(s, t.id), c = canResearch(s, t.id), blocked = t.needs && !hasTech(s, t.needs);
-        return `<li class="${done ? 'done' : blocked ? 'blocked' : ''}"><span class="pmain"><b>${t.name}</b><small>${t.text}${blocked ? ` Needs ${TECH.find((x) => x.id === t.needs).name}.` : ''}</small></span>
-          ${done ? '<span class="tag">Done</span>' : `<button class="btn ${c.ok ? 'primary' : ''}" type="button" data-tech="${t.id}" ${c.ok ? '' : 'disabled'}>${t.cost} pts</button>`}</li>`; }).join('')}</ul>`;
+      ${TECH_BRANCHES.map(([b, label]) => `<h3 class="sub">${label}</h3><ul class="tech tree">${TECH.filter((t) => t.branch === b).map((t) => { const done = hasTech(s, t.id), c = canResearch(s, t.id), blocked = t.needs && !hasTech(s, t.needs);
+        return `<li class="${done ? 'done' : blocked ? 'blocked' : ''} ${t.needs ? 'child' : ''}"><span class="pmain"><b>${t.name}</b><small>${t.text}${blocked ? ` Needs ${TECH.find((x) => x.id === t.needs).name}.` : ''}</small></span>
+          ${done ? '<span class="tag">Done</span>' : `<button class="btn ${c.ok ? 'primary' : ''}" type="button" data-tech="${t.id}" ${c.ok ? '' : 'disabled'}>${t.cost} pts</button>`}</li>`; }).join('')}</ul>`).join('')}`;
+  } else if (tab === 'resources') {
+    const r = s.stats.res, stock = resourceStock(s), cap = r?.cap || STORE_BASE, num = (n) => Math.round(n || 0).toLocaleString();
+    const row2 = (l, v) => `<div class="kv"><span>${l}</span><b class="num">${v}</b></div>`;
+    const line = (k, used, note = '') => `<tr><th scope="row">${RES[k].name}</th><td class="num">${num(stock[k])}</td><td class="num">${num(r?.prod[k])}</td><td class="num">${used}</td><td>${note}</td></tr>`;
+    body = `<p class="soft small">Made and used each day. Each resource keeps up to ${num(cap)} in store; warehouses (Logistics research) add more. Extra food and materials sell for half the import price.</p>
+      ${r ? `<div class="tablewrap"><table class="restable"><thead><tr><th>Resource</th><th>In store</th><th>Made</th><th>Used</th><th></th></tr></thead><tbody>
+        ${line('water', num(r.need.water - r.short.water), r.short.water && r.prod.water ? `<span class="warn">${num(r.short.water)} short</span>` : '')}
+        ${line('power', num(r.need.power - r.short.power), r.short.power && r.prod.power ? `<span class="warn">${num(r.short.power)} short</span>` : '')}
+        ${FOOD.map((k) => line(k, '')).join('')}
+        <tr><th scope="row">All food</th><td></td><td></td><td class="num">${num(r.need.food)}</td><td>${r.imported ? `${num(r.imported)} bought in` : 'Home-grown'}</td></tr>
+        ${line('materials', '')}
+      </tbody></table></div>
+      ${r.imported ? row2('Food bought in yesterday', money(r.importCost)) : ''}${row2('Kinds of food', `${r.variety} of 4`)}${r.sold ? row2('Surplus sold yesterday', money(r.sold)) : ''}` : '<p class="soft">Figures appear after the first day.</p>'}
+      <p class="soft small">Farms grow vegetables. Research Orchards, Dairy farming and Ranching for fruit, dairy and meat. Water towers make water, power stations, solar farms and wind turbines make power, and the materials works makes bricks and timber: while there are materials in store, builders work 50% faster.</p>`;
   } else if (tab === 'policy') {
     const pol = s.policy || { tax: 1, funding: 1, freeTransit: false };
     const slider = (k, label, [a, b], help) => `<div class="policy"><div class="phead2"><b>${label}</b><b class="num" id="pol-${k}-v">${pct(pol[k])}</b></div>

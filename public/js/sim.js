@@ -6,7 +6,7 @@ import {
   LINK_MOOD, MAX_LINKS, HISTORY_DAYS, LOG_SIZE, EVENT_CHANCE, CHUNK, CHUNKS, START_CHUNKS, LAND_PRICE, LAND_STEP,
   MOVE_FEE, ADULT, RETIRE, WAGE, isHome, walkable, BUS_SEATS, COMMUTE_JOBS, TICK_MS, isRoad, isRail, POLICY, WANT_REWARD,
   GOODS_PER_FACTORY, SEASONS, SEASON_DAYS, YEAR_DAYS, UTILITY_POP, DECISIONS, ELECTION_EVERY, ZONES, ZONE_COST,
-  PLOT_BUY_PARCELS, PLOT_BUY_STEP, PLOT_BUY_MIN, BUILD_SPEED, RECRUIT_COST, FIRED_DAYS, ADULT_STUDY_YEARS, TRAINING_YEARS, EDU, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
+  RES, FOOD, USE, STORE_BASE, SURPLUS_SALE, MATERIALS_BOOST, MATERIALS_PER_WORK, PLOT_BUY_PARCELS, PLOT_BUY_STEP, PLOT_BUY_MIN, BUILD_SPEED, RECRUIT_COST, FIRED_DAYS, ADULT_STUDY_YEARS, TRAINING_YEARS, EDU, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
 } from './constants.js';
 
 const N = PLOT * PLOT;
@@ -258,6 +258,52 @@ export function canBuyLand(s, c) {
 export function plotPrice(s, owned = 1) {
   return Math.round(Math.max(PLOT_BUY_MIN, PLOT_BUY_PARCELS * landPrice(s)) * PLOT_BUY_STEP ** Math.max(0, owned - 1));
 }
+
+// ---------- resources ----------
+export function storeCap(s, uc = underConstruction(s)) {
+  let cap = STORE_BASE;
+  for (let i = 0; i < N; i++) { const d = B[s.grid[i]]; if (d?.store && active(s, i, uc) && staffing(s, i) > 0) cap += scale(s, i, d.store); }
+  return cap;
+}
+// What the city's buildings make in a day.
+export function production(s, uc = underConstruction(s)) {
+  const out = Object.fromEntries(Object.keys(RES).map((k) => [k, 0]));
+  for (let i = 0; i < N; i++) {
+    const d = B[s.grid[i]];
+    if (!d?.makes || !active(s, i, uc)) continue;
+    const k = staffing(s, i) * LEVEL.capacity[level(s, i)] * (s.grid[i] === T.FARM && hasTech(s, 'vertical') ? 2 : 1);
+    for (const [r, n] of Object.entries(d.makes)) out[r] += Math.round(n * k);
+  }
+  return out;
+}
+// One day of resources. People eat from every kind of food in stock; what's missing is imported. Water and power
+// can't be imported: a shortfall shows up as illness and unhappiness once the town is big enough to need them.
+function resourcesDay(s, uc) {
+  const res = (s.res ||= {}), pop = s.people.length, prod = production(s, uc), cap = storeCap(s, uc);
+  let staffed = 0;
+  for (let i = 0; i < N; i++) { const d = B[s.grid[i]]; if (d?.jobs && d.cat && active(s, i, uc) && staffing(s, i) > 0) staffed++; }
+  const need = { water: pop * USE.water, power: pop * USE.power + staffed * USE.powerPerBuilding, food: pop * USE.food };
+  const short = { water: 0, power: 0 };
+  for (const k of ['water', 'power']) {
+    const have = (res[k] || 0) + prod[k], used = Math.min(have, need[k]);
+    short[k] = Math.round(need[k] - used);
+    res[k] = Math.round(Math.min(cap, have - used));
+  }
+  for (const k of [...FOOD, 'materials']) res[k] = (res[k] || 0) + prod[k];
+  const inStock = FOOD.reduce((a, k) => a + res[k], 0), eat = Math.min(inStock, need.food);
+  for (const k of FOOD) res[k] = inStock ? res[k] - eat * (res[k] / inStock) : 0;
+  const variety = FOOD.filter((k) => prod[k] > 0 || res[k] >= 1).length;
+  // Imported food: the cheapest kinds first would be dull, so an even mix.
+  const imported = Math.round(need.food - eat), avg = FOOD.reduce((a, k) => a + RES[k].import, 0) / FOOD.length;
+  const importCost = Math.round(imported * avg);
+  let sold = 0;
+  for (const k of [...FOOD, 'materials']) {
+    if (res[k] > cap) { sold += (res[k] - cap) * RES[k].import * SURPLUS_SALE; res[k] = cap; }
+    res[k] = Math.round(res[k] * 10) / 10;
+  }
+  return { prod, need, short, imported, importCost, sold: Math.round(sold), variety, cap };
+}
+export const resourceStock = (s) => ({ ...Object.fromEntries(Object.keys(RES).map((k) => [k, 0])), ...(s.res || {}) });
 
 export function buyLand(s, c) {
   const r = canBuyLand(s, c);
@@ -1268,6 +1314,13 @@ function construct(s, hours = 1) {
     else if (p.j < 0 && canWork(p)) labour += VOLUNTEER_RATE;
   }
   labour *= BUILD_SPEED * hours;
+  // Materials in stock: builders work faster, using some as they go.
+  const mat = s.res?.materials || 0;
+  if (mat > 0 && s.queue.some((q) => !q.priv)) {
+    const boosted = labour * MATERIALS_BOOST, use = Math.min(mat, boosted * MATERIALS_PER_WORK / BUILD_SPEED);
+    labour = labour + (boosted - labour) * (use / Math.max(1e-9, boosted * MATERIALS_PER_WORK / BUILD_SPEED));
+    s.res.materials = Math.round((mat - use) * 100) / 100;
+  }
   for (const q of s.queue.filter((x) => x.priv)) { q.left -= 3 * BUILD_SPEED * hours; if (q.left <= 1e-6) finish(s, q); }
   const pub = () => s.queue.find((x) => !x.priv);
   while (labour > 0 && pub()) {
@@ -1546,6 +1599,15 @@ function daily(s, plan, rng) {
     for (const i of buildings) s.cond[i] = Math.min(100, s.cond[i] + 5);
   }
 
+  // Resources: what was made, what people and buildings used, what had to be imported, and what was left over.
+  const rs = resourcesDay(s, uc);
+  st.res = rs;
+  if (rs.importCost) { st.upkeep += rs.importCost; st.upkeepBy = { ...st.upkeepBy, imports: rs.importCost }; }
+  if (rs.sold) { st.income += rs.sold; st.byClass = { ...st.byClass, produce: rs.sold }; }
+  // Having none at all is already covered by power and water coverage; this is for having some, but not enough.
+  const shortOf = (k) => (pop >= UTILITY_POP && rs.prod[k] > 0 ? rs.short[k] / Math.max(1, rs.need[k]) : 0);
+  const shortK = { water: shortOf('water'), power: shortOf('power') };
+
   // Mood, person by person. Everything they experienced today counts.
   const fireCover = s.grid.some((t, i) => t === T.FIRE && active(s, i, uc) && staffing(s, i) > 0);
   const kidsNoSchool = new Set(s.people.filter((p) => p.a >= 5 && p.a < ADULT && p.sc < 0 && !p.as).map((p) => p.h));
@@ -1598,6 +1660,8 @@ function daily(s, plan, rng) {
     m -= courtBacklog;
     m += LINK_MOOD * Math.min(MAX_LINKS, (s.links || 0) + (s.railLinks || 0));
     m += s._regional?.mood || 0;
+    m -= shortK.water * 0.06 + shortK.power * 0.05;          // taps and lights that don't always work
+    m += 0.015 * Math.max(0, rs.variety - 1);                // a varied diet: fruit, vegetables, dairy and meat
     p.m += (clamp(m) - p.m) * 0.4;
     for (const k of ['vt', 'gr', 'jy']) if (p[k]) p[k]--;
   }
@@ -2028,6 +2092,12 @@ export function advice(s, plan) {
   if (n.health < 0.8 || c.sick > c.total * 0.1) add(4, 'Sick people aren’t being treated.', tot.counts[T.CLINIC] ? T.HOSPITAL : T.CLINIC);
   if (n.safety < 0.7) add(3.5, 'Crime is rising.', tot.counts[T.POLICE] ? T.COURT : T.POLICE);
   // Leisure is worth nearly as much mood as a job, so the more people lack it the higher it ranks.
+  const rsd = s.stats?.res;
+  if (rsd && s.people.length >= UTILITY_POP) {
+    if (rsd.short.water > 0 && rsd.prod.water > 0) add(6.5, `Water is running short: ${rsd.short.water} kilolitres a day. Build another water tower.`, T.WATER);
+    if (rsd.short.power > 0 && rsd.prod.power > 0) add(6, `Power is running short: ${rsd.short.power} megawatt-hours a day. Build a power station, solar farm or wind turbine.`, s.money >= B[T.POWER].cost ? T.POWER : T.WIND);
+  }
+  if (rsd?.importCost >= 8 && s.people.length >= 30) add(2.5, `Imported food costs ${'$'}${rsd.importCost} a day. Farms grow it here, and more kinds of food make people happier.`, T.FARM);
   if (n.leisure < 0.6) add(3 + 3 * (0.6 - n.leisure), 'People have nothing to do in the evenings.', T.PARK);
   if (n.commute < 0.8) add(3.5, 'Roads are jammed. Add routes or footpaths, or a bus service.', tot.counts[T.DEPOT] ? T.STOP : T.DEPOT);
   if (s.flags.utilSince !== undefined) {

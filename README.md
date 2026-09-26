@@ -21,6 +21,13 @@ Guests can turn their guest city into a full account later (Account menu). Linki
 - Saves are split: `plots/{id}` is a small public summary everyone listens to; `plotState/{id}` holds the full city and is only fetched for adjacent neighbours.
 - `node test/balance.mjs` runs a scripted city for 100 days.
 
+## New in 1.12: resources and the technology tree
+- `RES` in constants.js: water, power, veg, fruit, dairy, meat, materials. Buildings list what they make a day in `makes` (water tower 80, power station 120, solar and wind 60, urban farm 25 veg, orchard 25 fruit, dairy farm 25, ranch 20 meat, materials works 30); `sim.production` scales by staffing and level.
+- Once a day `resourcesDay` (inside `daily`): people use `USE` (1 water, 0.5 power, 1 food each; 1 power per staffed building), food comes from every kind in store and the rest is imported at the average `import` price (upkeep "imports"), anything over `storeCap` (`STORE_BASE` + warehouses) sells at `SURPLUS_SALE` of the import price (income "produce"). Stock lives in `s.res`; yesterday's figures in `s.stats.res`.
+- Effects: a water or power shortfall (when there is some supply but not enough; none at all is still the coverage rule) lowers mood; each kind of food past the first adds mood. Materials in store make builders `MATERIALS_BOOST` faster and are used up at `MATERIALS_PER_WORK`.
+- `TECH` entries have a `branch` (`TECH_BRANCHES`) and the Research tab shows them as a tree. New: orchards, dairy, ranching, logistics; vertical farming now follows orchards.
+- New building types 56-60 (orchard, dairy, ranch, materials works, warehouse), with models in render.js. Map codes stay below 76 so they never clash with the `|` separator.
+
 ## New in 1.11: one joined-up world, councils, co-mayors
 - `WORLD_ID` is `main`: a fresh world with `GAP` 0, so plots touch and `terrainFor` runs straight across borders; the renderer draws a thin yellow border round each plot (`plotBorder`). The classic `public` world is kept (`CLASSIC_WORLD`, `OPEN_WORLDS`) and players who were in it start in the new one once (`commons-world-v2` in localStorage). Founding skips spiral slots someone already holds, and the rules let `nextIndex` jump forward by up to 30.
 - Councils: `fb.buyPlot` founds a city on free land touching one of yours (`via`), priced by `sim.plotPrice` (`PLOT_BUY_*`), up to `MAX_CITIES`. The link doc keeps `plotIds`; `plotId` is the home city (`fb.setHome`). Rules: `boughtNextTo` and `citiesOk`.

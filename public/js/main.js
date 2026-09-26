@@ -2630,8 +2630,16 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 1.11';
+const VERSION = 'Commons 1.12';
 const CHANGELOG = [
+  ['1.12', [
+    'Resources: water, power, four kinds of food (vegetables, fruit, dairy and meat) and building materials are now made, stored and used every day. See City stats, Resources.',
+    'Food your farms don’t grow is bought in for a small price. The more kinds of food your city has, the happier people are.',
+    'A water tower serves about 80 people and a power station 120: bigger cities need more than one, and the advisor will say when you’re running short.',
+    'New buildings: orchard, dairy farm and ranch (research them), materials works (builders work 50% faster with materials in store) and warehouse (store more).',
+    'The research list is now a technology tree with four branches: Farming, Industry, Energy and transport, and Society.',
+    'Surplus food and materials sell automatically. Next update: trade them with other cities.',
+  ]],
   ['1.11', [
     'A new world: plots now touch, rivers and coast run across them, and a thin yellow line marks each border. Your old city is still in the Classic world (World panel).',
     'Councils: buy the plot next to one of your cities (the dashed yellow outline) to found another city of your council. Switch between them in Account, Cities.',

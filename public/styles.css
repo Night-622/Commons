@@ -825,6 +825,14 @@ html:not([lang="en"]) .card b { font-size: .95em; }
   [data-menus="down"] .tool-tip { right: 118px; left: auto; }
 }
 
+/* Resources table and the research tree */
+.tablewrap { overflow-x: auto; margin-top: 8px; }
+.restable { width: 100%; border-collapse: collapse; font-size: .92em; }
+.restable th, .restable td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.restable td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.restable thead th { color: var(--soft); font-weight: 700; font-size: .85em; }
+.tech.tree li.child { margin-left: 18px; border-left: 2px solid var(--line); padding-left: 10px; }
+
 /* The desk bar: who is playing a shared city */
 .desk-bar { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(max(12px, env(safe-area-inset-bottom)) + 96px); z-index: 7;
   display: flex; align-items: center; gap: 12px; padding: 8px 12px; font-weight: 600; max-width: calc(100vw - 24px); }

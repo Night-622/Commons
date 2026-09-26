@@ -349,3 +349,18 @@ test('co-mayors: befriend a neighbour, make them co-mayor, watch and take the de
   expect(clean(errors)).toEqual([]);
   await ctx.close();
 });
+
+test('resources: the Resources tab and research tree after a day', async ({ page }) => {
+  const errors = await newGame(page);
+  // Pretend a day has passed with some figures, then look at the tab.
+  await page.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plotState/')) { const s = JSON.parse(v.state); s.lastTick -= 30 * 60_000; v.state = JSON.stringify(s); } localStorage.setItem('fakefb', JSON.stringify(db)); });
+  await page.reload();
+  await expect(page.locator('#game')).toBeVisible({ timeout: 30_000 });
+  await closeModal(page);
+  await page.locator('#rail [data-panel="stats"]').click();
+  await page.locator('#drawer [role="tab"]', { hasText: 'Resources' }).click();
+  await expect(page.locator('#drawer .restable')).toBeVisible();
+  await expect(page.locator('#drawer .restable')).toContainText('Vegetables');
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/resources.png` });
+  expect(clean(errors)).toEqual([]);
+});

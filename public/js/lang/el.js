@@ -85,6 +85,17 @@ const dict = {
 };
 
 const SEASON = { Spring: 'Άνοιξη', Summer: 'Καλοκαίρι', Autumn: 'Φθινόπωρο', Winter: 'Χειμώνας' };
+// Resources and the technology tree (1.12)
+Object.assign(dict, {
+  'Resources': 'Πόροι', 'Resource': 'Πόρος', 'In store': 'Σε απόθεμα', 'Made': 'Παραγωγή', 'Used': 'Κατανάλωση',
+  'Water': 'Νερό', 'Power': 'Ρεύμα', 'Vegetables': 'Λαχανικά', 'Fruit': 'Φρούτα', 'Dairy': 'Γαλακτοκομικά', 'Meat': 'Κρέας',
+  'Building materials': 'Οικοδομικά υλικά', 'All food': 'Όλα τα τρόφιμα', 'Home-grown': 'Ντόπια', 'Kinds of food': 'Είδη τροφίμων',
+  'Food bought in yesterday': 'Εισαγωγές τροφίμων χθες', 'Surplus sold yesterday': 'Πλεόνασμα που πουλήθηκε χθες',
+  'Orchard': 'Οπωρώνας', 'Dairy farm': 'Γαλακτοκομική φάρμα', 'Ranch': 'Ράντσο', 'Materials works': 'Εργοστάσιο υλικών', 'Warehouse': 'Αποθήκη',
+  'Farming': 'Γεωργία', 'Industry': 'Βιομηχανία', 'Energy and transport': 'Ενέργεια και μεταφορές', 'Society': 'Κοινωνία',
+  'Orchards': 'Οπωρώνες', 'Dairy farming': 'Γαλακτοκομία', 'Ranching': 'Κτηνοτροφία', 'Logistics': 'Εφοδιαστική', 'Vertical farming': 'Κάθετη καλλιέργεια',
+  'Figures appear after the first day.': 'Τα στοιχεία εμφανίζονται μετά την πρώτη ημέρα.',
+});
 // Councils, friends and co-mayors (1.11)
 Object.assign(dict, {
   'Cities': 'Πόλεις', 'Friends': 'Φίλοι', 'Open': 'Άνοιγμα', 'Step down': 'Παραίτηση', 'Co': 'Συν', 'Remove co': 'Αφαίρεση συνδημάρχου', 'Remove': 'Αφαίρεση',

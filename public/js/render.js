@@ -68,15 +68,18 @@ const CODE = { [T.HOUSE]: 'H', [T.APARTMENT]: 'Ap', [T.VILLA]: 'V', [T.WORK]: 'O
   [T.DAYCARE]: 'Dc', [T.SCHOOL]: 'PS', [T.HIGH]: 'HS', [T.UNI]: 'U', [T.TUTOR]: 'Tu', [T.LIBRARY]: 'Li', [T.CLINIC]: '+', [T.HOSPITAL]: 'H+',
   [T.POLICE]: 'Po', [T.FIRE]: 'Fi', [T.COURT]: 'Ct', [T.CEMETERY]: 'Ce', [T.PARK]: 'Pk', [T.PLAYGROUND]: 'Pl', [T.SPORTS]: 'Sp', [T.GYM]: 'Gy',
   [T.DOJO]: 'Do', [T.POOL]: 'Sw', [T.CINEMA]: 'Ci', [T.STATION]: 'St', [T.STOP]: 'Bs', [T.DEPOT]: 'Bd', [T.HALL]: 'TH', [T.POWER]: 'Pw', [T.WATER]: 'Wa', [T.DRAIN]: 'Dr',
-  [T.SOLAR]: 'So', [T.WIND]: 'Wi', [T.MUSEUM]: 'Mu', [T.STADIUM]: 'SD', [T.HOTEL]: 'Ht', [T.FARM]: 'Fa', [T.HARBOUR]: 'Hb', [T.AIRPORT]: 'Ai', [T.LANDFILL]: 'Lf', [T.RECYCLE]: 'Re', [T.SEWAGE]: 'Sw', [T.VET]: 'Vt', [T.METRO]: 'M', [T.MONUMENT]: 'Mo' };
+  [T.SOLAR]: 'So', [T.WIND]: 'Wi', [T.MUSEUM]: 'Mu', [T.STADIUM]: 'SD', [T.HOTEL]: 'Ht', [T.FARM]: 'Fa', [T.HARBOUR]: 'Hb', [T.AIRPORT]: 'Ai', [T.LANDFILL]: 'Lf', [T.RECYCLE]: 'Re', [T.SEWAGE]: 'Sw', [T.VET]: 'Vt', [T.METRO]: 'M', [T.MONUMENT]: 'Mo',
+  [T.ORCHARD]: 'Or', [T.DAIRY]: 'Da', [T.RANCH]: 'Ra', [T.MATERIALS]: 'Mw', [T.WAREHOUSE]: 'Wh' };
 export const glyphOf = (t) => GLYPH_COL[B[t]?.col];
 // Ground colour for buildings that are mostly open space.
-const GROUND = { [T.SPORTS]: '#6fbf5a', [T.POOL]: '#e9e2cf', [T.CEMETERY]: '#8fb77a', [T.PLAYGROUND]: '#e8d6a3', [T.YARD]: '#c9ae86', [T.VILLA]: '#b8e09a', [T.FARM]: '#9c7a52', [T.STADIUM]: '#6fbf5a', [T.SOLAR]: '#b9d69b', [T.WIND]: '#a9d68b', [T.LANDFILL]: '#a89a78' };
+const GROUND = { [T.SPORTS]: '#6fbf5a', [T.POOL]: '#e9e2cf', [T.CEMETERY]: '#8fb77a', [T.PLAYGROUND]: '#e8d6a3', [T.YARD]: '#c9ae86', [T.VILLA]: '#b8e09a', [T.FARM]: '#9c7a52', [T.STADIUM]: '#6fbf5a', [T.SOLAR]: '#b9d69b', [T.WIND]: '#a9d68b', [T.LANDFILL]: '#a89a78',
+  [T.ORCHARD]: '#8fc46f', [T.DAIRY]: '#9fcf7a', [T.RANCH]: '#b8a36a', [T.MATERIALS]: '#b0a89a' };
 const MODEL_H = { [T.APARTMENT]: 1.3, [T.VILLA]: 0.8, [T.CAFE]: 0.55, [T.FACTORY]: 1.3, [T.YARD]: 1.1, [T.DAYCARE]: 0.8, [T.HIGH]: 1.1, [T.UNI]: 1.4,
   [T.TUTOR]: 0.7, [T.LIBRARY]: 1, [T.CLINIC]: 0.7, [T.HOSPITAL]: 1.3, [T.POLICE]: 0.8, [T.FIRE]: 1.1, [T.COURT]: 1.2, [T.CEMETERY]: 0.3,
   [T.PLAYGROUND]: 0.5, [T.SPORTS]: 0.3, [T.GYM]: 0.7, [T.DOJO]: 0.9, [T.POOL]: 0.3, [T.CINEMA]: 0.9, [T.PATH]: 0.05,
   [T.DRAIN]: 0.3, [T.RAIL]: 0.05, [T.STATION]: 0.9, [T.STOP]: 0.5, [T.DEPOT]: 0.8, [T.POWER]: 1.4, [T.WATER]: 1.3,
-  [T.SOLAR]: 0.3, [T.WIND]: 1.8, [T.MUSEUM]: 1.1, [T.STADIUM]: 0.9, [T.HOTEL]: 1.6, [T.FARM]: 0.4, [T.HARBOUR]: 1.2, [T.AIRPORT]: 1.1, [T.LANDFILL]: 0.4, [T.RECYCLE]: 0.8, [T.SEWAGE]: 0.5, [T.VET]: 0.7, [T.METRO]: 0.6, [T.MONUMENT]: 2 };
+  [T.SOLAR]: 0.3, [T.WIND]: 1.8, [T.MUSEUM]: 1.1, [T.STADIUM]: 0.9, [T.HOTEL]: 1.6, [T.FARM]: 0.4, [T.HARBOUR]: 1.2, [T.AIRPORT]: 1.1, [T.LANDFILL]: 0.4, [T.RECYCLE]: 0.8, [T.SEWAGE]: 0.5, [T.VET]: 0.7, [T.METRO]: 0.6, [T.MONUMENT]: 2,
+  [T.ORCHARD]: 0.6, [T.DAIRY]: 0.7, [T.RANCH]: 0.5, [T.MATERIALS]: 0.9, [T.WAREHOUSE]: 0.8 };
 export function glyph(g, kind, x, y, r, col) {
   g.fillStyle = col;
   g.beginPath();
@@ -1023,6 +1026,48 @@ export class Renderer {
         this.box(g, P, x0 - 0.04, y0 - 0.04, x1 + 0.04, y1 + 0.04, h, h + 0.08, sh(col, -0.2), grey);
         flag(tx + 0.5, ty + 0.5, h + 0.08, '#e04b3c');
         return h + 0.7;
+      }
+      case T.ORCHARD: {
+        // Three rows of fruit trees, with a dab of fruit on each.
+        for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) {
+          const x = tx + 0.2 + a * 0.3, y = ty + 0.2 + b * 0.3;
+          this.tree(g, P, x, y, 0.13, sh('#3f8f45'), z);
+          const [fx, fy] = P(x + 0.04, y + 0.02, 0.3);
+          g.fillStyle = sh(['#e74c3c', '#f39c12', '#e67e22'][(a + b + i) % 3]); g.fillRect(fx - z * 0.02, fy - z * 0.02, z * 0.04, z * 0.04);
+        }
+        return 0.6;
+      }
+      case T.DAIRY: {
+        // A white barn with a red roof, and a silo.
+        this.box(g, P, tx + 0.15, ty + 0.3, tx + 0.7, ty + 0.85, 0, 0.4, sh('#f4f1ea'), grey);
+        this.gable(g, P, tx + 0.13, ty + 0.28, tx + 0.72, ty + 0.87, 0.4, 0.22, sh('#b03a2e'), grey);
+        this.box(g, P, tx + 0.74, ty + 0.2, tx + 0.9, ty + 0.36, 0, 0.75, sh('#c9ced3'), grey);
+        return 0.8;
+      }
+      case T.RANCH: {
+        // A fenced paddock and a small stable.
+        const fence = [P(tx + 0.08, ty + 0.08, 0.12), P(tx + 0.92, ty + 0.08, 0.12), P(tx + 0.92, ty + 0.92, 0.12), P(tx + 0.08, ty + 0.92, 0.12)];
+        g.strokeStyle = sh('#7a5a3a'); g.lineWidth = Math.max(1, z / 18); g.beginPath();
+        fence.forEach(([x, y], k) => (k ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); g.stroke();
+        this.box(g, P, tx + 0.6, ty + 0.12, tx + 0.88, ty + 0.4, 0, 0.3, sh('#9a6b52'), grey);
+        this.gable(g, P, tx + 0.58, ty + 0.1, tx + 0.9, ty + 0.42, 0.3, 0.14, sh('#5d4037'), grey);
+        for (let k = 0; k < 3; k++) this.box(g, P, tx + 0.2 + k * 0.14, ty + 0.55 + (k % 2) * 0.12, tx + 0.3 + k * 0.14, ty + 0.62 + (k % 2) * 0.12, 0, 0.08, sh(k === 1 ? '#3b2f2f' : '#f4f1ea'), grey);
+        return 0.45;
+      }
+      case T.MATERIALS: {
+        // A quarry pit, a stack of timber and a shed.
+        poly(g, [P(tx + 0.1, ty + 0.12), P(tx + 0.5, ty + 0.12), P(tx + 0.5, ty + 0.52), P(tx + 0.1, ty + 0.52)], sh('#8d8579'));
+        for (let k = 0; k < 3; k++) this.box(g, P, tx + 0.58, ty + 0.15 + k * 0.1, tx + 0.9, ty + 0.22 + k * 0.1, 0, 0.1 + k * 0.05, sh('#b07a45'), grey);
+        this.box(g, P, tx + 0.15, ty + 0.6, tx + 0.6, ty + 0.9, 0, 0.5, sh('#7f8c8d'), grey);
+        this.box(g, P, tx + 0.15, ty + 0.6, tx + 0.6, ty + 0.9, 0.5, 0.56, sh('#5f6b6d'), grey);
+        return 0.9;
+      }
+      case T.WAREHOUSE: {
+        // A long shed with a roller door.
+        this.box(g, P, tx + 0.1, ty + 0.2, tx + 0.9, ty + 0.8, 0, 0.5, sh('#a3b1b8'), grey);
+        this.gable(g, P, tx + 0.08, ty + 0.18, tx + 0.92, ty + 0.82, 0.5, 0.16, sh('#6f7f86'), grey);
+        this.face(g, P, 'S', ty + 0.8, tx + 0.35, tx + 0.65, 0, 0.32, sh('#5b6a70'));
+        return 0.7;
       }
       case T.FARM: {
         for (let k = 0; k < 4; k++) poly(g, [P(tx + 0.1, ty + 0.12 + k * 0.2), P(tx + 0.62, ty + 0.12 + k * 0.2), P(tx + 0.62, ty + 0.24 + k * 0.2), P(tx + 0.1, ty + 0.24 + k * 0.2)], sh(k % 2 ? '#6cbf4c' : '#8fd05f'));
