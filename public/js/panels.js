@@ -1,5 +1,5 @@
 // HTML for the side drawer and the build catalogue. Pure functions: main.js supplies data and wires up buttons.
-import { REGIONAL, ALLIANCE_TRADE, REACTIONS, T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY, BONDS, INSURANCE, TECH, ERAS, TRAITS, CARBON_TAX, LOANS, LOAN_DAYS, CONGESTION_FEE, BADGES, RES, FOOD, TECH_BRANCHES, STORE_BASE, TRADE_RES, MARKET, USE, EXCHANGE, STOCK, PATH } from './constants.js';
+import { REGIONAL, ALLIANCE_TRADE, REACTIONS, T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY, BONDS, INSURANCE, TECH, ERAS, TRAITS, CARBON_TAX, LOANS, LOAN_DAYS, CONGESTION_FEE, BADGES, RES, FOOD, TECH_BRANCHES, STORE_BASE, TRADE_RES, MARKET, USE, EXCHANGE, STOCK, HALL_LEVELS, FEATURE_NEEDS } from './constants.js';
 import { t as tr } from './i18n.js';
 import { creditRating, greenShare, traitOf, hasTech, canResearch, eraOf, resourceStock, matCost } from './sim.js';
 import { ROLES, roleOf, jobText, family, healthText, moodReasons, thought, personName } from './people.js';
@@ -26,7 +26,7 @@ export function marketPanel(ctx) {
       </tbody></table></div>
       <p class="soft small">Cheaper to grow food and make materials yourself? Or to buy them? It changes with the market: that’s the game.</p>`;
   } else if (tab === 'shares' && ctx.locked?.shares) {
-    body = lockHtml('shares');
+    body = lockHtml('shares', s);
   } else if (tab === 'shares') {
     const { cities, listing, canList: cl } = ctx;
     body = `<p class="soft small">Invest in other mayors’ cities. A share is worth a thousandth of the city: its people, money, buildings, resources, growth and mood. When the city grows, your shares are worth more; if it falls, they’re worth almost nothing. The exchange takes ${Math.round(STOCK.fee * 100)}% of each trade.</p>
@@ -74,12 +74,21 @@ export function marketPanel(ctx) {
     ${body}<p id="mk-msg" class="formmsg" role="alert"></p>`;
 }
 
-// What a locked feature is, and which chapter opens it.
-export function lockHtml(feature) {
-  const at = { research: 1, market: 2, shares: 3, region: 3, council: 4, co: 4 }[feature] ?? 1, ch = PATH[at - 1], card = ch?.card;
-  return `<div class="locked-card">${icon('i-lock')}<div><b>${esc(card?.title || 'Locked')}</b>
-    <p>Opens when you finish chapter ${at}, <b>${esc(ch?.name || '')}</b>, on your path (Goals).</p>
-    ${card ? `<p class="soft small">${esc(card.what)}</p><p class="small"><b>Why it matters:</b> ${esc(card.why)}</p>` : ''}</div></div>`;
+// What a locked feature is for, and exactly what opens it: a technology, or a bigger town hall.
+const FEATURE_INFO = {
+  market: ['The Market', 'Buy what you lack and sell what you have too much of at the world’s prices; trade with other mayors, lend and borrow.', 'Once you make things, you can sell them: a busy farm can pay its way when food is scarce.'],
+  shares: ['City shares', 'Invest in other mayors’ cities, or list yours to raise money now.', 'A growing city is worth something. Investors win or lose with the cities they back.'],
+  region: ['The Region', 'Shared projects with other mayors, and alliances with their own chat and rankings.', 'Some things are too big for one town. Allies trade more and grow together.'],
+  co: ['Co-mayors', 'Let a friend help run your city: one of you plays at a time.', 'A bigger city is a lot of work. Two mayors can keep it going.'],
+  council: ['More cities', 'Buy the plot next to your city and found another city of your council.', 'One plot only holds so much. A council of cities is how you get really big.'],
+};
+export function lockHtml(feature, s) {
+  const [title, what, why] = FEATURE_INFO[feature] || ['Locked', '', ''], need = FEATURE_NEEDS[feature] || {};
+  const tech = need.tech && TECH.find((t) => t.id === need.tech);
+  const how = tech ? `Research <b>${esc(tech.name)}</b> in City stats, Research: ${tech.cost} points${s ? ` (you have ${Math.floor(s.rp || 0)}; your town hall earns more every day)` : ''}.${tech.needs ? ` It needs ${esc(TECH.find((t) => t.id === tech.needs).name)} first.` : ''}`
+    : need.hall !== undefined ? `Your town hall must grow into a <b>${esc(HALL_LEVELS[need.hall].name.toLowerCase())}</b>. See Goals for what it needs.` : '';
+  return `<div class="locked-card">${icon('i-lock')}<div><b>${esc(title)}</b><p>${how}</p>
+    <p class="soft small">${esc(what)}</p><p class="small"><b>Why it matters:</b> ${esc(why)}</p></div></div>`;
 }
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -99,22 +108,29 @@ const personRow = (s, plan, p) => `<button type="button" class="person" data-per
   <small>${p.a}, ${esc(jobText(s, p))}</small><em>“${esc(thought(s, plan, p))}”</em></span>${bar(`Mood`, p.m, 'tiny')}</button>`;
 
 // ---------- goals ----------
-// The path: where you are, what this chapter asks, and what finishing it unlocks.
-export function pathHtml(ps) {
-  if (ps.complete) return `<div class="path"><h3 class="sub">${icon('i-trophy')}Your path: complete</h3><p>You’ve built a metropolis. Everything is open to you.</p></div>`;
-  const ch = ps.chapter, n = ps.goals.filter((g) => g.done).length;
-  return `<div class="path"><h3 class="sub">${icon('i-flag')}Your path: chapter ${ps.stage + 1} of ${PATH.length}</h3>
-    <p><b>${esc(ch.name)}.</b> <span class="soft">${esc(ch.idea)}</span></p>
-    ${bar(`${ch.name} progress`, n / ps.goals.length)}
-    <ul class="pathgoals">${ps.goals.map((g) => `<li class="${g.done ? 'done' : ''}"><span aria-hidden="true">${g.done ? '✓' : '○'}</span> ${esc(g.text)}</li>`).join('')}</ul>
-    <p class="small">Finish it for <b>${money(ch.reward)}</b>${ch.card ? ` and unlock <b>${esc(ch.card.title)}</b>. ${esc(ch.card.why)}` : '.'}</p>
-    <ol class="chapters" aria-label="All chapters">${PATH.map((c, i) => `<li class="${i < ps.stage ? 'done' : i === ps.stage ? 'now' : ''}">${esc(c.name)}</li>`).join('')}</ol></div>`;
+// The town hall: how big the city is, what the next level needs, and what it brings.
+export function hallHtml(hs) {
+  const cur = HALL_LEVELS[hs.level];
+  const strip = `<ol class="chapters" aria-label="Town hall levels">${HALL_LEVELS.map((l, i) => `<li class="${i < hs.level ? 'done' : i === hs.level ? 'now' : ''}">${esc(l.name)}</li>`).join('')}</ol>`;
+  if (hs.complete) return `<div class="path"><h3 class="sub">${icon('i-trophy')}Town hall: ${esc(cur.name)}</h3><p>The biggest there is. Everything is open to you: explore.</p>${strip}</div>`;
+  const n = hs.next, all = [hs.pop.done, ...hs.goals.map((g) => g.done), ...hs.res.map((r) => r.done)], k = all.filter(Boolean).length;
+  const mark = (done) => `<span aria-hidden="true">${done ? '✓' : '○'}</span>`;
+  return `<div class="path"><h3 class="sub">${icon('i-flag')}Town hall: ${esc(cur.name)}</h3>
+    <p>Next it grows into a <b>${esc(n.name.toLowerCase())}</b>. It upgrades by itself when all of this is done:</p>
+    ${bar(`${n.name} progress`, k / all.length)}
+    <ul class="pathgoals">
+      <li class="${hs.pop.done ? 'done' : ''}">${mark(hs.pop.done)} Reach ${n.pop} people <span class="soft">(${hs.pop.have})</span></li>
+      ${hs.goals.map((g) => `<li class="${g.done ? 'done' : ''}">${mark(g.done)} ${esc(g.text)}</li>`).join('')}
+      ${hs.res.map((r) => `<li class="${r.done ? 'done' : ''}">${mark(r.done)} Have ${r.need} ${esc(RES[r.k].name.toLowerCase())} in store <span class="soft">(${r.have})</span></li>`).join('')}
+    </ul>
+    <p class="small">A ${esc(n.name.toLowerCase())} can buy up to ${n.land} parcels of land (now ${cur.land}), stores ${n.store - cur.store} more of everything, earns ${n.rp} research a day and has a bigger hall with more builders.${n.res && Object.keys(n.res).length ? ' The upgrade uses the resources.' : ''}</p>
+    ${strip}</div>`;
 }
-export function goalsPanel(state, daily, ps) {
+export function goalsPanel(state, daily, hs) {
   const done = state.goalsDone.length;
   const wants = (state.wants || []).map((w) => ({ ...w, p: state.people.find((x) => x.i === w.p) })).filter((w) => w.p);
   return `${head('Goals', `<span class="soft num fill">${done} of ${GOALS.length}</span>`)}
-    ${ps ? pathHtml(ps) : ''}
+    ${hs ? hallHtml(hs) : ''}
     ${daily ? `<div class="weekly"><h3 class="sub">${icon('i-flag')}Today’s challenge</h3><p><b>${esc(daily.text)}</b></p>
       ${bar('Daily challenge', daily.got / daily.n)}<p class="soft small">${daily.got} of ${daily.n}. A new one each day.</p>
       ${daily.claimed ? '<p class="good-t small">Done for today. Come back tomorrow.</p>' : daily.done ? `<button class="btn primary" type="button" id="daily-claim">Collect ${money(200)}</button>` : ''}</div>` : ''}
@@ -274,8 +290,6 @@ export function statsPanel(ctx, tab) {
         : s.people.length >= BONDS.minPop ? `<p class="soft small">Borrow from your own residents: up to ${money(s.people.length * BONDS.perHead)}, repaid with ${Math.round(BONDS.rate * 100)}% interest over ${BONDS.days} days. No credit check, but missing a payment angers them.</p>
           <div class="actions">${[0.5, 1].map((f) => Math.floor(s.people.length * BONDS.perHead * f / 50) * 50).filter((a) => a > 0).map((a) => `<button class="btn" type="button" data-bond="${a}">Sell ${money(a)} of bonds</button>`).join('')}</div>`
         : `<p class="soft small">Once you have ${BONDS.minPop} residents, they can buy city bonds.</p>`}</div>`;
-  } else if (tab === 'research' && ctx.locked?.research) {
-    body = lockHtml('research');
   } else if (tab === 'research') {
     const era = eraOf(s), next = ERAS[ERAS.indexOf(era) + 1];
     body = `<div class="world-card"><span class="wbadge">${icon('i-flag')}</span><div><b>${s.name} is a ${era.name.toLowerCase()}</b>

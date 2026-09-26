@@ -6,7 +6,7 @@ import {
   LINK_MOOD, MAX_LINKS, HISTORY_DAYS, LOG_SIZE, EVENT_CHANCE, CHUNK, CHUNKS, START_CHUNKS, LAND_PRICE, LAND_STEP,
   MOVE_FEE, ADULT, RETIRE, WAGE, isHome, walkable, BUS_SEATS, COMMUTE_JOBS, TICK_MS, isRoad, isRail, POLICY, WANT_REWARD,
   GOODS_PER_FACTORY, SEASONS, SEASON_DAYS, YEAR_DAYS, UTILITY_POP, DECISIONS, ELECTION_EVERY, ZONES, ZONE_COST,
-  PATH, UNLOCK_AT, MAT_PER_COST, MAT_BUY, HARVEST, EXCHANGE, PER_CAPITA, STOCK, TRADE_RES, MARKET, RES, FOOD, USE, STORE_BASE, SURPLUS_SALE, MATERIALS_BOOST, MATERIALS_PER_WORK, PLOT_BUY_PARCELS, PLOT_BUY_STEP, PLOT_BUY_MIN, BUILD_SPEED, RECRUIT_COST, FIRED_DAYS, ADULT_STUDY_YEARS, TRAINING_YEARS, EDU, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
+  HALL_LEVELS, FEATURE_NEEDS, MAT_PER_COST, MAT_BUY, HARVEST, EXCHANGE, PER_CAPITA, STOCK, TRADE_RES, MARKET, RES, FOOD, USE, STORE_BASE, SURPLUS_SALE, MATERIALS_BOOST, MATERIALS_PER_WORK, PLOT_BUY_PARCELS, PLOT_BUY_STEP, PLOT_BUY_MIN, BUILD_SPEED, RECRUIT_COST, FIRED_DAYS, ADULT_STUDY_YEARS, TRAINING_YEARS, EDU, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
 } from './constants.js';
 
 const N = PLOT * PLOT;
@@ -94,7 +94,7 @@ export function newCity(name, rng = Math.random) {
   const land = new Array(CHUNKS * CHUNKS).fill(0);
   for (const c of START_CHUNKS) land[c] = 1;
   const s = {
-    v: 4, name, grid, cond, lv: new Array(N).fill(1), land, queue: [], money: START_MONEY, people: [], nextId: 1, path: { stage: 0, done: {} },
+    v: 4, name, grid, cond, lv: new Array(N).fill(1), land, queue: [], money: START_MONEY, people: [], nextId: 1, hall: 0, hallDone: {},
     happiness: 0.65, hour: 0, day: 0, peakPop: 6, unpaidDays: 0, cityNo: 1, status: 'alive', lastTick: Date.now(),
     goalsDone: [], history: [], log: [], links: 0, flags: {}, graves: 0, cases: 0, clock: 1, wants: [], zone: new Array(N).fill(0), bday: new Array(N).fill(-1), protect: [],
     policy: { tax: 1, funding: 1, freeTransit: false },
@@ -141,7 +141,15 @@ export function migrate(s, rng = Math.random) {
   s.cases = s.cases || 0;
   if (Array.isArray(s.people) && Array.isArray(s.people[0])) s.people = s.people.map(unpack);
   // Cities from before the path start at the chapter their size has earned, so nobody loses what they use.
-  if (!s.path) s.path = { stage: s.day > 2 ? [15, 40, 60, 120, 200].filter((n) => s.people.length >= n).length : 0, done: {} };
+  if (s.hall === undefined) {
+    s.hall = s.day > 2 ? [15, 40, 80, 150, 250, 500].filter((n) => s.people.length >= n).length : 0;
+    s.hallDone = {};
+    // What an established city already had open stays open: the technologies that gate it now.
+    const grant = [...(s.hall >= 1 ? ['highschool', 'trade', 'diplomacy'] : []), ...(s.hall >= 2 ? ['university', 'finance'] : [])];
+    if (s.day > 2) s.tech = [...new Set([...(s.tech || []), ...grant])];
+    s.lv[HALL_INDEX] = Math.max(s.lv[HALL_INDEX] || 1, hallSize(s.hall));
+  }
+  delete s.path;
   // 1.16 had made-up companies to invest in; 1.17 replaced them with city shares. Give back what was paid.
   if (s.shares) { s.money += Object.values(s.shares).reduce((a, h) => a + (h.paid || 0), 0); delete s.shares; }
   if (!s.policy) s.policy = { tax: 1, funding: 1, freeTransit: false };
@@ -258,6 +266,8 @@ export function canBuyLand(s, c) {
     return x >= 0 && y >= 0 && x < CHUNKS && y < CHUNKS && s.land[y * CHUNKS + x];
   });
   if (!next) return { ok: false, reason: 'Buy land next to what you already own.' };
+  const cap = HALL_LEVELS[hallLevel(s)]?.land ?? 36;
+  if (s.land.filter(Boolean).length >= cap) return { ok: false, reason: `Your town hall must grow to buy more: a ${HALL_LEVELS[hallLevel(s)].name.toLowerCase()} can hold ${cap} parcels`, capped: true };
   const price = landPrice(s);
   if (s.money < price) return { ok: false, reason: `Needs $${price}.`, price };
   return { ok: true, price };
@@ -269,7 +279,7 @@ export function plotPrice(s, owned = 1) {
 
 // ---------- resources ----------
 export function storeCap(s, uc = underConstruction(s)) {
-  let cap = STORE_BASE;
+  let cap = STORE_BASE + (HALL_LEVELS[hallLevel(s)]?.store || 0);
   for (let i = 0; i < N; i++) { const d = B[s.grid[i]]; if (d?.store && active(s, i, uc) && staffing(s, i) > 0) cap += scale(s, i, d.store); }
   return cap;
 }
@@ -325,7 +335,7 @@ function resourcesDay(s, uc) {
   }
   return { prod, need, short, imported, importCost, sold: Math.round(sold), variety, cap };
 }
-// ---------- the path ----------
+// ---------- the town hall: how big the city is ----------
 // How each objective is checked. `x` has what the city can't know by itself: its alliance and how many cities
 // its council runs.
 const pathCount = (s, ...types) => s.grid.reduce((a, t, i) => a + (types.includes(t) && s.cond[i] > 0 ? 1 : 0), 0);
@@ -335,32 +345,48 @@ const PATH_TESTS = {
   pop15: (s) => s.people.length >= 15, school: (s) => pathCount(s, T.SCHOOL) >= 1, farm: (s) => pathCount(s, T.FARM) >= 1,
   harvest: (s) => (s.counters.harvests || 0) >= 1,
   pop40: (s) => s.people.length >= 40, utilities: (s) => pathCount(s, T.WATER) >= 1 && pathCount(s, T.POWER, T.SOLAR, T.WIND) >= 1,
-  tech1: (s) => (s.tech || []).length >= 1, materials: (s) => pathCount(s, T.MATERIALS) >= 1,
+  tech1: (s) => (s.tech || []).length >= 1, tech2: (s) => (s.tech || []).length >= 2, tech6: (s) => (s.tech || []).length >= 6, materials: (s) => pathCount(s, T.MATERIALS) >= 1,
+  clinic: (s) => pathCount(s, T.CLINIC) >= 1, highschool: (s) => pathCount(s, T.HIGH) >= 1, land3: (s) => (s.counters.land || 0) >= 3, happy60: (s) => s.people.length >= 20 && s.happiness >= 0.6,
   pop60: (s) => s.people.length >= 60, trade1: (s) => (s.counters.traded || 0) >= 1, land: (s) => (s.counters.land || 0) >= 1,
-  happy60: (s) => s.people.length >= 60 && s.happiness >= 0.6,
   pop120: (s) => s.people.length >= 120, invest: (s) => !!s.listed || Object.keys(s.holdings || {}).length > 0,
   alliance: (s, x) => !!x?.alliance, link: (s) => (s.links || 0) + (s.railLinks || 0) >= 1 || (s.counters.traded || 0) >= 5,   // no neighbour yet? trading counts
   cities2: (s, x) => (x?.cities || 1) >= 2, pop200: (s) => s.people.length >= 200, uni: (s) => pathCount(s, T.UNI) >= 1, tech4: (s) => (s.tech || []).length >= 4,
-  pop500: (s) => s.people.length >= 500, monument: (s) => pathCount(s, T.MONUMENT) >= 1, happy70: (s) => s.people.length >= 500 && s.happiness >= 0.7,
+  pop500: (s) => s.people.length >= 500, monument: (s) => pathCount(s, T.MONUMENT) >= 1, happy70: (s) => s.people.length >= 100 && s.happiness >= 0.7,
 };
-// Where the city is on the path, and what's done (objectives stay done once met).
-export function pathState(s, x = {}) {
-  const p = (s.path ||= { stage: 0, done: {} }), ch = PATH[p.stage];
-  if (!ch) return { stage: p.stage, chapter: null, goals: [], complete: true };
-  return { stage: p.stage, chapter: ch, goals: ch.goals.map(([id, text]) => ({ id, text, done: !!p.done[id] || !!PATH_TESTS[id]?.(s, x) })), complete: false };
+export const hallLevel = (s) => s.hall || 0;
+// The hall's size on the map follows its level (buildings have three sizes).
+const hallSize = (h) => [1, 1, 2, 2, 3, 3, 3][h] || 3;
+// What the next level asks for, and how far along the city is.
+export function hallState(s, x = {}) {
+  const h = hallLevel(s), next = HALL_LEVELS[h + 1];
+  if (!next) return { level: h, name: HALL_LEVELS[h].name, next: null, complete: true };
+  const done = (s.hallDone ||= {});
+  const goals = next.goals.map(([id, text]) => ({ id, text, done: !!done[id] || !!PATH_TESTS[id]?.(s, x) }));
+  const res = Object.entries(next.res).map(([k, n]) => ({ k, need: n, have: Math.floor(s.res?.[k] || 0), done: (s.res?.[k] || 0) >= n }));
+  const pop = { need: next.pop, have: s.people.length, done: s.people.length >= next.pop };
+  return { level: h, name: HALL_LEVELS[h].name, next, goals, res, pop, ready: pop.done && goals.every((g) => g.done) && res.every((r) => r.done), complete: false };
 }
-// Record objectives met since last time; finish the chapter (and pay its reward) when all are.
-export function checkPath(s, x = {}) {
-  const st = pathState(s, x);
-  if (st.complete || s.status !== 'alive') return null;
-  for (const g of st.goals) if (g.done) s.path.done[g.id] = true;
-  if (!st.goals.every((g) => g.done)) return null;
-  s.path.stage++;
-  s.money += st.chapter.reward;
-  note(s, 'good', `Chapter complete: ${st.chapter.name}. You earned $${st.chapter.reward}.`);
-  return st.chapter;
+// Remember objectives met; when everything's there, the hall upgrades (using the resources).
+export function checkHall(s, x = {}) {
+  if (s.status !== 'alive') return null;
+  const st = hallState(s, x);
+  if (st.complete) return null;
+  for (const g of st.goals) if (g.done) s.hallDone[g.id] = true;
+  if (!st.ready) return null;
+  for (const r of st.res) s.res[r.k] -= r.need;
+  s.hall = hallLevel(s) + 1;
+  s.hallDone = {};
+  s.lv[HALL_INDEX] = hallSize(s.hall);
+  s._plan = null;
+  note(s, 'good', `The town hall has grown: ${s.name} is now a ${HALL_LEVELS[s.hall].name.toLowerCase()}.`);
+  return HALL_LEVELS[s.hall];
 }
-export const unlocked = (s, feature) => (s.path?.stage ?? 0) >= (UNLOCK_AT[feature] ?? 0);
+// Is a feature open yet: a technology, or a big enough town hall?
+export function unlocked(s, feature) {
+  const n = FEATURE_NEEDS[feature];
+  if (!n) return true;
+  return n.tech ? hasTech(s, n.tech) : hallLevel(s) >= n.hall;
+}
 
 // ---------- the exchange: resource prices and city shares ----------
 // Smooth noise over the world's days, the same for every player.
@@ -1975,7 +2001,7 @@ function daily(s, plan, rng) {
   // Research: degrees and libraries make progress, faster in bigger eras.
   const libs = s.grid.reduce((a, t, i) => a + (t === T.LIBRARY && active(s, i, uc) && staffing(s, i) > 0 ? 1 : 0) + (t === T.UNI && active(s, i, uc) && staffing(s, i) > 0 ? 2 : 0) + (t === T.MUSEUM && active(s, i, uc) ? 1 : 0), 0);
   const degrees = s.people.filter((p) => p.e >= 3 && p.a >= ADULT).length;
-  st.rp = Math.round((degrees * 0.15 + libs * 0.8) * (1 + ERAS.indexOf(eraOf(s)) * 0.1) * 10) / 10;
+  st.rp = Math.round(((degrees * 0.15 + libs * 0.8) * (1 + ERAS.indexOf(eraOf(s)) * 0.1) + (HALL_LEVELS[hallLevel(s)]?.rp || 1)) * (hasTech(s, 'edtech') ? 1.2 : 1) * 10) / 10;   // the town hall's clerks research too
   s.rp = Math.round(((s.rp || 0) + st.rp) * 10) / 10;
   st.cars = carTrips;
   st.commuters = s.people.filter((p) => p.oj).length;

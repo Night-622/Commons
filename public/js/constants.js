@@ -113,8 +113,8 @@ export const B = {
 
   [T.DAYCARE]: { key: 'daycare', name: 'Daycare', cat: 'learn', col: 'school', cost: 200, work: 24, upkeep: 4, jobs: [['Carer', 2, 2]], school: { stage: 'daycare', seats: 10 }, blurb: 'Minds 10 children under 5 so both parents can work.' },
   [T.SCHOOL]: { key: 'school', name: 'Primary school', cat: 'learn', col: 'school', cost: 320, work: 40, upkeep: 6, jobs: [['Teacher', 3, 2]], school: { stage: 'primary', seats: 20 }, blurb: '20 seats for children aged 5 to 11.' },
-  [T.HIGH]: { key: 'high', name: 'High school', cat: 'learn', col: 'school', cost: 480, work: 60, upkeep: 8, jobs: [['Teacher', 3, 3]], school: { stage: 'high', seats: 24 }, minPop: 25, blurb: '24 seats for teenagers. Graduates can get skilled jobs.' },
-  [T.UNI]: { key: 'uni', name: 'University', cat: 'learn', col: 'school', cost: 900, work: 110, upkeep: 14, jobs: [['Lecturer', 3, 4]], school: { stage: 'uni', seats: 20 }, minPop: 60, needs: T.HIGH, blurb: 'Turns high school graduates into doctors, teachers and managers.' },
+  [T.HIGH]: { research: 'highschool', key: 'high', name: 'High school', cat: 'learn', col: 'school', cost: 480, work: 60, upkeep: 8, jobs: [['Teacher', 3, 3]], school: { stage: 'high', seats: 24 }, minPop: 25, blurb: '24 seats for teenagers. Graduates can get skilled jobs.' },
+  [T.UNI]: { research: 'university', key: 'uni', name: 'University', cat: 'learn', col: 'school', cost: 900, work: 110, upkeep: 14, jobs: [['Lecturer', 3, 4]], school: { stage: 'uni', seats: 20 }, minPop: 60, needs: T.HIGH, blurb: 'Turns high school graduates into doctors, teachers and managers.' },
   [T.TUTOR]: { key: 'tutor', name: 'Tutoring centre', cat: 'learn', col: 'school', cost: 220, work: 24, upkeep: 3, jobs: [['Tutor', 3, 2]], school: { stage: 'tutor', seats: 16 }, blurb: 'After-school help for 16 students. They learn 50% faster.' },
   [T.LIBRARY]: { key: 'library', name: 'Library', cat: 'learn', col: 'school', cost: 260, work: 30, upkeep: 3, jobs: [['Librarian', 2, 2]], visits: { n: 25, who: 'all', study: 0.2 }, blurb: 'A quiet evening out. Students who visit learn a little faster.' },
 
@@ -159,33 +159,20 @@ export const CONGESTION_FEE = 0.4;     // per car trip, per day
 export const PROPERTY_TAX = [0, 0.4, 0.8];   // off | low | high
 export const RENT_SQUEEZE = 0.72;            // above this land value, families without schooling feel the rent
 export const MILESTONES = [25, 50, 100, 200, 300, 500];
-// The path: chapters from a handful of settlers to a metropolis. Each teaches one idea through a few objectives,
-// pays a reward, and unlocks the next features (UNLOCK_AT: the chapter you must have finished). Objective tests are
-// in sim.js (PATH_TESTS), by id. `card` explains what was unlocked, why it matters now, and where to find it.
-export const PATH = [
-  { id: 'settle', name: 'Settle in', idea: 'Every town starts with homes, work and food.', reward: 300,
-    goals: [['roads', 'Lay 10 road tiles'], ['homes', 'Build 3 homes'], ['work', 'Open an office or a factory'], ['shop', 'Open a grocer']],
-    card: { title: 'Research', what: 'Graduates, libraries and universities now earn research points. Spend them in City stats, Research.', why: 'Research unlocks fruit, dairy and meat, warehouses, cheaper building and the metro: it’s how a town gets more than the basics.' } },
-  { id: 'feed', name: 'Feed yourselves', idea: 'Food you grow is food you don’t have to buy.', reward: 400,
-    goals: [['pop15', 'Reach 15 people'], ['school', 'Open a primary school'], ['farm', 'Build an urban farm'], ['harvest', 'Collect a harvest (tap a building with a bubble)']],
-    card: { title: 'The Market', what: 'Buy what you lack and sell what you have too much of, at prices set by the whole world; lend, borrow and hire out workers. Tap Market (X).', why: 'Now you make things, you can sell them. Prices rise when something is scarce, so a busy farm can pay its way.' } },
-  { id: 'power', name: 'Power up', idea: 'A growing town needs water, power, materials and new ideas.', reward: 600,
-    goals: [['pop40', 'Reach 40 people'], ['utilities', 'Build a water tower and a power station, solar farm or wind turbine'], ['tech1', 'Research your first technology'], ['materials', 'Build a materials works']],
-    card: { title: 'City shares and the Region', what: 'Market, Cities: invest in other mayors’ cities, or list your own to raise money. Region: shared projects and alliances.', why: 'Your town is worth something now. Others can invest in it, and you can grow with your neighbours.' } },
-  { id: 'trade', name: 'Open for trade', idea: 'No town has everything: trade for what you need.', reward: 900,
-    goals: [['pop60', 'Reach 60 people'], ['trade1', 'Make a trade: on the exchange or with another mayor'], ['land', 'Buy a parcel of land'], ['happy60', 'Keep 60 people at 60% mood']],
-    card: { title: 'More cities and co-mayors', what: 'Select free land next to your city to buy it and found another city of your council. In Account, Friends, press Co to let a friend help run your city.', why: 'One plot only holds so much. A council of cities, and friends to help run them, is how you get big.' } },
-  { id: 'ally', name: 'Invest and ally', idea: 'Grow with others: shares, alliances and links.', reward: 1400,
-    goals: [['pop120', 'Reach 120 people'], ['invest', 'Own shares in another city, or list your own'], ['alliance', 'Join or found an alliance (Region)'], ['link', 'Link a road or railway with a neighbour (or make 5 trades)']],
-    card: null },
-  { id: 'council', name: 'Build a council', idea: 'Run more than one city.', reward: 2500,
-    goals: [['cities2', 'Found a second city (buy the plot next door)'], ['pop200', 'Reach 200 people'], ['uni', 'Open a university'], ['tech4', 'Research 4 technologies']],
-    card: null },
-  { id: 'metro', name: 'Metropolis', idea: 'The biggest there is.', reward: 5000,
-    goals: [['pop500', 'Reach 500 people'], ['monument', 'Build a monument'], ['happy70', 'Keep 500 people at 70% mood']],
-    card: null },
+// Town hall levels: how big your city is. The hall upgrades itself once the city has the people, has met the
+// objectives and has the resources in store (the upgrade uses them). Each level lets you buy more land (parcels),
+// store more of everything, earn more research a day, and grows the hall (more builders and clerks).
+export const HALL_LEVELS = [
+  { name: 'Settlement', pop: 0, goals: [], res: {}, land: 8, rp: 1, store: 0 },
+  { name: 'Village', pop: 15, goals: [['roads', 'Lay 10 road tiles'], ['homes', 'Build 3 homes'], ['work', 'Open an office or a factory'], ['shop', 'Open a grocer']], res: {}, land: 12, rp: 2, store: 100 },
+  { name: 'Town', pop: 40, goals: [['school', 'Open a primary school'], ['farm', 'Build an urban farm'], ['harvest', 'Collect a harvest: tap a building with a bubble'], ['utilities', 'Build a water tower and a power source']], res: { materials: 40 }, land: 16, rp: 3, store: 200 },
+  { name: 'Large town', pop: 80, goals: [['materials', 'Build a materials works'], ['tech2', 'Research 2 technologies'], ['trade1', 'Make a trade on the Market'], ['clinic', 'Open a clinic']], res: { materials: 120, veg: 60 }, land: 22, rp: 4, store: 300 },
+  { name: 'City', pop: 150, goals: [['highschool', 'Open a high school'], ['invest', 'Own shares in another city, or list your own'], ['land3', 'Buy 3 parcels of land'], ['happy60', 'Keep mood at 60% or more']], res: { materials: 250, veg: 120, fruit: 60 }, land: 28, rp: 6, store: 400 },
+  { name: 'Large city', pop: 250, goals: [['uni', 'Open a university'], ['cities2', 'Found a second city'], ['link', 'Link a road or railway with a neighbour (or make 5 trades)'], ['tech6', 'Research 6 technologies']], res: { materials: 450, veg: 200, dairy: 100 }, land: 36, rp: 8, store: 600 },
+  { name: 'Metropolis', pop: 500, goals: [['monument', 'Build a monument'], ['happy70', 'Keep mood at 70% or more'], ['alliance', 'Be in an alliance']], res: { materials: 900, veg: 300, meat: 150 }, land: 36, rp: 12, store: 900 },
 ];
-export const UNLOCK_AT = { research: 1, market: 2, shares: 3, region: 3, council: 4, co: 4 };
+// What opens each feature: a technology, or a town hall level (index into HALL_LEVELS).
+export const FEATURE_NEEDS = { market: { tech: 'trade' }, shares: { tech: 'finance' }, region: { tech: 'diplomacy' }, co: { hall: 3 }, council: { hall: 4 } };
 export const QUAKE_CHANCE = 0.006;     // per day
 export const TORNADO_CHANCE = 0.012;   // per day in spring and summer storms
 // Badges shown on the map and in leaderboards.
@@ -239,8 +226,13 @@ export const WASTE_POP = 45, SEWAGE_POP = 70;   // from this many people, rubbis
 // Research: educated residents and libraries earn research points; each project unlocks or improves something.
 // The technology tree: each branch unlocks in order (needs). Research points come from graduates, libraries,
 // universities and museums.
-export const TECH_BRANCHES = [['farming', 'Farming'], ['industry', 'Industry'], ['energy', 'Energy and transport'], ['society', 'Society']];
+export const TECH_BRANCHES = [['education', 'Education'], ['commerce', 'Commerce'], ['farming', 'Farming'], ['industry', 'Industry'], ['energy', 'Energy and transport'], ['society', 'Society']];
 export const TECH = [
+  { id: 'highschool', branch: 'education', name: 'High schools', cost: 10, text: 'Unlocks high schools: teenagers finish school and can go on to work that needs it.' },
+  { id: 'university', branch: 'education', name: 'Universities', cost: 30, needs: 'highschool', text: 'Unlocks universities: degrees for doctors, engineers and teachers.' },
+  { id: 'trade', branch: 'commerce', name: 'Trade', cost: 10, text: 'Opens the Market: buy and sell resources at the world’s prices, trade with other mayors, lend and borrow.' },
+  { id: 'finance', branch: 'commerce', name: 'Finance', cost: 35, needs: 'trade', text: 'Opens city shares: invest in other cities, or list yours to raise money.' },
+  { id: 'diplomacy', branch: 'society', name: 'Diplomacy', cost: 15, text: 'Opens the Region: shared projects with other mayors, and alliances.' },
   { id: 'orchards', branch: 'farming', name: 'Orchards', cost: 30, text: 'Unlocks orchards: fruit.' },
   { id: 'dairy', branch: 'farming', name: 'Dairy farming', cost: 50, needs: 'orchards', text: 'Unlocks dairy farms.' },
   { id: 'ranching', branch: 'farming', name: 'Ranching', cost: 70, needs: 'dairy', text: 'Unlocks ranches: meat.' },
@@ -252,7 +244,7 @@ export const TECH = [
   { id: 'metro', branch: 'energy', name: 'Metro', cost: 120, needs: 'trafficai', text: 'Unlocks metro stations: underground trains across your city.' },
   { id: 'fusion', branch: 'energy', name: 'Clean reactors', cost: 200, needs: 'smartgrid', text: 'Fossil power stations stop fouling the air.' },
   { id: 'telemed', branch: 'society', name: 'Telemedicine', cost: 60, text: 'Clinics and hospitals treat 30% more patients.' },
-  { id: 'edtech', branch: 'society', name: 'Online learning', cost: 90, needs: 'telemed', text: 'Everyone studies 25% faster.' },
+  { id: 'edtech', branch: 'education', name: 'The internet', cost: 60, needs: 'university', text: 'Homes go online: everyone studies 25% faster and research comes 20% quicker.' },
 ];
 // Resources: made each day by buildings (their `makes`), used by people and buildings, kept up to a storage limit.
 // Food that isn't grown here is imported at `import` dollars a unit; surplus food and materials sell for half that.

@@ -23,9 +23,9 @@ async function found(page, { mayor = 'Mona', city = 'Testhaven' } = {}) {
   await expect(page.locator('#game')).toBeVisible();
   await expect(page.locator('#city-name')).toContainText(city);
 }
-// Fast-forward every city in the fake world to the end of the path, so a test can use what it unlocks.
+// Fast-forward every city in the fake world to a metropolis with every technology, so a test can use what they open.
 async function unlockAll(page) {
-  await page.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plotState/')) { const st = JSON.parse(v.state); st.path = { stage: 7, done: {} }; v.state = JSON.stringify(st); } localStorage.setItem('fakefb', JSON.stringify(db)); });
+  await page.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plotState/')) { const st = JSON.parse(v.state); st.hall = 6; st.hallDone = {}; st.tech = ['highschool', 'university', 'trade', 'finance', 'diplomacy', 'orchards', 'dairy', 'ranching', 'logistics']; v.state = JSON.stringify(st); } localStorage.setItem('fakefb', JSON.stringify(db)); });
   await page.reload();
   await expect(page.locator('#game')).toBeVisible({ timeout: 30_000 });
   if (await page.locator('#modal[open]').count()) await page.keyboard.press('Escape');
@@ -529,18 +529,20 @@ test('city shares: one mayor lists her city, another invests', async ({ browser 
   await ctx.close();
 });
 
-test('path: a new mayor sees the path, and locked features explain themselves', async ({ page }) => {
+test('town hall: a new mayor sees the next step, the hall’s needs, and why things are locked', async ({ page }) => {
   const errors = await newGame(page);
+  await expect(page.locator('#hint')).toContainText('Next step');
+  await expect(page.locator('#hint')).toContainText('village');
   await page.locator('#rail [data-panel="goals"]').click();
-  await expect(page.locator('#drawer .path')).toContainText('chapter 1 of 7');
-  await expect(page.locator('#drawer .pathgoals li')).toHaveCount(4);
+  await expect(page.locator('#drawer .path')).toContainText('Town hall: Settlement');
+  await expect(page.locator('#drawer .pathgoals li')).toHaveCount(5);   // people + four objectives
   await expect(page.locator('#rail [data-panel="market"]')).toHaveClass(/locked/);
-  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/path.png` });
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/hall.png` });
   await page.locator('#rail [data-panel="market"]').click();
-  await expect(page.locator('#modal[open]')).toContainText('Opens when you finish chapter 2');
-  await expect(page.locator('#modal[open]')).toContainText('Why it matters');
+  await expect(page.locator('#modal[open]')).toContainText('Research Trade');
   if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/locked.png` });
   await page.locator('#see-path').click();
-  await expect(page.locator('#drawer .path')).toBeVisible();
+  await expect(page.locator('#drawer [role="tab"][aria-selected="true"]')).toContainText('Research');
+  await expect(page.locator('#drawer')).toContainText('Education');
   expect(clean(errors)).toEqual([]);
 });

@@ -860,6 +860,8 @@ html:not([lang="en"]) .card b { font-size: .95em; }
 .rail button.locked { opacity: .55; }
 .rail button.locked::after { content: '🔒'; position: absolute; top: 2px; right: 4px; font-size: 11px; }
 
+.hint .step-label { display: block; font-size: .72em; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--soft); margin-bottom: 2px; }
+
 /* Shares and alliance rankings */
 .spark { width: 70px; height: 20px; color: var(--soft); flex: none; }
 .picklist.shares li { align-items: flex-start; }

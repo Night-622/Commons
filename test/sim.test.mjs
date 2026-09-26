@@ -572,29 +572,41 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(!old.shares && old.money === m0 + 600, 'refunded');
   console.log('exchange ok: veg scarce', scarce, 'plenty', plenty, '; share small', sim.sharePrice(small), 'big', p);
 }
-// ---- the path
+// ---- the town hall grows with the city; technologies open features
 {
   seed = 71;
-  const s = sim.newCity('Pathway', rng); s.money = 20000; s.land.fill(1);
-  let st = sim.pathState(s);
-  assert.equal(st.stage, 0); assert.equal(st.chapter.id, 'settle');
-  assert(!sim.unlocked(s, 'market') && !sim.unlocked(s, 'research'), 'nothing unlocked yet');
+  const s = sim.newCity('Hallway', rng); s.money = 20000; s.land.fill(1);
+  let hs = sim.hallState(s);
+  assert.equal(hs.name, 'Settlement'); assert.equal(hs.next.name, 'Village');
+  assert(!sim.unlocked(s, 'market'), 'the Market needs the Trade technology');
   for (let x = 2; x <= 13; x++) put(s, x, c + 1, T.ROAD);
   [T.HOUSE, T.HOUSE, T.HOUSE, T.WORK, T.SHOP].forEach((t, k) => put(s, 3 + k * 2, c + 2, t));
   for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = [];
-  const m = s.money, ch = sim.checkPath(s);
-  assert.equal(ch?.id, 'settle', 'chapter one complete');
-  assert.equal(s.money, m + ch.reward, 'reward paid');
-  assert(sim.unlocked(s, 'research') && !sim.unlocked(s, 'market'), 'research unlocks first');
-  assert.equal(sim.checkPath(s), null, 'the next chapter needs more');
-  s.counters.harvests = 1; s.path.done.pop15 = true;
-  assert(sim.pathState(s).goals.find((g) => g.id === 'harvest').done && sim.pathState(s).goals.find((g) => g.id === 'pop15').done, 'objectives stay done once met');
-  // Older cities start where their size has earned.
-  const old = JSON.parse(sim.serialize(sim.newCity('Veteran', rng))); delete old.path; old.day = 30;
-  for (let k = 0; k < 70; k++) old.people.push([...old.people[0].slice(0, 0), 800 + k, ...old.people[0].slice(1)]);
+  assert.equal(sim.checkHall(s), null, 'not until the village has 15 people');
+  for (let k = 0; k < 10; k++) s.people.push({ ...s.people[0], i: 900 + k });
+  const lv = sim.checkHall(s);
+  assert.equal(lv?.name, 'Village', 'the hall grows by itself');
+  assert.equal(s.lv[sim.HALL_INDEX], 1);
+  // The next level wants resources in store, and uses them.
+  s.hallDone = { school: true, farm: true, harvest: true, utilities: true };
+  for (let k = 0; k < 30; k++) s.people.push({ ...s.people[0], i: 950 + k });
+  assert.equal(sim.checkHall(s), null, 'not without 40 materials');
+  s.res = { materials: 55 };
+  assert.equal(sim.checkHall(s)?.name, 'Town');
+  assert.equal(s.res.materials, 15, 'the upgrade used 40 materials');
+  assert.equal(s.lv[sim.HALL_INDEX], 2, 'a bigger hall');
+  // Land: a town can hold 16 parcels.
+  s.land.fill(0); for (let k = 0; k < 16; k++) s.land[k] = 1;
+  assert(sim.canBuyLand(s, 16).capped, 'a town can’t buy a 17th parcel');
+  // Technologies open features.
+  s.rp = 100; s.tech = [];
+  assert(sim.research(s, 'trade').ok && sim.unlocked(s, 'market'), 'Trade opens the Market');
+  // Older cities start where their size has earned, keeping what they used.
+  const old = JSON.parse(sim.serialize(sim.newCity('Veteran', rng))); delete old.hall; old.day = 30;
+  for (let k = 0; k < 90; k++) old.people.push([...old.people[0].slice(0, 0), 800 + k, ...old.people[0].slice(1)]);
   sim.migrate(old);
-  assert.equal(old.path.stage, 3, 'a 76-person city from before starts at chapter four');
-  assert(sim.unlocked(old, 'market') && sim.unlocked(old, 'shares'));
-  console.log('path ok: chapters', (await import('../public/js/constants.js')).PATH.map((p) => p.id).join(' > '));
+  assert.equal(old.hall, 3, 'a 96-person city from before starts as a large town');
+  assert(sim.unlocked(old, 'market') && sim.unlocked(old, 'shares') && sim.hasTech(old, 'highschool'), 'and keeps its market, shares and high schools');
+  console.log('town hall ok: settlement > village > town; land capped at 16');
 }
 console.log('all tests passed');

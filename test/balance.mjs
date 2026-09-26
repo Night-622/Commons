@@ -4,7 +4,7 @@
 // Runs are reproducible: the world clock starts on launch day and moves one hour per tick, and
 // Math.random (used in a few places in sim.js) is replaced by the seeded generator.
 import * as sim from '../public/js/sim.js';
-import { T, B, PLOT, TICK_MS } from '../public/js/constants.js';
+import { T, B, PLOT, TICK_MS, TECH } from '../public/js/constants.js';
 
 const START = Date.UTC(2026, 8, 25);
 let clock = START, seed = 1;
@@ -37,9 +37,11 @@ function run(startSeed, verbose) {
   let fellOn = 0;
   for (let day = 1; day <= DAYS; day++) {
     for (let h = 0; h < 24; h++) { sim.tick(s, rng); clock += TICK_MS; s.lastTick = clock; }
+    sim.checkHall(s, { cities: 1 });   // the game checks this all the time; the town hall grows when it can
     if (s.status !== 'alive') { fellOn = day; break; }
     for (const i of roads) if (sim.owns(s, i) && s.grid[i] === T.EMPTY && s.money > 60) sim.place(s, i, T.ROAD);
-    // Like a player, collect any harvests that are ready (the game shows a bubble over them).
+    // Like a player, research whatever it can afford (cheapest first) and collect any harvests that are ready.
+    for (const t of [...TECH].sort((a, b) => a.cost - b.cost)) if (sim.canResearch(s, t.id).ok) sim.research(s, t.id);
     for (let i = 0; i < PLOT * PLOT; i++) if (sim.harvestReady(s, i)) sim.harvest(s, i);
     const p = s._plan || sim.plan(s, rng);
     const tips = sim.advice(s, p).filter((a) => a.type != null);
@@ -61,7 +63,8 @@ function run(startSeed, verbose) {
         String(st.tourists || 0).padStart(5), String(s.counters.births).padStart(7), String(s.counters.deaths).padStart(6), String(s.loan?.left || 0).padStart(5));
     }
   }
-  return { seed: startSeed, fellOn, pop: s.people.length, peak: s.peakPop, credit: sim.creditRating(s), badges: sim.summary(s).badges };
+  sim.checkHall(s);
+  return { seed: startSeed, fellOn, pop: s.people.length, peak: s.peakPop, credit: sim.creditRating(s), badges: sim.summary(s).badges, hall: sim.hallState(s).name, land: s.land.filter(Boolean).length };
 }
 
 const arg = String(process.argv[2] || 5);
@@ -76,7 +79,7 @@ if (!range) {
     const r = run(k, false);
     const kind = r.fellOn ? 'fell' : r.pop >= 60 ? 'grown' : 'stalled';
     tally[kind]++;
-    console.log(`seed ${String(k).padStart(3)}  ${kind.padEnd(7)}  ${r.fellOn ? `day ${r.fellOn}` : `${r.pop} people`}, peak ${r.peak}, credit ${r.credit}`);
+    console.log(`seed ${String(k).padStart(3)}  ${kind.padEnd(7)}  ${r.fellOn ? `day ${r.fellOn}` : `${r.pop} people`}, peak ${r.peak}, credit ${r.credit}, hall ${r.hall}, land ${r.land}`);
   }
   console.log(`grown ${tally.grown}, stalled ${tally.stalled}, fell ${tally.fell}`);
 }

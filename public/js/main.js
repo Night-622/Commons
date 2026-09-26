@@ -3,7 +3,7 @@ import {
   T, B, PLOT, TICK_MS, MAX_OFFLINE_DAYS, HOURS_PER_DAY, SAVE_EVERY_MS, RUBBLE_CLEAR_COST, MAX_LEVEL, LEVEL, UPGRADABLE,
   REBUILD_MONEY, MOVE_KEEP, TUTORIAL_REWARD, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome, DECISIONS, ZONES, ZONE_COST,
   LOAN_DAYS, HISTORIC_DAYS, BADGES, REGIONAL, REGIONAL_SHARE, ALLIANCE_TRADE, DAILY, DAILY_REWARD, WEEKLY, WEEKLY_REWARD, GIFT_LIMITS, REACTIONS,
-  RES, FOOD, USE, HARVEST, MARKET, STOCK, PATH, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
+  RES, FOOD, USE, HARVEST, MARKET, STOCK, HALL_LEVELS, TECH, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
 } from './constants.js';
 import { Renderer, STRIDE, thumbnail, modelHeight } from './render.js';
 import { loadPrefs, savePrefs, applyPrefs, resolvedTheme, palette, PALETTES } from './prefs.js';
@@ -574,6 +574,37 @@ function firstTime(id) {
   if ((state.applied || []).includes(id)) return false;
   state.applied = [...(state.applied || []), id].slice(-80);
   return true;
+}
+
+// ---------- the next step ----------
+// One clear thing to do: anything urgent first, then what the next town hall level still needs, then explore.
+const GOAL_TYPE = { roads: T.ROAD, homes: T.HOUSE, work: T.WORK, shop: T.SHOP, school: T.SCHOOL, farm: T.FARM, utilities: T.WATER, materials: T.MATERIALS,
+  clinic: T.CLINIC, highschool: T.HIGH, uni: T.UNI, monument: T.MONUMENT };
+const buildGo = (t) => () => {
+  if (t === T.ROAD) { setMode('build'); setBrush('road'); notify('Drag across the grass to lay road, joined back to the town hall.', 'act'); return; }
+  const a = sim.availability(state, t);
+  if (a.locked) { notify(`${B[t].name}: ${a.reason}.`, 'act'); if (B[t].research) { statsTab = 'research'; drawer = null; openPanel('stats'); } return; }
+  setMode('build'); catQ = B[t].name; notify(`Tap an empty tile you own to build a ${B[t].name.toLowerCase()}.`, 'act');
+};
+const panelGo = (m, tab) => () => { if (tab) { if (m === 'stats') statsTab = tab; if (m === 'market') marketTab = tab; } drawer = null; openPanel(m); };
+function nextStep(tips) {
+  const tip = tips[0];
+  if (tip && tip.score >= 6) return { urgent: true, text: tip.text, go: tip.type != null ? buildGo(tip.type) : null };
+  const hs = sim.hallState(state, pathCtx());
+  if (!hs.complete) {
+    const to = `To grow into a ${hs.next.name.toLowerCase()}: `;
+    const g = hs.goals.find((x) => !x.done);
+    if (g) {
+      const go = GOAL_TYPE[g.id] != null ? buildGo(GOAL_TYPE[g.id]) : g.id.startsWith('tech') ? panelGo('stats', 'research') : g.id === 'trade1' ? panelGo('market', 'exchange')
+        : g.id === 'invest' ? panelGo('market', 'shares') : g.id === 'alliance' ? panelGo('region') : g.id === 'land3' ? () => { setMode('build'); notify('In Build mode, price tags mark land you can buy.', 'act'); } : null;
+      return { text: to + g.text.charAt(0).toLowerCase() + g.text.slice(1) + '.', go };
+    }
+    if (!hs.pop.done) return { text: `${to}reach ${hs.next.pop} people (${hs.pop.have} now). Build homes, jobs and what they need.`, go: tip?.type != null ? buildGo(tip.type) : buildGo(T.HOUSE) };
+    const r = hs.res.find((x) => !x.done);
+    if (r) return { text: `${to}have ${r.need} ${RES[r.k].name.toLowerCase()} in store (${r.have} now). Make it, collect harvests, or buy it on the Market.`, go: panelGo('stats', 'resources') };
+  }
+  if (tip) return { text: tip.text, go: tip.type != null ? buildGo(tip.type) : null };
+  return { text: 'Everything is covered. Explore: trade, invest, ally with neighbours, and grow.', go: null };
 }
 
 // ---------- resources in the top bar ----------
@@ -1175,7 +1206,7 @@ function drainFinished() {
 const pathCtx = () => ({ alliance: !!myAlliance(), cities: myCities().length || 1 });
 const isOpen = (f) => !state || sim.unlocked(state, f);
 function checkGoals() {
-  if (!watching) { const ch = sim.checkPath(state, pathCtx()); if (ch) showChapter(ch); }
+  if (!watching) { const lv = sim.checkHall(state, pathCtx()); if (lv) showHallUp(lv); }
   const got = sim.checkGoals(state, totalsNow || sim.totals(state));
   if (got.length) {
     const sum = got.reduce((a, g) => a + g.reward, 0), hall = sim.xy(sim.HALL_INDEX);
@@ -2187,7 +2218,7 @@ function updateHud() {
   const c = sim.census(state), st = state.stats, pop = c.total;
   const net = (st.income || 0) - (st.upkeep || 0);
   $('city-name').textContent = state.name;
-  $('city-name').dataset.era = t(sim.eraOf(state).name);
+  $('city-name').dataset.era = t(HALL_LEVELS[sim.hallLevel(state)].name);   // the city's size is its town hall's level
   $('clock').textContent = `${hourLabel(state.hour)}, ${dateLabel()}`;
   $('clock').title = `Forecast: ${[1, 2, 3].map((k) => `${k === 1 ? 'tomorrow' : `in ${k} days`} ${sim.weather(sim.worldDay() + k)}`).join(', ')}`;
   $('city-name').title = state.status === 'ruins' ? `Fell after ${state.day} days` : `${state.name} has been running for ${state.day} day${state.day === 1 ? '' : 's'}. Click to rename.`;
@@ -2221,10 +2252,10 @@ function updateHud() {
     `<div class="dcol" title="${l}: ${dem[k] > 0.2 ? 'needed' : dem[k] < -0.2 ? 'more than enough' : 'about right'}"><span class="dbar"><i style="${dem[k] >= 0 ? `bottom:50%;height:${dem[k] * 50}%` : `top:50%;height:${-dem[k] * 50}%`}" class="${dem[k] >= 0 ? 'up' : 'down'}"></i></span><small>${l}</small></div>`).join('');
   const tips = state.status === 'ruins' ? [] : sim.advice(state, plan);
   const tip = tips[0];
+  const step = state.status === 'ruins' ? null : nextStep(tips);
   $('hint').innerHTML = state.status === 'ruins' ? 'This city has fallen. Rebuild on the ruins to start again.'
-    : tip ? `${esc(tip.text)}${tip.type ? ` <button type="button" class="linkbtn" id="tip-go" data-type="${tip.type}">Show me</button>` : ''}`
-    : 'Everything is covered. Grow, upgrade, and link roads with neighbours for trade.';
-  $('tip-go')?.addEventListener('click', (e) => { const t = +e.target.dataset.type; setMode('build'); catQ = B[t].name; notify(`Tap an empty tile you own to build a ${B[t].name.toLowerCase()}.`, 'act'); });
+    : `<span class="step-label">${step.urgent ? 'Needs attention' : 'Next step'}</span>${esc(step.text)}${step.go ? ` <button type="button" class="linkbtn" id="tip-go">Show me</button>` : ''}`;
+  $('tip-go')?.addEventListener('click', () => step.go());
   const alert = $('alert');
   const msg = state.status === 'ruins' ? 'City fallen' : state.unpaidDays ? `Upkeep unpaid for ${state.unpaidDays}d` : c.sick > pop * 0.15 && pop > 10 ? `${c.sick} people sick` : state.cases > 3 ? `${state.cases} court cases waiting` : '';
   alert.textContent = msg;
@@ -2339,9 +2370,9 @@ function renderDrawer() {
     if (!p) { drawer = 'people'; return renderDrawer(); }
     const agent = trips.agents(plotId).find((a) => a.p === p.i);
     html = panels.personCard(state, plan, p, whereabouts(state, plan, p, clockNow(), agent), favs().has(p.i));
-  } else if (drawer === 'goals') html = panels.goalsPanel(state, state.status === 'alive' ? daily() : null, sim.pathState(state, pathCtx()));
+  } else if (drawer === 'goals') html = panels.goalsPanel(state, state.status === 'alive' ? daily() : null, sim.hallState(state, pathCtx()));
   else if (drawer === 'people') html = panels.peoplePanel(state, plan, peopleFilter, peopleQuery, favs());
-  else if (drawer === 'stats') html = panels.statsPanel({ state, totals: totalsNow || sim.totals(state), plan, census: sim.census(state), locked: { research: !isOpen('research') } }, statsTab);
+  else if (drawer === 'stats') html = panels.statsPanel({ state, totals: totalsNow || sim.totals(state), plan, census: sim.census(state) }, statsTab);
   else if (drawer === 'news') html = panels.newsPanel(state, unseenFrom(), { tab: newsTab, inbox: [...inbox].reverse(), plan, forecast: [1, 2, 3].map((k) => sim.weather(sim.worldDay() + k)) });
   else if (drawer === 'chat') { const m = muted(); html = panels.chatPanel({ messages: chatMessages.filter((x) => !m.has(x.uid)).map((x) => ({ ...x, text: clean(x.text) })), me: user.uid, world, colourOf, error: chatError && fb.authMessage(chatError), dmUnread: dmUnread() }); }
   else if (drawer === 'world') html = panels.worldPanel(worldCtx());
@@ -2739,7 +2770,7 @@ function otherPlot(h) {
   if (!p) {
     const via = myCities().find((c) => c.status === 'alive' && Math.abs(c.px - h.px) + Math.abs(c.py - h.py) === 1);
     if (!via || state.status !== 'alive') return '<h2>Unclaimed land</h2><p>New players get plots out here on the frontier. You can buy plots that touch one of your cities.</p>';
-    if (!isOpen('council')) return `<h2>Unclaimed land</h2>${panels.lockHtml('council')}`;
+    if (!isOpen('council')) return `<h2>Unclaimed land</h2>${panels.lockHtml('council', state)}`;
     const price = sim.plotPrice(state, myCities().length), full = myCities().length >= MAX_CITIES;
     return `<h2>Unclaimed land</h2><p>This plot touches ${esc(via.name)}. Buy it to start another city of your council here, with its own town hall, settlers and ${money(REBUILD_MONEY)}.</p>
       ${row('Price', money(price))}${row('Your cities here', myCities().length)}
@@ -3327,22 +3358,25 @@ async function switchCity(id) {
   await fb.setHome(user, world.id, id);
   enter(user);
 }
-// A chapter of the path is done: the reward, what it unlocked and why, and what comes next.
-function showChapter(ch) {
-  const i = PATH.indexOf(ch), next = PATH[i + 1];
+// The town hall grew: what the city can do now, and what's next.
+function showHallUp(lv) {
+  const i = HALL_LEVELS.indexOf(lv), next = HALL_LEVELS[i + 1], prev = HALL_LEVELS[i - 1];
   play('level'); afterChange(); save();
-  openModal(`${closeX}<h2 id="modal-title">Chapter complete: ${esc(ch.name)}</h2>
-    <p>You earned <b>${money(ch.reward)}</b>.</p>
-    ${ch.card ? `<div class="unlock-card"><h3>${icon('i-spark')}Unlocked: ${esc(ch.card.title)}</h3><p>${esc(ch.card.what)}</p><p class="small"><b>Why it matters:</b> ${esc(ch.card.why)}</p></div>` : ''}
-    ${next ? `<p class="soft">Next, chapter ${i + 2}: <b>${esc(next.name)}</b>. ${esc(next.idea)}</p>` : '<p>That’s the whole path. Your city is a metropolis.</p>'}
-    <div class="mfoot"><button class="btn" data-close>Keep playing</button><button class="btn primary" id="see-path">See the next chapter</button></div>`);
+  const opens = [['co', 'Co-mayors: in Account, Friends, press Co to let a friend help run your city.'], ['council', 'More cities: select free land next to your city to buy it and found another.']]
+    .filter(([f]) => sim.unlocked(state, f) && !sim.unlocked({ ...state, hall: i - 1 }, f)).map(([, t]) => `<li>${esc(t)}</li>`).join('');
+  openModal(`${closeX}<h2 id="modal-title">${esc(state.name)} is now a ${esc(lv.name.toLowerCase())}</h2>
+    <p>The town hall has grown. Your city can now:</p>
+    <ul><li>buy up to ${lv.land} parcels of land (was ${prev.land})</li><li>store ${lv.store - prev.store} more of every resource</li><li>earn ${lv.rp} research points a day</li><li>employ more builders and clerks at the hall</li>${opens}</ul>
+    ${next ? `<p class="soft">Next: a <b>${esc(next.name.toLowerCase())}</b> at ${next.pop} people. Goals shows what it needs.</p>` : '<p>It’s a metropolis: the biggest there is.</p>'}
+    <div class="mfoot"><button class="btn" data-close>Keep playing</button><button class="btn primary" id="see-path">See what’s next</button></div>`);
   $('see-path').onclick = () => { closeModal(); drawer = null; openPanel('goals'); };
 }
 // A locked feature: what it is, which chapter opens it, and why it's worth getting to.
+const FEATURE_NEEDS_TECH = (f) => ['market', 'shares', 'region'].includes(f);
 function showLocked(feature) {
-  openModal(`${closeX}<h2 id="modal-title">Not yet</h2>${panels.lockHtml(feature)}
-    <div class="mfoot"><button class="btn" data-close>OK</button><button class="btn primary" id="see-path">See your path</button></div>`);
-  $('see-path').onclick = () => { closeModal(); drawer = null; openPanel('goals'); };
+  openModal(`${closeX}<h2 id="modal-title">Not yet</h2>${panels.lockHtml(feature, state)}
+    <div class="mfoot"><button class="btn" data-close>OK</button><button class="btn primary" id="see-path">${FEATURE_NEEDS_TECH(feature) ? 'Open Research' : 'See the town hall'}</button></div>`);
+  $('see-path').onclick = () => { closeModal(); drawer = null; if (FEATURE_NEEDS_TECH(feature)) { statsTab = 'research'; openPanel('stats'); } else openPanel('goals'); };
 }
 function confirmDelete() {
   openModal(`${closeX}<h2 id="modal-title">Delete your account?</h2>
