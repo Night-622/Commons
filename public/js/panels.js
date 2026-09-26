@@ -1,5 +1,5 @@
 // HTML for the side drawer and the build catalogue. Pure functions: main.js supplies data and wires up buttons.
-import { REGIONAL, ALLIANCE_TRADE, REACTIONS, T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY, BONDS, INSURANCE, TECH, ERAS, TRAITS, CARBON_TAX, LOANS, LOAN_DAYS, CONGESTION_FEE, BADGES, RES, FOOD, TECH_BRANCHES, STORE_BASE, TRADE_RES, MARKET, USE, EXCHANGE, STOCK, HALL_LEVELS, FEATURE_NEEDS } from './constants.js';
+import { REGIONAL, ALLIANCE_TRADE, REACTIONS, T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY, BONDS, INSURANCE, TECH, ERAS, TRAITS, CARBON_TAX, LOANS, LOAN_DAYS, CONGESTION_FEE, BADGES, RES, FOOD, TECH_BRANCHES, STORE_BASE, TRADE_RES, PRODUCTS, PRODUCT_IDS, MARKET, USE, EXCHANGE, STOCK, HALL_LEVELS, FEATURE_NEEDS } from './constants.js';
 import { t as tr } from './i18n.js';
 import { creditRating, greenShare, traitOf, hasTech, canResearch, eraOf, resourceStock, matCost } from './sim.js';
 import { ROLES, roleOf, jobText, family, healthText, moodReasons, thought, personName } from './people.js';
@@ -7,7 +7,7 @@ import { ROLES, roleOf, jobText, family, healthText, moodReasons, thought, perso
 // The market: open offers from other cities, a form to post your own, and what you owe or are owed.
 export function marketPanel(ctx) {
   const { offers, mine, s, tab, kind, debts, loansOut, stock } = ctx;
-  const nm = (k) => RES[k]?.name.toLowerCase() || k, each = (p) => `$${(+p).toFixed(2)}`;
+  const nm = (k) => RES[k]?.name.toLowerCase() || PRODUCTS[k]?.name.toLowerCase() || k, each = (p) => `$${(+p).toFixed(2)}`;
   const tabs = [['exchange', 'Exchange'], ['shares', 'Cities'], ['offers', `Offers ${offers.length ? offers.length : ''}`], ['post', 'Post'], ['yours', 'Yours']];
   const offerLine = (o) => {
     if (o.kind === 'sell') return [`<b>${esc(o.city)}</b> sells ${o.qty} ${nm(o.res)} at ${each(o.price)} each`, `Buy for ${money(o.total)}`, s.money >= o.total];
@@ -45,7 +45,8 @@ export function marketPanel(ctx) {
       return `<li><span>${text}<small class="soft">Mayor ${esc(o.ownerName)}</small></span><button class="btn small ${ok ? 'primary' : ''}" type="button" data-take="${o.id}" ${ok ? '' : 'disabled'}>${act}</button></li>`; }).join('')}</ul>`
       : '<p class="soft">No offers yet. Post one: sell what you have too much of, ask for what you need, or ask for a loan.</p>';
   } else if (tab === 'post') {
-    const resOpts = TRADE_RES.map((k) => `<option value="${k}">${RES[k].name} (you have ${Math.floor(stock[k] || 0)})</option>`).join('');
+    const resOpts = [...TRADE_RES.map((k) => [k, RES[k].name]), ...PRODUCT_IDS.map((k) => [k, PRODUCTS[k].name])]
+      .map(([k, name]) => `<option value="${k}">${name} (you have ${Math.floor(stock[k] || 0)})</option>`).join('');
     body = `<form id="mk-post" class="mk-form">
       <label class="field"><span>I want to</span><select id="mk-kind" name="kind">${[['sell', 'Sell'], ['buy', 'Buy'], ['loan', 'Borrow money'], ['labour', 'Offer workers']].map(([v, l]) => `<option value="${v}" ${kind === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       ${kind === 'labour' ? `<label class="field"><span>Workers</span><input name="qty" type="number" min="1" max="40" value="3" required></label>
@@ -69,7 +70,7 @@ export function marketPanel(ctx) {
       <h3 class="sub">You owe</h3>${debts.length ? `<ul class="picklist">${debts.map((d) => `<li><span>${money(d.repay)} to ${esc(d.toName)}<small class="${s.day > d.due ? 'warn' : 'soft'}">${s.day > d.due ? `Late by ${s.day - d.due} days` : `Due on day ${d.due}`}</small></span></li>`).join('')}</ul>` : '<p class="soft small">Nothing.</p>'}
       <h3 class="sub">Owed to you</h3>${loansOut.length ? `<ul class="picklist">${loansOut.map((l) => `<li><span>${money(l.repay)} from ${esc(l.toName)}<small class="soft">By day ${l.due}</small></span></li>`).join('')}</ul>` : '<p class="soft small">Nothing.</p>'}`;
   }
-  return `${head('Market')}<p class="soft small">Trade food and materials with other cities, lend or borrow money, and buy shares.</p>
+  return `${head('Market')}<p class="soft small">Trade resources and factory products with other cities, lend or borrow money, and buy shares.</p>
     <div class="seg tabs" role="tablist">${tabs.map(([k, l]) => `<button type="button" role="tab" aria-selected="${tab === k}" data-mtab="${k}">${l}</button>`).join('')}</div>
     ${body}<p id="mk-msg" class="formmsg" role="alert"></p>`;
 }
@@ -258,7 +259,7 @@ export function statsPanel(ctx, tab) {
     const inRows = [['Basic jobs', by.basic, `$${WAGE[0]} a worker`], ['Skilled jobs', by.skilled, `$${WAGE[1]} a worker`], ['Degree jobs', by.degree, `$${WAGE[2]} a worker`],
       ['Unemployed', by.benefits, ''], ['Trade with neighbours', by.trade, `$${TRADE_PER_LINK} a road link, double for rail`],
       ['Visitors from neighbours', by.visitors, 'Evenings out, doctors, shopping, school and holidays'],
-      ['Goods sold', by.exports, `${st.goods || 0} goods from factories, $2 each to linked neighbours or 50c locally`],
+      ['Produce sold', by.produce, 'Surplus resources and products beyond your storage, sold automatically; a staffed Store sells products to residents too'],
       ['Tourism', by.tourism, `${st.tourists || 0} tourists. Museums and stadiums draw them; hotels let them stay the night`]];
     if (by.carbon) inRows.push(['Carbon tax', by.carbon, `$${CARBON_TAX} a day from each fossil plant and factory`]);
     if (by.tolls) inRows.push(['Congestion charge', by.tolls, `${st.cars || 0} car trips`]);
@@ -304,19 +305,23 @@ export function statsPanel(ctx, tab) {
         return `<li class="${done ? 'done' : blocked ? 'blocked' : ''} ${t.needs ? 'child' : ''}"><span class="pmain"><b>${t.name}</b><small>${t.text}${blocked ? ` Needs ${TECH.find((x) => x.id === t.needs).name}.` : ''}</small></span>
           ${done ? '<span class="tag">Done</span>' : `<button class="btn ${c.ok ? 'primary' : ''}" type="button" data-tech="${t.id}" ${c.ok ? '' : 'disabled'}>${t.cost} pts</button>`}</li>`; }).join('')}</ul>`).join('')}`;
   } else if (tab === 'resources') {
-    const r = s.stats.res, stock = resourceStock(s), cap = r?.cap || STORE_BASE, num = (n) => Math.round(n || 0).toLocaleString();
+    const r = s.stats.res, ps = s.stats.products, stock = resourceStock(s), cap = r?.cap || STORE_BASE, num = (n) => Math.round(n || 0).toLocaleString();
     const row2 = (l, v) => `<div class="kv"><span>${l}</span><b class="num">${v}</b></div>`;
     const line = (k, used, note = '') => `<tr><th scope="row">${RES[k].name}</th><td class="num">${num(stock[k])}</td><td class="num">${num(r?.prod[k])}</td><td class="num">${used}</td><td>${note}</td></tr>`;
-    body = `<p class="soft small">Made and used each day. Each resource keeps up to ${num(cap)} in store; warehouses (Logistics research) add more. Extra food and materials sell for half the import price.</p>
+    const hasProducts = PRODUCT_IDS.some((k) => stock[k] || ps?.made?.[k]);
+    body = `<p class="soft small">Made and used each day. Each resource keeps up to ${num(cap)} in store; warehouses (Logistics research) add more. Surplus wood, metal and food sell for half the import price.</p>
       ${r ? `<div class="tablewrap"><table class="restable"><thead><tr><th>Resource</th><th>In store</th><th>Made</th><th>Used</th><th></th></tr></thead><tbody>
         ${line('water', num(r.need.water - r.short.water), r.short.water && r.prod.water ? `<span class="warn">${num(r.short.water)} short</span>` : '')}
         ${line('power', num(r.need.power - r.short.power), r.short.power && r.prod.power ? `<span class="warn">${num(r.short.power)} short</span>` : '')}
+        ${line('wood', '')}${line('metal', '')}
         ${FOOD.map((k) => line(k, '')).join('')}
         <tr><th scope="row">All food</th><td></td><td></td><td class="num">${num(r.need.food)}</td><td>${r.imported ? `${num(r.imported)} bought in` : 'Home-grown'}</td></tr>
-        ${line('materials', '')}
       </tbody></table></div>
-      ${r.imported ? row2('Food bought in yesterday', money(r.importCost)) : ''}${row2('Kinds of food', `${r.variety} of 4`)}${r.sold ? row2('Surplus sold yesterday', money(r.sold)) : ''}` : '<p class="soft">Figures appear after the first day.</p>'}
-      <p class="soft small">Farms grow vegetables. Research Orchards, Dairy farming and Ranching for fruit, dairy and meat. Water towers make water, power stations, solar farms and wind turbines make power, and the materials works makes bricks and timber: while there are materials in store, builders work 50% faster.</p>`;
+      ${r.imported ? row2('Food bought in yesterday', money(r.importCost)) : ''}${row2('Kinds of food', `${r.variety} of ${FOOD.length}`)}${r.sold ? row2('Surplus sold yesterday', money(r.sold)) : ''}` : '<p class="soft">Figures appear after the first day.</p>'}
+      ${hasProducts ? `<h3 class="sub">Products</h3><div class="tablewrap"><table class="restable"><thead><tr><th>Product</th><th>In store</th><th>Made</th></tr></thead><tbody>
+        ${PRODUCT_IDS.map((k) => `<tr><th scope="row">${PRODUCTS[k].name}</th><td class="num">${num(stock[k])}</td><td class="num">${num(ps?.made?.[k])}</td></tr>`).join('')}
+      </tbody></table></div>${ps?.sold ? row2('Products sold yesterday', money(ps.sold)) : ''}` : ''}
+      <p class="soft small">Farms grow vegetables. Research Orchards, Dairy farming and Ranching for fruit, dairy and meat, and Poultry for eggs. Water towers make water; power stations, solar farms and wind turbines make power. Sawmills make wood and quarries make metal: with either in store, builders work 50% faster. A factory with a recipe turns them, or vegetables and eggs, into furniture, tools or baked goods to sell.</p>`;
   } else if (tab === 'policy') {
     const pol = s.policy || { tax: 1, funding: 1, freeTransit: false };
     const slider = (k, label, [a, b], help) => `<div class="policy"><div class="phead2"><b>${label}</b><b class="num" id="pol-${k}-v">${pct(pol[k])}</b></div>
@@ -526,7 +531,9 @@ export function gives(t) {
   if (d.catchment) bits.push(`serves homes within ${d.catchment} tiles`);
   if (d.graves) bits.push(`${d.graves} graves`);
   if (d.makes) bits.push(`makes ${Object.entries(d.makes).map(([r, n]) => `${n} ${RES[r].name.toLowerCase()}`).join(' and ')} a day`);
-  if (d.store) bits.push(`stores ${d.store} more of each resource`);
+  if (d.makesProducts) bits.push('makes a product once you pick a recipe');
+  if (d.sellsProducts) bits.push('sells products to your residents');
+  if (d.store) bits.push(`stores ${d.store} more of each resource and product`);
   return bits.join('. ');
 }
 export function catalogHtml(ctx) {
@@ -534,7 +541,7 @@ export function catalogHtml(ctx) {
   const needle = q.trim().toLowerCase();
   const list = BUILDINGS.filter((t) => (cat === 'all' || B[t].cat === cat) && (!needle || `${B[t].name} ${tr(B[t].name)} ${B[t].blurb} ${gives(t)}`.toLowerCase().includes(needle)) && (!afford || avail(t).ok));
   const x = tile % 24 + 1, y = Math.floor(tile / 24) + 1;
-  return `<div class="cat-head"><div><h2 id="catalog-title">Build on tile ${x}, ${y}</h2><small class="soft">You have <b>${money(s.money)}</b> and <b>${Math.floor(s.res?.materials || 0)} 🧱</b>; each load of your own takes $2 off the price. Staffed buildings need people with the right education.</small></div>
+  return `<div class="cat-head"><div><h2 id="catalog-title">Build on tile ${x}, ${y}</h2><small class="soft">You have <b>${money(s.money)}</b> and <b>${Math.floor((s.res?.wood || 0) + (s.res?.metal || 0))} 🧱</b>; each load of your own takes $2 off the price. Staffed buildings need people with the right education.</small></div>
       <button class="iconbtn" type="button" data-cat-close aria-label="Close">${icon('i-close')}</button></div>
     <div class="cat-tools"><label class="search">${icon('i-search')}<input type="search" id="cat-q" placeholder="Search buildings" value="${esc(q)}" aria-label="Search buildings"></label>
       <label class="tgl compact"><input type="checkbox" id="cat-afford" ${afford ? 'checked' : ''}><span class="sw" aria-hidden="true"></span><span>Only what I can build now</span></label></div>

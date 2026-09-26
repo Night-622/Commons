@@ -98,6 +98,17 @@ Object.assign(dict, {
   'Open Research': 'Άνοιγμα έρευνας', 'See the town hall': 'Δείτε το δημαρχείο', 'See what’s next': 'Δείτε τι ακολουθεί',
   'Education': 'Εκπαίδευση', 'Commerce': 'Εμπόριο', 'High schools': 'Λύκεια', 'Universities': 'Πανεπιστήμια', 'Trade': 'Εμπόριο', 'Finance': 'Χρηματοοικονομικά', 'Diplomacy': 'Διπλωματία', 'The internet': 'Το διαδίκτυο',
 });
+// Resources and factories (1.2)
+Object.assign(dict, {
+  'Wood': 'Ξυλεία', 'Metal': 'Μέταλλο', 'Eggs': 'Αυγά',
+  'Furniture': 'Έπιπλα', 'Tools': 'Εργαλεία', 'Baked goods': 'Αρτοσκευάσματα',
+  'Sawmill': 'Πριστήριο', 'Quarry': 'Λατομείο', 'Poultry farm': 'Πτηνοτροφείο', 'Storage yard': 'Αποθηκευτικός χώρος', 'Store': 'Κατάστημα',
+  'Recipe': 'Συνταγή', 'Made yesterday': 'Παράχθηκαν χθες', 'Pick': 'Επιλογή', 'Picked': 'Επιλέχθηκε', 'None': 'Καμία',
+  'Pick a recipe to turn resources into a product to sell.': 'Επιλέξτε μια συνταγή για να μετατρέψετε πόρους σε προϊόν προς πώληση.',
+  'Leave the factory idle.': 'Αφήστε το εργοστάσιο ανενεργό.', 'Selling': 'Προς πώληση', 'Nothing in stock yet': 'Τίποτα σε απόθεμα ακόμη',
+  'Produce sold': 'Πωλήσεις παραγωγής', 'Products': 'Προϊόντα', 'Product': 'Προϊόν', 'Products sold yesterday': 'Προϊόντα που πουλήθηκαν χθες',
+  'Trade resources and factory products with other cities, lend or borrow money, and buy shares.': 'Ανταλλάξτε πόρους και βιομηχανικά προϊόντα με άλλες πόλεις, δανείστε ή δανειστείτε χρήματα, και αγοράστε μετοχές.',
+});
 // Styles (1.18)
 Object.assign(dict, {
   'Style': 'Στυλ', 'Newest': 'Νεότερο', 'The newest style you’ve unlocked': 'Το νεότερο στυλ που έχετε ξεκλειδώσει', 'Frontier': 'Σύνορα', 'Township': 'Κωμόπολη',

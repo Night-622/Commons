@@ -25,7 +25,7 @@ async function found(page, { mayor = 'Mona', city = 'Testhaven' } = {}) {
 }
 // Fast-forward every city in the fake world to a metropolis with every technology, so a test can use what they open.
 async function unlockAll(page) {
-  await page.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plotState/')) { const st = JSON.parse(v.state); st.hall = 6; st.hallDone = {}; st.tech = ['highschool', 'university', 'trade', 'finance', 'diplomacy', 'orchards', 'dairy', 'ranching', 'logistics']; v.state = JSON.stringify(st); } localStorage.setItem('fakefb', JSON.stringify(db)); });
+  await page.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plotState/')) { const st = JSON.parse(v.state); st.hall = 6; st.hallDone = {}; st.tech = ['highschool', 'university', 'trade', 'finance', 'retail', 'diplomacy', 'orchards', 'dairy', 'ranching', 'poultry', 'logistics', 'carpentry', 'toolmaking', 'bakery']; v.state = JSON.stringify(st); } localStorage.setItem('fakefb', JSON.stringify(db)); });
   await page.reload();
   await expect(page.locator('#game')).toBeVisible({ timeout: 30_000 });
   if (await page.locator('#modal[open]').count()) await page.keyboard.press('Escape');
@@ -275,7 +275,7 @@ test('world: neighbours touch, with borders', async ({ browser }) => {
   await b.waitForTimeout(800);
   if (process.env.SHOTS) await b.screenshot({ path: `${process.env.SHOTS}/world-borders.png` });
   const plots = await b.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('fakefb')).docs).filter((k) => k.startsWith('plots/')));
-  expect(plots).toEqual(expect.arrayContaining([expect.stringMatching(/^plots\/s2_/)]));
+  expect(plots).toEqual(expect.arrayContaining([expect.stringMatching(/^plots\/s3_/)]));
   expect(plots.length).toBe(2);
   expect(clean(errors)).toEqual([]);
   await ctx.close();
@@ -382,14 +382,14 @@ test('market: one mayor sells vegetables, another buys them, and a loan request 
   const a = await ctx.newPage();
   const errors = await newGame(a);   // Mona, Testhaven
   // Give Mona 120 vegetables in store (as if her farms had been busy).
-  await a.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plotState/')) { const s = JSON.parse(v.state); s.res = { veg: 120 }; v.state = JSON.stringify(s); } db.user = null; localStorage.setItem('fakefb', JSON.stringify(db)); });
+  await a.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plotState/')) { const s = JSON.parse(v.state); s.res = { vegetables: 120 }; v.state = JSON.stringify(s); } db.user = null; localStorage.setItem('fakefb', JSON.stringify(db)); });
   await a.reload();
   await expect(a.locator('#game')).toBeVisible();
   await closeModal(a);
   await unlockAll(a);
   await a.locator('#rail [data-panel="market"]').click();
   await a.locator('#drawer [data-mtab="post"]').click();
-  await a.locator('#drawer select[name="res"]').selectOption('veg');
+  await a.locator('#drawer select[name="res"]').selectOption('vegetables');
   await a.locator('#drawer input[name="qty"]').fill('100');
   await a.locator('#drawer input[name="price"]').fill('0.5');
   await a.locator('#drawer #mk-post button[type=submit]').click();
@@ -486,11 +486,37 @@ test('exchange: buy and sell resources at today’s price', async ({ page }) => 
   await unlockAll(page);
   await page.locator('#rail [data-panel="market"]').click();
   await expect(page.locator('#drawer .restable')).toContainText('Vegetables');
-  await page.locator('#drawer [data-buy-res="materials|50"]').click();
-  await expect(page.locator('#toasts')).toContainText('Bought 50 building materials');
-  await page.locator('#drawer [data-sell-res="materials|50"]').click();
-  await expect(page.locator('#toasts')).toContainText('Sold 50 building materials');
+  await page.locator('#drawer [data-buy-res="wood|50"]').click();
+  await expect(page.locator('#toasts')).toContainText('Bought 50 wood');
+  await page.locator('#drawer [data-sell-res="wood|50"]').click();
+  await expect(page.locator('#toasts')).toContainText('Sold 50 wood');
   if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/exchange.png` });
+  expect(clean(errors)).toEqual([]);
+});
+
+test('factories: pick a recipe once researched, then sell the product on the Market', async ({ page }) => {
+  test.setTimeout(120_000);
+  const errors = await newGame(page);
+  await unlockAll(page);
+  await page.locator('#map').focus();
+  await page.keyboard.press('b');
+  for (const k of ['ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter']) await page.keyboard.press(k);
+  await page.locator('#cat-q').fill('factory');
+  await page.locator('#catalog [data-build]').first().click();
+  if (await page.locator('#modal[open]').count()) await page.locator('#modal .primary').click();
+  // Select the factory and pick the Furniture recipe (Carpentry is already researched by unlockAll).
+  await page.locator('#map').focus();
+  await page.keyboard.press('e');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#drawer [data-do="set-recipe"][data-arg="furniture"]')).toBeVisible({ timeout: 90_000 });
+  await page.locator('#drawer [data-do="set-recipe"][data-arg="furniture"]').click();
+  await expect(page.locator('#toasts')).toContainText('Now making furniture');
+  await expect(page.locator('#drawer')).toContainText('Picked');
+  // Furniture can be posted on the Market like any resource.
+  await page.locator('#rail [data-panel="market"]').click();
+  await page.locator('#drawer [data-mtab="post"]').click();
+  await expect(page.locator('#drawer select[name="res"]')).toContainText('Furniture');
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/factory.png` });
   expect(clean(errors)).toEqual([]);
 });
 

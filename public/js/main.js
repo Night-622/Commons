@@ -3,7 +3,7 @@ import {
   T, B, PLOT, TICK_MS, MAX_OFFLINE_DAYS, HOURS_PER_DAY, SAVE_EVERY_MS, RUBBLE_CLEAR_COST, MAX_LEVEL, LEVEL, UPGRADABLE,
   REBUILD_MONEY, MOVE_KEEP, TUTORIAL_REWARD, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome, DECISIONS, ZONES, ZONE_COST,
   LOAN_DAYS, HISTORIC_DAYS, BADGES, REGIONAL, REGIONAL_SHARE, ALLIANCE_TRADE, DAILY, DAILY_REWARD, WEEKLY, WEEKLY_REWARD, GIFT_LIMITS, REACTIONS,
-  RES, FOOD, USE, HARVEST, MARKET, STOCK, HALL_LEVELS, TECH, STYLES, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
+  RES, FOOD, TRADE_RES, PRODUCTS, PRODUCT_IDS, USE, HARVEST, MARKET, STOCK, HALL_LEVELS, TECH, STYLES, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
 } from './constants.js';
 import { Renderer, STRIDE, thumbnail, modelHeight } from './render.js';
 import { loadPrefs, savePrefs, applyPrefs, resolvedTheme, palette, PALETTES } from './prefs.js';
@@ -604,6 +604,27 @@ const buildGo = (t) => () => {
   setMode('build'); catQ = B[t].name; notify(`Tap an empty tile you own to build a ${B[t].name.toLowerCase()}.`, 'act');
 };
 const panelGo = (m, tab) => () => { if (tab) { if (m === 'stats') statsTab = tab; if (m === 'market') marketTab = tab; } drawer = null; openPanel(m); };
+// 1.2: a couple of tips about the new resource loop (factories, recipes, the Store), merged with sim.js's own advice.
+// Same add(score, text, type) idiom as sim.js's advice(), kept modest: at most a couple of extra candidates.
+function localTips() {
+  const out = [];
+  const add = (score, text, type) => out.push({ score, text, type });
+  if (!state) return out;
+  const stock = sim.resourceStock(state);
+  const hasFactory = state.grid.some((t) => t === T.FACTORY);
+  const spareWood = stock.wood >= 60, spareMetal = stock.metal >= 60;
+  if ((spareWood || spareMetal) && !state.grid.some((t, i) => t === T.FACTORY && sim.staffing(state, i) > 0 && state.rec?.[i])) {
+    add(3, `You have plenty of ${spareWood && spareMetal ? 'wood and metal' : spareWood ? 'wood' : 'metal'} in store. Build a factory and pick a recipe to turn it into furniture, tools or baked goods.`, T.FACTORY);
+  }
+  if (hasFactory && state.grid.some((t, i) => t === T.STORE && sim.staffing(state, i) > 0) && !PRODUCT_IDS.some((k) => stock[k] > 0)) {
+    add(2.5, 'Your Store has nothing to sell. Assign a recipe to a factory, or bring in products from the Market.', T.STORE);
+  }
+  const cap = state.stats?.res?.cap;
+  if (cap && [...TRADE_RES, ...PRODUCT_IDS].some((k) => stock[k] >= cap * 0.9)) {
+    add(3, 'Storage is nearly full. Sell the surplus on the Market or Exchange, or build a warehouse.', T.WAREHOUSE);
+  }
+  return out;
+}
 function nextStep(tips) {
   const tip = tips[0];
   if (tip && tip.score >= 6) return { urgent: true, text: tip.text, go: tip.type != null ? buildGo(tip.type) : null };
@@ -625,16 +646,26 @@ function nextStep(tips) {
 }
 
 // ---------- resources in the top bar ----------
+// 1.2 split "materials" into wood and metal, and "food" into five kinds. Kept calm by grouping them into one
+// chip each (Materials, Food) with the breakdown in the tooltip, same idiom the old combined food chip used.
+// Products only appear once the city has ever made or held one, so a town with no factories sees nothing extra.
 function renderResbar() {
   const bar = $('resbar');
   if (!bar || !state) return;
-  const st = sim.resourceStock(state), r = state.stats?.res, n = (v) => Math.floor(v || 0).toLocaleString();
-  const food = FOOD.reduce((a, k) => a + st[k], 0);
+  const st = sim.resourceStock(state), r = state.stats?.res, ps = state.stats?.products, n = (v) => Math.floor(v || 0).toLocaleString();
   const chip = (emoji, label, v, bad, title) => `<span class="rchip ${bad ? 'bad' : ''}" title="${esc(title)}"><span aria-hidden="true">${emoji}</span><b class="num">${v}</b><span class="sr">${label}</span></span>`;
+  const materials = (st.wood || 0) + (st.metal || 0);
+  const materialsTitle = `Building materials: ${['wood', 'metal'].map((k) => `${n(st[k])} ${RES[k].name.toLowerCase()} (${n(r?.prod[k])} made a day)`).join(', ')}`;
+  const food = FOOD.reduce((a, k) => a + st[k], 0);
+  const foodTitle = `Food: ${FOOD.map((k) => `${n(st[k])} ${RES[k].name.toLowerCase()}`).join(', ')}${r?.imported ? `. ${n(r.imported)} bought in yesterday` : ''}`;
+  const hasProducts = PRODUCT_IDS.some((k) => st[k] > 0 || ps?.made?.[k] > 0);
+  const products = PRODUCT_IDS.reduce((a, k) => a + (st[k] || 0), 0);
+  const productsTitle = `Products: ${PRODUCT_IDS.map((k) => `${n(st[k])} ${PRODUCTS[k].name.toLowerCase()}`).join(', ')}`;
   bar.innerHTML = chip('💧', 'water', n(st.water), r?.short.water > 0 && r?.prod.water > 0, `Water: ${n(st.water)} in store, ${n(r?.prod.water)} made and ${n(r?.need.water)} used a day`)
     + chip('⚡', 'power', n(st.power), r?.short.power > 0 && r?.prod.power > 0, `Power: ${n(st.power)} in store, ${n(r?.prod.power)} made and ${n(r?.need.power)} used a day`)
-    + chip('🍎', 'food', n(food), false, `Food: ${FOOD.map((k) => `${n(st[k])} ${RES[k].name.toLowerCase()}`).join(', ')}${r?.imported ? `. ${n(r.imported)} bought in yesterday` : ''}`)
-    + chip('🧱', 'materials', n(st.materials), false, `Building materials: ${n(st.materials)} in store, ${n(r?.prod.materials)} made a day`);
+    + chip('🧱', 'materials', n(materials), false, materialsTitle)
+    + chip('🍎', 'food', n(food), false, foodTitle)
+    + (hasProducts ? chip('📦', 'products', n(products), false, productsTitle) : '');
 }
 $('resbar').onclick = () => { statsTab = 'resources'; drawer = null; openPanel('stats'); };
 
@@ -682,7 +713,7 @@ function refreshPrices() {
   if (!state) return;
   state._prices = sim.worldPrices(worldCities(), sim.worldDay());
 }
-const RES_NAME = (k) => RES[k]?.name.toLowerCase() || k;
+const RES_NAME = (k) => RES[k]?.name.toLowerCase() || PRODUCTS[k]?.name.toLowerCase() || k;
 function startMarket() {
   stocksUnsub = fb.listenStocks(world.id, (list) => { stocks = new Map(list.map((x) => [x.id, x])); if (drawer === 'market') refreshDrawer(); });
   refreshPrices();
@@ -1182,7 +1213,7 @@ function showTimelapse() {
 
 function onNewDay(st) {
   tlSnap();
-  firstTimeTips(st);
+  if (!tut.active()) firstTimeTips(st);   // don't pile one-off tips on top of the guided tour
   const hall = sim.xy(sim.HALL_INDEX);
   if (st.income > 0) { addPop(hall.x, hall.y, 1.8, `+${money(st.income)}`, '#ffd24a'); play('coin'); }
   if (st.event) notify(st.event, 'info');
@@ -2257,7 +2288,7 @@ function updateHud() {
   const dem = sim.demand(state, plan);
   $('demand').innerHTML = [['homes', 'Homes'], ['jobs', 'Jobs'], ['shops', 'Shops'], ['services', 'Services']].map(([k, l]) =>
     `<div class="dcol" title="${l}: ${dem[k] > 0.2 ? 'needed' : dem[k] < -0.2 ? 'more than enough' : 'about right'}"><span class="dbar"><i style="${dem[k] >= 0 ? `bottom:50%;height:${dem[k] * 50}%` : `top:50%;height:${-dem[k] * 50}%`}" class="${dem[k] >= 0 ? 'up' : 'down'}"></i></span><small>${l}</small></div>`).join('');
-  const tips = state.status === 'ruins' ? [] : sim.advice(state, plan);
+  const tips = state.status === 'ruins' ? [] : [...sim.advice(state, plan), ...localTips()].sort((a, b) => b.score - a.score).slice(0, 3);
   const tip = tips[0];
   const step = state.status === 'ruins' ? null : nextStep(tips);
   $('hint').innerHTML = state.status === 'ruins' ? 'This city has fallen. Rebuild on the ruins to start again.'
@@ -2597,6 +2628,13 @@ function inspectorAction(what, arg) {
     }, $('buy-msg'));
     return;
   }
+  else if (what === 'set-recipe') {
+    const id = arg === 'none' ? null : arg;
+    checkpoint('picking a recipe');
+    const r = sim.setRecipe(state, i, id);
+    if (!r.ok) { notify(r.reason + '.', 'act'); play('error'); return; }
+    play('level'); notify(id ? `Now making ${PRODUCTS[id].name.toLowerCase()}.` : 'Recipe cleared.', 'act'); afterChange();
+  }
   else if (what === 'harvest') { collect(i); refreshDrawer(); return; }
   else if (what === 'recruit') {
     const r = sim.recruit(state, i, +arg);
@@ -2706,7 +2744,24 @@ function ownTile(i) {
     body += sim.harvestReady(state, i) ? `<div class="actions"><button class="btn primary" type="button" data-do="harvest">Collect the harvest</button></div>`
       : `<p class="soft small">${hrs ? `Ready to collect in ${HARVEST.min - hrs} hour${HARVEST.min - hrs === 1 ? '' : 's'}.` : 'Builds up a harvest while it works. Tap it to collect.'}</p>`;
   }
-  if (d.store) body += row('Stores', `${d.store} more of each resource`);
+  if (d.makesProducts) {
+    const recId = state.rec?.[i] || null, rec = recId && PRODUCTS[recId];
+    body += rec
+      ? row('Recipe', rec.name) + row('Made yesterday', `${state.stats?.products?.made?.[recId] || 0} ${rec.name.toLowerCase()}`)
+        + row('Uses a day', Object.entries(rec.recipe).map(([r, rn]) => `${rn} ${RES[r].name.toLowerCase()}`).join(', '))
+      : '<p class="soft small">Pick a recipe to turn resources into a product to sell.</p>';
+    body += `<ul class="tech">${PRODUCT_IDS.map((id) => {
+      const p = PRODUCTS[id], has = sim.hasTech(state, p.tech), picked = recId === id;
+      return `<li class="${picked ? 'done' : has ? '' : 'blocked'}"><span class="pmain"><b>${p.name}</b>
+        <small>${Object.entries(p.recipe).map(([r, rn]) => `${rn} ${RES[r].name.toLowerCase()}`).join(' and ')} makes ${p.makes}. ${p.benefit}${has ? '' : ` Needs the ${TECH.find((x) => x.id === p.tech).name} research.`}</small></span>
+        ${picked ? '<span class="tag">Picked</span>' : `<button class="btn ${has ? 'primary' : ''}" type="button" data-do="set-recipe" data-arg="${id}" ${has ? '' : 'disabled'}>Pick</button>`}</li>`;
+    }).join('')}${recId ? `<li><span class="pmain"><b>None</b><small>Leave the factory idle.</small></span><button class="btn" type="button" data-do="set-recipe" data-arg="none">Stop</button></li>` : ''}</ul>`;
+  }
+  if (d.sellsProducts) {
+    const held = PRODUCT_IDS.filter((k) => (state.res?.[k] || 0) > 0);
+    body += row('Selling', held.length ? held.map((k) => `${Math.floor(state.res[k])} ${PRODUCTS[k].name.toLowerCase()}`).join(', ') : 'Nothing in stock yet');
+  }
+  if (d.store) body += row('Stores', `${d.store} more of each resource and product`);
   if (d.jobs && d.cat && sim.staffing(state, i) > 0) body += row('Uses a day', `${USE.powerPerBuilding} power`);
   if (d.waste || d.sewage) { const w = plan?.waste; body += row(d.waste ? 'Rubbish handled, whole city' : 'Sewage handled, whole city', `${d.waste ? w?.wasteCap ?? 0 : w?.sewageCap ?? 0} of ${state.people.length} people`); }
   if (t === T.VET) body += row('Pets looked after', plan?.vetFor?.size || 0);
@@ -2955,8 +3010,15 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 1.18';
+const VERSION = 'Commons 1.2';
 const CHANGELOG = [
+  ['1.2', [
+    'A real economy: the single "materials" resource splits into wood and metal, and "food" is no longer its own resource — vegetables, fruit, dairy, meat and the new eggs are each their own stock and trade good. A Quarry mines metal and a Poultry farm keeps eggs; the old Materials works is now the Sawmill (wood).',
+    'Factories now do something: research a recipe (Furniture, Tools or Baked goods), assign it, and the factory turns real resources into a real product, limited by what you actually have in store. A new Store sells your products to your own residents; you can also trade them with other mayors on the Market.',
+    'Buildings have more depth: quarries, poultry farms, stores and the storage yard (formerly the warehouse) get new looks, and houses, offices, shops and the town hall are a little more detailed.',
+    'The tutorial now walks through the new economy, and a few more of its steps are real tasks instead of just narration.',
+    'A fresh start: every world begins again, same as 1.18 — old worlds are hidden, not deleted.',
+  ]],
   ['1.18', [
     'A fresh start: every world begins again, with room for everyone to build from the first settlers.',
     'Styles that grow with your town hall: start as Frontier (parchment, timber and clay roofs), then unlock Township, Modern and Skyline. Switch between the ones you’ve unlocked in Settings, Interface.',

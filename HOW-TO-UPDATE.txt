@@ -32,3 +32,31 @@ Password reset emails, if they don't arrive:
      commons-ww.web.app.
    - Accounts made with "Continue with Google" have no password to reset.
    - Firebase stays silent (on purpose) when an address has no account.
+
+Fresh starts (a new WORLD_ID in constants.js, with RESET_AT set to when it
+went live): players already in an older world just stop seeing it in the
+world switcher (OPEN_WORLDS only lists the current one), but nothing is
+deleted. The old worlds/{id}, plots and plotState documents are still in
+Firestore, still billed, and still readable by anyone with the id. Delete
+them from the Firestore console yourself once you're sure nobody needs them
+(private worlds someone made before RESET_AT are the main leftover; the
+public world's old id is worth keeping a little longer in case of questions).
+
+Notes by version (add a line here whenever a release changes how you deploy,
+test or administer the game - most releases need nothing beyond "push to
+main"):
+   1.16  Stock exchange (Market, Shares) and alliance rankings. No new
+         deploy steps.
+   1.17  Town hall levels, the technology tree, the resource Exchange and
+         city shares (a new worlds/{w}/stocks collection, replacing 1.16's
+         companies). If you're carrying local firestore.rules changes,
+         deploy them first as above; pulling this update on its own needs
+         nothing extra.
+   1.18  New styles and a fresh start (WORLD_ID moved on again). No new
+         deploy steps; see "Fresh starts" above for the old-world leftovers.
+   1.2   A real resource and production economy: wood, metal, five separate
+         foods, factory recipes and products, and Stores, plus another
+         fresh start (WORLD_ID is now s3). No firestore.rules change
+         needed for the new resources or products themselves - offers
+         aren't checked against a fixed list of resource keys - so just
+         the usual push, and see "Fresh starts" above for the world reset.
