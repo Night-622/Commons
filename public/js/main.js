@@ -705,7 +705,7 @@ function wireDM(box) {
 }
 
 // ---------- the market ----------
-let offers = [], myOffers = [], marketUnsub = null, myOffersUnsub = null, dealsUnsub = null, marketTab = 'exchange', marketKind = 'sell';
+let offers = [], myOffers = [], marketUnsub = null, myOffersUnsub = null, dealsUnsub = null, marketTab = 'exchange', marketKind = 'sell', marketRes = null;
 let stocks = new Map(), stocksUnsub = null;
 // Everyone's public figures, for prices and share values (your own city from the live state).
 const worldCities = () => [...plots.values()].map((p) => (p.id === plotId ? { ...sim.summary(state), id: p.id } : p));
@@ -806,7 +806,7 @@ function marketCtx() {
     .sort((a, b) => b.price - a.price);
   // Shares you still hold in cities that were taken off the exchange or left the world show too, so you can see them.
   return { locked: { shares: !isOpen('shares') }, day: sim.worldDay(), prices: state._prices || {}, yday: sim.worldPrices(worldCities(), sim.worldDay() - 1), cities,
-    listing: state.listed ? stocks.get(plotId) || {} : null, canList: sim.canList(state, STOCK.listMin), myPrice: sim.sharePrice(sim.summary(state)), offers: offers.filter((o) => o.owner !== user.uid), mine: myOffers.filter((o) => o.status === 'open'), s: state, tab: marketTab, kind: marketKind,
+    listing: state.listed ? stocks.get(plotId) || {} : null, canList: sim.canList(state, STOCK.listMin), myPrice: sim.sharePrice(sim.summary(state)), offers: offers.filter((o) => o.owner !== user.uid), mine: myOffers.filter((o) => o.status === 'open'), s: state, tab: marketTab, kind: marketKind, postRes: marketRes,
     debts: state.debts || [], loansOut: state.loansOut || [], money: state.money, stock: sim.resourceStock(state) };
 }
 function wireMarket(box) {
@@ -840,6 +840,9 @@ function wireMarket(box) {
   }, $('mk-msg')));
   box.querySelectorAll('[data-mtab]').forEach((b) => { b.onclick = () => { marketTab = b.dataset.mtab; renderDrawer(); }; });
   box.querySelector('#mk-kind')?.addEventListener('change', (e) => { marketKind = e.target.value; renderDrawer(); });
+  // Remember the chosen resource across re-renders (offers/stocks update live): without this, a snapshot
+  // landing while the post form is open silently resets "What" back to its first option.
+  if (marketKind !== 'labour') box.querySelector('#mk-post select[name="res"]')?.addEventListener('change', (e) => { marketRes = e.target.value; });
   box.querySelectorAll('[data-take]').forEach((b) => { b.onclick = () => busy(b, async () => { const o = offers.find((x) => x.id === b.dataset.take); if (o) await acceptOffer(o); }, $('mk-msg')); });
   box.querySelectorAll('[data-cancel-offer]').forEach((b) => { b.onclick = () => busy(b, async () => {
     const id = b.dataset.cancelOffer;

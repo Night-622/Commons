@@ -6,7 +6,7 @@ import { ROLES, roleOf, jobText, family, healthText, moodReasons, thought, perso
 
 // The market: open offers from other cities, a form to post your own, and what you owe or are owed.
 export function marketPanel(ctx) {
-  const { offers, mine, s, tab, kind, debts, loansOut, stock } = ctx;
+  const { offers, mine, s, tab, kind, debts, loansOut, stock, postRes } = ctx;
   const nm = (k) => RES[k]?.name.toLowerCase() || PRODUCTS[k]?.name.toLowerCase() || k, each = (p) => `$${(+p).toFixed(2)}`;
   const tabs = [['exchange', 'Exchange'], ['shares', 'Cities'], ['offers', `Offers ${offers.length ? offers.length : ''}`], ['post', 'Post'], ['yours', 'Yours']];
   const offerLine = (o) => {
@@ -46,7 +46,7 @@ export function marketPanel(ctx) {
       : '<p class="soft">No offers yet. Post one: sell what you have too much of, ask for what you need, or ask for a loan.</p>';
   } else if (tab === 'post') {
     const resOpts = [...TRADE_RES.map((k) => [k, RES[k].name]), ...PRODUCT_IDS.map((k) => [k, PRODUCTS[k].name])]
-      .map(([k, name]) => `<option value="${k}">${name} (you have ${Math.floor(stock[k] || 0)})</option>`).join('');
+      .map(([k, name]) => `<option value="${k}" ${postRes === k ? 'selected' : ''}>${name} (you have ${Math.floor(stock[k] || 0)})</option>`).join('');
     body = `<form id="mk-post" class="mk-form">
       <label class="field"><span>I want to</span><select id="mk-kind" name="kind">${[['sell', 'Sell'], ['buy', 'Buy'], ['loan', 'Borrow money'], ['labour', 'Offer workers']].map(([v, l]) => `<option value="${v}" ${kind === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       ${kind === 'labour' ? `<label class="field"><span>Workers</span><input name="qty" type="number" min="1" max="40" value="3" required></label>
