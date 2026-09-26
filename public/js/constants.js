@@ -36,6 +36,12 @@ export const ADULT = 18;
 export const RETIRE = 65;
 export const WAGE = [4, 7, 11];   // daily tax by the education a job needs
 export const EDU = ['No schooling', 'Primary', 'High school', 'Degree'];
+// Staff you bring in from outside for an open job, by the education the job needs.
+export const RECRUIT_COST = [150, 250, 400, 650];
+export const FIRED_DAYS = 3;          // someone you let go won't be taken back at the same place for this many days
+// Adults can learn the long way: evening classes at a library take this many years per level (none -> primary -> high school -> degree).
+export const ADULT_STUDY_YEARS = [2, 3, 4];
+export const TRAINING_YEARS = 5;      // years of work that count as a level of training, up to high school
 
 export const TRADE_PER_LINK = 30;
 export const LINK_MOOD = 0.03;

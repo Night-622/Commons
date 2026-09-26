@@ -797,3 +797,14 @@ html[data-simple="1"] .adv, html[data-simple="1"] [data-brush="zone"] { display:
 .brush span, .card b, .rail button span, .stat small { overflow-wrap: anywhere; hyphens: auto; }
 html:not([lang="en"]) .brush span { font-size: .9em; line-height: 1.1; text-align: center; }
 html:not([lang="en"]) .card b { font-size: .95em; }
+
+/* Staff: vacancies, the staff list and the hire picker */
+.vacancy { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
+.vacancy .actions { flex-direction: row; flex-wrap: wrap; margin-top: 6px; }
+details.staff { margin-top: 10px; }
+details.staff summary { cursor: pointer; font-weight: 600; }
+details.staff ul, .picklist { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 6px; }
+details.staff li, .picklist li { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+details.staff li small, .picklist li small { display: block; }
+.picklist { max-height: 50vh; overflow-y: auto; }
+.btn.small { padding: 4px 10px; font-size: .85em; min-height: 0; }

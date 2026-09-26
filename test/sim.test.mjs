@@ -414,4 +414,41 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(left > 0);
   console.log('quick building ok: house done after', Math.round(f * 75), 'real seconds');
 }
+// ---- hiring, firing, recruiting and learning without school
+{
+  seed = 21;
+  const s = sim.newCity('Staff', rng); s.money = 5000; s.land.fill(1);
+  for (let x = c - 4; x <= c + 4; x++) put(s, x, c + 1, T.ROAD);
+  put(s, c - 3, c + 2, T.HOUSE); put(s, c - 1, c + 2, T.HOUSE); put(s, c + 1, c + 2, T.SHOP); put(s, c + 3, c + 2, T.LIBRARY);
+  for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = [];
+  const shop = sim.idx(c + 1, c + 2), lib = sim.idx(c + 3, c + 2);
+  sim.plan(s, rng);
+  // Recruit a librarian from outside: costs money, fills the job, and they stay put.
+  const libJob = B[T.LIBRARY].jobs.findIndex(([, e]) => e >= 2);
+  const before = s.money, n = s.people.length;
+  const r = sim.recruit(s, lib, libJob, rng);
+  assert(r.ok, 'recruit: ' + r.reason);
+  assert.equal(s.money, before - sim.recruitCost(s, lib, libJob));
+  assert.equal(s.people.length, n + 1);
+  const newcomer = s.people.find((p) => p.i === r.pid);
+  assert(newcomer.e >= B[T.LIBRARY].jobs[libJob][1] && newcomer.j === lib, 'the recruit has the education and the job');
+  // Hire a resident into the shop; the daily job shuffle leaves them there.
+  const worker = s.people.find((p) => p.a >= 18 && p.a < 65 && p.e >= B[T.SHOP].jobs[0][1] && p.i !== r.pid);
+  assert(sim.hire(s, worker.i, shop, 0).ok);
+  for (let d = 0; d < 3; d++) { for (let h = 0; h < 24; h++) sim.tick(s, rng); }
+  assert.equal(worker.j, shop, 'a hired worker keeps their job');
+  // Let them go: they don't come back to the shop for a few days.
+  assert(sim.fire(s, worker.i).ok);
+  assert.equal(worker.j, -1);
+  sim.plan(s, rng);
+  assert.notEqual(worker.j, shop, 'not re-hired at the same place straight away');
+  assert(!sim.hire(s, 999999, shop, 0).ok && !sim.fire(s, 999999).ok, 'unknown people are refused');
+  // Evening classes: an adult with no schooling who spends evenings at the library moves up.
+  const learner = s.people.find((p) => p.a >= 18 && p.a < 40);
+  learner.e = 0; learner.us = 0;
+  let days = 0;
+  while (learner.e === 0 && days < 40) { learner.fun = lib; for (let h = 0; h < 24; h++) sim.tick(s, rng); learner.fun = lib; days++; }
+  assert(learner.e >= 1, 'an adult with no schooling can earn a primary certificate at the library');
+  console.log('hiring ok: recruit, hire, fire; evening classes took', days, 'days');
+}
 console.log('all tests passed');

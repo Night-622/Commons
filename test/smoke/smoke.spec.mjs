@@ -196,3 +196,28 @@ test('build: keyboard to an empty tile, pick from the catalogue, money goes down
   await expect.poll(money).toBeLessThan(before);
   expect(clean(errors)).toEqual([]);
 });
+
+test('staff: recruit and hire from a building’s panel', async ({ page }) => {
+  test.setTimeout(120_000);
+  const errors = await newGame(page);
+  await page.locator('#map').focus();
+  await page.keyboard.press('b');
+  for (const k of ['ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter']) await page.keyboard.press(k);
+  await page.locator('#cat-q').fill('grocer');
+  await page.locator('#catalog [data-build]').first().click();
+  if (await page.locator('#modal[open]').count()) await page.locator('#modal .primary').click();
+  // Select the same tile and wait for the builders to finish.
+  await page.locator('#map').focus();
+  await page.keyboard.press('e');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#drawer [data-do="recruit"]').first()).toBeVisible({ timeout: 90_000 });
+  // Either someone moves in, or the game says why not (no home with room, not enough money).
+  await page.locator('#drawer [data-do="recruit"]').first().click();
+  await expect(page.locator('#toasts')).toContainText(/moving here|No home|Needs \$/);
+  if (await page.locator('#drawer [data-do="hire"]').count()) {
+    await page.locator('#drawer [data-do="hire"]').first().click();
+    await expect(page.locator('#modal[open]')).toContainText('Hire a');
+    await closeModal(page);
+  }
+  expect(clean(errors)).toEqual([]);
+});

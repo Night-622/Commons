@@ -85,6 +85,13 @@ const dict = {
 };
 
 const SEASON = { Spring: 'Άνοιξη', Summer: 'Καλοκαίρι', Autumn: 'Φθινόπωρο', Winter: 'Χειμώνας' };
+// Staff (1.10)
+Object.assign(dict, {
+  'Hire someone': 'Πρόσληψη κατοίκου', 'Manage staff': 'Διαχείριση προσωπικού', 'Let go': 'Απόλυση', 'Hire': 'Πρόσληψη',
+  'looking for work': 'ψάχνει δουλειά', 'no schooling': 'χωρίς σχολείο', 'primary': 'δημοτικό', 'high school': 'λύκειο', 'degree': 'πτυχίο',
+  'People you hire stay in the job until you let them go.': 'Όσοι προσλαμβάνετε μένουν στη θέση μέχρι να τους απολύσετε.',
+  'Nobody in town has the education. Recruit from outside, or let adults study at a library’s evening classes.': 'Κανείς στην πόλη δεν έχει τη μόρφωση. Φέρτε κάποιον απ’ έξω ή αφήστε τους ενήλικες να σπουδάσουν στα βραδινά μαθήματα της βιβλιοθήκης.',
+});
 const hour = (h, ap) => (h === 'noon' ? 'μεσημέρι' : h === 'midnight' ? 'μεσάνυχτα' : `${h} ${ap === 'am' ? 'π.μ.' : 'μ.μ.'}`);
 // Text with numbers in it. Each is [pattern, replacement].
 const patterns = [
@@ -106,6 +113,8 @@ const patterns = [
   [/^Mayor level (\d+)$/, 'Επίπεδο δημάρχου $1'],
   [/^Build on tile (\d+), (\d+)$/, 'Χτίσιμο στο τετράγωνο $1, $2'],
   [/^Tile (\d+), (\d+)$/, 'Τετράγωνο $1, $2'],
+  [/^Recruit from outside, \$([\d,]+)$/, 'Πρόσληψη απ’ έξω, $$$1'],
+  [/^Hire a (.+)$/, 'Πρόσληψη: $1'],
 ];
 
 export default { dict, patterns };

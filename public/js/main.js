@@ -2175,6 +2175,33 @@ function inspectorAction(what, arg) {
     $('cancel-go').onclick = () => { closeModal(); demolish(i, false); };
     return;
   }
+  else if (what === 'recruit') {
+    const r = sim.recruit(state, i, +arg);
+    if (!r.ok) { notify(r.reason + '.', 'act'); play('error'); return; }
+    checkpoint('recruitment'); play('coin'); notify(`${sim.personName(state.people.find((p) => p.i === r.pid))} is moving here for the job.`, 'good'); afterChange();
+  }
+  else if (what === 'fire') {
+    const p = state.people.find((x) => x.i === +arg);
+    checkpoint('letting someone go');
+    const r = sim.fire(state, +arg);
+    if (!r.ok) { notify(r.reason + '.', 'act'); play('error'); return; }
+    notify(`${sim.personName(p)} was let go. They’ll look for work elsewhere.`, 'act'); afterChange();
+  }
+  else if (what === 'hire') {
+    const k = +arg, d = B[state.grid[i]], list = sim.candidates(state, i, k).slice(0, 30);
+    openModal(`${closeX}<h2 id="modal-title">Hire a ${esc(d.jobs[k][0].toLowerCase())}</h2>
+      <p>${d.jobs[k][1] ? `Needs ${EDU[d.jobs[k][1]].toLowerCase()}. ` : ''}People you hire stay in the job until you let them go.</p>
+      ${list.length ? `<ul class="picklist">${list.map((p) => `<li><span>${esc(sim.personName(p))}, ${p.a} <small class="soft">${EDU[p.e].toLowerCase()}; ${p.j >= 0 ? esc(jobText(state, p).toLowerCase()) : 'looking for work'}</small></span><button class="btn small" type="button" data-hire="${p.i}">Hire</button></li>`).join('')}</ul>`
+        : `<p class="warn">Nobody in town has the education. Recruit from outside, or let adults study at a library’s evening classes.</p>`}
+      <div class="mfoot"><button class="btn" data-close>Close</button></div>`);
+    modal.querySelectorAll('[data-hire]').forEach((b) => { b.onclick = () => {
+      checkpoint('hiring');
+      const r = sim.hire(state, +b.dataset.hire, i, k);
+      if (!r.ok) { notify(r.reason + '.', 'act'); play('error'); return; }
+      closeModal(); play('coin'); notify(`Hired. ${sim.personName(state.people.find((p) => p.i === +b.dataset.hire))} starts today.`, 'good'); afterChange();
+    }; });
+    return;
+  }
   else if (what === 'move') { setMode('move'); moveFrom = i; renderModebar(); notify('Now tap an empty tile you own to put it down.', 'act'); dirty = true; }
   else if (what === 'follow') { follow(+arg); return; }
   else if (what === 'home') { const { x, y } = sim.xy(+arg); select({ px: me.px, py: me.py, tx: x, ty: y, i: +arg }); goTo(me.px, me.py, x, y, 18); return; }
@@ -2236,8 +2263,10 @@ function ownTile(i) {
     body += `<div class="kv"><span>Staff</span><b class="num">${staff.length} of ${slots.reduce((a, b) => a + b, 0)}</b></div>`;
     d.jobs.forEach(([title, e], k) => {
       const n = staff.filter((p) => p.jt === k).length;
-      if (n < slots[k]) body += `<p class="soft small">${slots[k] - n} ${title.toLowerCase()} job${slots[k] - n > 1 ? 's' : ''} open${e ? `, needs ${EDU[e].toLowerCase()}` : ''}.</p>`;
+      if (n < slots[k]) body += `<div class="vacancy"><p class="soft small">${slots[k] - n} ${title.toLowerCase()} job${slots[k] - n > 1 ? 's' : ''} open${e ? `, needs ${EDU[e].toLowerCase()}` : ''}.</p>
+        <div class="actions"><button class="btn" type="button" data-do="hire" data-arg="${k}">Hire someone</button><button class="btn" type="button" data-do="recruit" data-arg="${k}">Recruit from outside, ${money(sim.recruitCost(state, i, k))}</button></div></div>`;
     });
+    if (staff.length && t !== T.HALL) body += `<details class="staff"><summary>Manage staff</summary><ul>${staff.map((p) => `<li><span>${esc(sim.personName(p))} <small class="soft">${esc(d.jobs[p.jt][0].toLowerCase())}, ${EDU[p.e].toLowerCase()}</small></span><button class="btn small" type="button" data-do="fire" data-arg="${p.i}">Let go</button></li>`).join('')}</ul></details>`;
     if (!staff.length && (d.school || d.care || d.visits || d.radius || d.cases)) body += '<p class="warn">Closed: nobody works here yet. It needs staff with the right education.</p>';
     body += faces(staff, 'Staff');
   }

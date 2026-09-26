@@ -6,7 +6,7 @@ import {
   LINK_MOOD, MAX_LINKS, HISTORY_DAYS, LOG_SIZE, EVENT_CHANCE, CHUNK, CHUNKS, START_CHUNKS, LAND_PRICE, LAND_STEP,
   MOVE_FEE, ADULT, RETIRE, WAGE, isHome, walkable, BUS_SEATS, COMMUTE_JOBS, TICK_MS, isRoad, isRail, POLICY, WANT_REWARD,
   GOODS_PER_FACTORY, SEASONS, SEASON_DAYS, YEAR_DAYS, UTILITY_POP, DECISIONS, ELECTION_EVERY, ZONES, ZONE_COST,
-  BUILD_SPEED, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
+  BUILD_SPEED, RECRUIT_COST, FIRED_DAYS, ADULT_STUDY_YEARS, TRAINING_YEARS, EDU, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
 } from './constants.js';
 
 const N = PLOT * PLOT;
@@ -178,7 +178,9 @@ export function migrate(s, rng = Math.random) {
 }
 
 // People are saved as short arrays to keep saves small; this is the field order.
-const PKEYS = ['i', 'f', 'l', 'a', 'h', 'e', 'sp', 'us', 'j', 'jt', 'sc', 'tu', 'hp', 'ill', 'sd', 'm', 'pt', 'pa', 'cs', 'fun', 'st', 'vt', 'gr', 'jy', 'b', 'oj', 'hol', 'hto', 'hcity', 'hi'];
+// New keys go at the end so older saves still unpack. lk: hired by the mayor (kept in that job); nf/nfu: let go from
+// building nf until day nfu; xp: years of work, which count as training.
+const PKEYS = ['i', 'f', 'l', 'a', 'h', 'e', 'sp', 'us', 'j', 'jt', 'sc', 'tu', 'hp', 'ill', 'sd', 'm', 'pt', 'pa', 'cs', 'fun', 'st', 'vt', 'gr', 'jy', 'b', 'oj', 'hol', 'hto', 'hcity', 'hi', 'lk', 'nf', 'nfu', 'xp'];
 const pack = (p) => PKEYS.map((k) => (k === 'm' ? Math.round(p.m * 1000) / 1000 : k === 'sp' || k === 'us' ? Math.round((p[k] || 0) * 10) / 10 : p[k] ?? null));
 const unpack = (a) => { const p = {}; PKEYS.forEach((k, n) => { p[k] = a[n]; }); for (const k of ['j', 'sc', 'tu', 'fun']) if (p[k] === null) p[k] = -1; return p; };
 export function serialize(s) {
@@ -551,6 +553,60 @@ export function staffing(s, i) {
 const isBuilder = (s, p) => p.j >= 0 && !p.oj && (s.grid[p.j] === T.HALL || s.grid[p.j] === T.YARD) && p.jt === 0;
 const canWork = (p) => p.a >= ADULT && p.a < RETIRE && p.sc < 0 && !p.st && p.ill < 3;
 
+// ---------- hiring and firing ----------
+const openSlot = (s, i, k) => jobSlots(s, i)[k] - s.people.filter((p) => p.j === i && p.jt === k && !p.oj).length;
+// Put a resident in a job at building i (job k). They stay there until let go.
+export function hire(s, pid, i, k) {
+  const p = s.people.find((x) => x.i === pid), d = B[s.grid[i]];
+  if (!p || !d?.jobs?.[k] || !active(s, i)) return { ok: false, reason: 'No such job' };
+  if (!canWork(p)) return { ok: false, reason: `${personName(p)} can’t work right now` };
+  if (p.e < d.jobs[k][1]) return { ok: false, reason: `Needs ${EDU[d.jobs[k][1]].toLowerCase()}` };
+  if (p.j === i && p.jt === k && !p.oj) return { ok: false, reason: 'Already works there' };
+  if (openSlot(s, i, k) <= 0) return { ok: false, reason: 'No open job there' };
+  if (p.j >= 0 && !p.oj) remember(s, p, `Left a job as ${B[s.grid[p.j]].jobs[p.jt][0].toLowerCase()}`);
+  Object.assign(p, { j: i, jt: k, oj: null, lk: 1, nf: null, nfu: null });
+  remember(s, p, `Hired as ${d.jobs[k][0].toLowerCase()}`);
+  s._plan = null;
+  return { ok: true };
+}
+// Who could take job k at building i: working-age residents with the education, not already doing it. Jobless first.
+export function candidates(s, i, k) {
+  const need = B[s.grid[i]]?.jobs?.[k]?.[1] ?? 9;
+  return s.people.filter((p) => canWork(p) && p.e >= need && !(p.j === i && p.jt === k && !p.oj))
+    .sort((a, b) => (a.j >= 0) - (b.j >= 0) || a.e - b.e);
+}
+// Let someone go. They look for other work, but not back at the same place for a few days.
+export function fire(s, pid) {
+  const p = s.people.find((x) => x.i === pid);
+  if (!p || p.j < 0 || p.oj) return { ok: false, reason: 'They don’t work in this city' };
+  if (isBuilder(s, p) && s.people.filter((x) => isBuilder(s, x)).length <= 1) return { ok: false, reason: 'The town needs at least one builder' };
+  remember(s, p, `Let go as ${B[s.grid[p.j]].jobs[p.jt][0].toLowerCase()}`);
+  Object.assign(p, { nf: p.j, nfu: s.day + FIRED_DAYS, j: -1, lk: 0, m: clamp(p.m - 0.1) });
+  s._plan = null;
+  return { ok: true };
+}
+// Bring in a qualified worker from outside for an open job. They need a home with room.
+export function recruitCost(s, i, k) { return RECRUIT_COST[B[s.grid[i]]?.jobs?.[k]?.[1] ?? 0]; }
+export function recruit(s, i, k, rng = Math.random) {
+  const d = B[s.grid[i]];
+  if (!d?.jobs?.[k] || !active(s, i)) return { ok: false, reason: 'No such job' };
+  if (openSlot(s, i, k) <= 0) return { ok: false, reason: 'No open job there' };
+  const cost = recruitCost(s, i, k);
+  if (s.money < cost) return { ok: false, reason: `Needs $${cost}` };
+  const byHome = new Map();
+  for (const p of s.people) byHome.set(p.h, (byHome.get(p.h) || 0) + 1);
+  let home = -1;
+  for (let h = 0; h < N; h++) if (isHome(s.grid[h]) && active(s, h) && homeCap(s, h) - (byHome.get(h) || 0) >= 1) { home = h; break; }
+  if (home < 0) return { ok: false, reason: 'No home with room for them' };
+  s.money -= cost;
+  const p = person(s, { f: Math.floor(rng() * FIRST.length), l: Math.floor(rng() * SURNAMES.length), a: 24 + Math.floor(rng() * 20), h: home, e: d.jobs[k][1], sp: 10, j: i, jt: k, lk: 1 });
+  remember(s, p, `Moved here to work as ${d.jobs[k][0].toLowerCase()}`);
+  note(s, 'good', `${personName(p)} moved here to work as ${d.jobs[k][0].toLowerCase()}.`);
+  s.counters.arrivals = (s.counters.arrivals || 0) + 1;
+  s._plan = null;
+  return { ok: true, cost, pid: p.i };
+}
+
 export function totals(s, uc = underConstruction(s)) {
   const t = { homes: 0, jobs: 0, seats: {}, serves: 0, upkeep: 0, roads: 0, counts: {}, upkeepBy: {} };
   for (let i = 0; i < N; i++) {
@@ -661,7 +717,7 @@ export function plan(s, rng = Math.random) {
     const t = s.grid[p.j];
     const slots = active(s, p.j, uc) && B[t].jobs ? jobSlots(s, p.j) : null;
     const key = slotKey(p.j, p.jt);
-    if (!slots || !canWork(p) || !homeOk(p.h) || (filled.get(key) || 0) >= slots[p.jt] || p.e < B[t].jobs[p.jt][1]) { p.j = -1; continue; }
+    if (!slots || !canWork(p) || !homeOk(p.h) || (filled.get(key) || 0) >= slots[p.jt] || p.e < B[t].jobs[p.jt][1]) { p.j = -1; p.lk = 0; continue; }
     filled.set(key, (filled.get(key) || 0) + 1);
   }
 
@@ -703,7 +759,7 @@ export function plan(s, rng = Math.random) {
   const staffOf = (i) => B[s.grid[i]].jobs.reduce((a, _, k) => a + (filled.get(slotKey(i, k)) || 0), 0);
   const unstaffed = new Set(jobBuildings.filter((i) => isService(B[s.grid[i]]) && staffOf(i) === 0));
   const commercial = (p) => p.j >= 0 && !p.oj && !isService(B[s.grid[p.j]]) && s.grid[p.j] !== T.HALL;
-  const seekers = s.people.filter((p) => canWork(p) && homeOk(p.h) && (p.j < 0 || (!p.oj && h32(p.i, s.day + 99) < 0.3
+  const seekers = s.people.filter((p) => canWork(p) && homeOk(p.h) && (p.j < 0 || (!p.oj && !p.lk && h32(p.i, s.day + 99) < 0.3
       && (reqOf(p) < Math.min(p.e, 2) || (unstaffed.size && commercial(p))))))
     .sort((a, b) => (a.j >= 0) - (b.j >= 0) || b.e - a.e || h32(a.i, s.day) - h32(b.i, s.day));
   for (const p of seekers) {
@@ -714,6 +770,7 @@ export function plan(s, rng = Math.random) {
       for (let k = 0; k < slots.length; k++) {
         const rescue = unstaffed.has(i) && commercial(p) && def.jobs[k][1] >= floor;
         if (def.jobs[k][1] > p.e || (def.jobs[k][1] <= floor && !rescue) || (filled.get(slotKey(i, k)) || 0) >= slots[k]) continue;
+        if (p.nf === i && s.day < (p.nfu || 0)) continue;   // let go from here recently
         const d = mapFor(p.h).d(i);
         if (d < 0 || d > 26) continue;
         const score = d - def.jobs[k][1] * 6;   // prefer jobs that use your education
@@ -1283,10 +1340,19 @@ function daily(s, plan, rng) {
     if (birthday) p.a++;
     // Children without a school place learn at home: slower and less certain, better with a library nearby.
     if (p.a >= 5 && p.a < ADULT && p.sc < 0 && !p.as && !p.hol && rng() < (libraryNear(p.h) ? 0.55 : 0.3)) p.sp += 1 / YEAR_DAYS;
-    // Adults with high school who study at the library can earn a degree the long way.
-    if (p.a >= ADULT && p.a < 50 && p.e === 2 && p.sc < 0 && p.fun >= 0 && s.grid[p.fun] === T.LIBRARY && rng() < 0.35) {
+    // Adults who go to evening classes at the library move up a level at a time, all the way to a degree.
+    if (p.a >= ADULT && p.a < 50 && p.e < 3 && p.sc < 0 && p.fun >= 0 && s.grid[p.fun] === T.LIBRARY && rng() < 0.35) {
       p.us += 1 / YEAR_DAYS;
-      if (p.us >= 4) { p.e = 3; p.us = 0; p.jy = 3; st.graduates++; remember(s, p, 'Earned a degree studying at the library'); note(s, 'good', `${personName(p)} earned a degree by studying at the library.`); }
+      if (p.us >= ADULT_STUDY_YEARS[p.e]) {
+        p.e++; p.us = 0; p.jy = 3; st.graduates++;
+        const what = p.e === 3 ? 'a degree' : p.e === 2 ? 'a high school diploma' : 'a primary certificate';
+        remember(s, p, `Earned ${what} at evening classes`); note(s, 'good', `${personName(p)} earned ${what} at evening classes in the library.`);
+      }
+    }
+    // Years on the job count as training, up to high school level.
+    if (birthday && p.j >= 0 && !p.oj && p.e < 2 && p.a < 50) {
+      p.xp = (p.xp || 0) + 1;
+      if (p.xp >= TRAINING_YEARS) { p.e++; p.xp = 0; remember(s, p, `Qualified on the job (${EDU[p.e].toLowerCase()})`); note(s, 'good', `${personName(p)} qualified on the job.`); }
     }
     if (p.sc >= 0 && B[s.grid[p.sc]]) {
       const stage = B[s.grid[p.sc]].school.stage;
