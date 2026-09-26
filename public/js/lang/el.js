@@ -85,6 +85,11 @@ const dict = {
 };
 
 const SEASON = { Spring: 'Άνοιξη', Summer: 'Καλοκαίρι', Autumn: 'Φθινόπωρο', Winter: 'Χειμώνας' };
+// The free 3D camera (1.15)
+Object.assign(dict, {
+  'Free': 'Ελεύθερη', 'Loading the 3D view…': 'Φόρτωση της τρισδιάστατης προβολής…', 'Free 3D camera': 'Ελεύθερη τρισδιάστατη κάμερα',
+  'Free camera: turn, tilt and zoom in real 3D (3)': 'Ελεύθερη κάμερα: περιστροφή, κλίση και ζουμ σε πραγματικό 3D (3)',
+});
 // Resources on show and harvests (1.14)
 Object.assign(dict, {
   'Makes a day': 'Παράγει ημερησίως', 'Harvest': 'Σοδειά', 'Collect the harvest': 'Μαζέψτε τη σοδειά', 'Uses a day': 'Καταναλώνει ημερησίως', 'Stores': 'Αποθηκεύει',

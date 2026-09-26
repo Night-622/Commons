@@ -464,3 +464,44 @@ test('resources bar, materials in prices, and what buildings make', async ({ pag
   await expect(page.locator('#drawer [role="tab"][aria-selected="true"]')).toContainText('Resources');
   expect(clean(errors)).toEqual([]);
 });
+
+test('free camera: the 3D view loads, draws the city, and tapping selects', async ({ page }) => {
+  const errors = await newGame(page);
+  await page.locator('#view-free').click();
+  await expect(page.locator('canvas.map3d')).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('#view-free')).toHaveAttribute('aria-pressed', 'true');
+  await page.waitForTimeout(800);
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/free3d.png` });
+  // Tap the middle of the screen: the town hall is there, so something gets selected.
+  const box = await page.locator('canvas.map3d').boundingBox();
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(page.locator('#drawer')).toBeVisible();
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/free3d-selected.png` });
+  await page.locator('#view-3d').click();
+  await expect(page.locator('canvas.map3d')).toBeHidden();
+  expect(clean(errors)).toEqual([]);
+});
+
+test('free camera with a built-up town', async ({ page }) => {
+  const errors = await newGame(page);
+  // Build a small street in the save before opening the 3D view.
+  await page.evaluate(() => {
+    const db = JSON.parse(localStorage.getItem('fakefb'));
+    for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plotState/')) {
+      const s = JSON.parse(v.state), c = 12, put = (x, y, t) => { s.grid[y * 24 + x] = t; s.cond[y * 24 + x] = 100; };
+      for (let x = 6; x <= 18; x++) put(x, c + 1, 1);
+      [2, 2, 10, 3, 4, 13, 39, 40, 43, 5].forEach((t, k) => put(6 + k, c + 2, t));
+      v.state = JSON.stringify(s);
+    }
+    localStorage.setItem('fakefb', JSON.stringify(db));
+  });
+  await page.reload();
+  await expect(page.locator('#game')).toBeVisible();
+  await closeModal(page);
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/iso-town.png` });
+  await page.locator('#view-free').click();
+  await expect(page.locator('canvas.map3d')).toBeVisible({ timeout: 20_000 });
+  await page.waitForTimeout(800);
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/free3d-town.png` });
+  expect(clean(errors)).toEqual([]);
+});

@@ -1203,7 +1203,21 @@ export class Renderer {
 
   overlays(g, scene) {
     const { hover, cursor, selected } = scene;
-    if (selected) this.tileOutline(g, selected.px, selected.py, selected.tx, selected.ty, '#ffc933', 'rgba(255,201,51,0.18)');
+    if (selected) {
+      this.tileOutline(g, selected.px, selected.py, selected.tx, selected.ty, '#ffc933', 'rgba(255,201,51,0.18)');
+      // Outline the building itself, not just its tile.
+      const plot = [...scene.plots.values()].find((p) => p.px === selected.px && p.py === selected.py), t = plot?.grid?.[selected.i];
+      if (this.view === '3d' && t && (B[t]?.cat || t === T.HALL)) {
+        const H = modelHeight(t, plot.lv?.[selected.i] || 1), ox = selected.px * STRIDE + selected.tx, oy = selected.py * STRIDE + selected.ty;
+        const c = [[0.12, 0.12], [0.88, 0.12], [0.88, 0.88], [0.12, 0.88]];
+        const lo = c.map(([a, b]) => this.project(ox + a, oy + b, 0)), hi = c.map(([a, b]) => this.project(ox + a, oy + b, H));
+        g.strokeStyle = '#ffc933'; g.lineWidth = Math.max(2, this.cam.z / 10); g.shadowColor = 'rgba(255,201,51,0.8)'; g.shadowBlur = 8;
+        g.beginPath();
+        hi.forEach(([x, y], k) => (k ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath();
+        for (const k of [0, 1, 2, 3]) { g.moveTo(lo[k][0], lo[k][1]); g.lineTo(hi[k][0], hi[k][1]); }
+        g.stroke(); g.shadowBlur = 0;
+      }
+    }
     if (hover && this.cam.z >= 5) {
       const bad = 'rgba(224,75,60,0.35)', good = 'rgba(47,158,90,0.28)';
       if (hover.ghost !== undefined && hover.ok && this.view === '3d' && this.cam.z >= ISO_DETAIL) {

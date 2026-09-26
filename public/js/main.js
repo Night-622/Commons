@@ -45,6 +45,7 @@ let pops = [], undoStack = [], bridges = new Map(), neighbourInfo = [], pulseTil
 let saveTimer = null, lastSave = Date.now(), loopTimer = null, worldTimer = null, lastHour = -1;
 let spaceHeld = false, dirty = true, lastFrame = performance.now(), warnedDay = -1;
 let worldTrains = [];
+let view3d = null, freeView = false, loading3d = false;   // the free-camera 3D view (view3d.js), loaded when first opened
 let giftsUnsub = null, worldNews = [];
 let worldUnsub = null, movesUnsub = null, lastSaved = '', offerCache = new Map(), live = false, liveTimer = null, fetching = new Set();
 const INACTIVE_MS = 10 * 60 * 1000;   // a neighbour idle this long stops sharing facilities
@@ -83,8 +84,9 @@ function applyAll() {
   setLang(prefs.lang);
   renderer.view = prefs.view;
   setSound(prefs.sound, prefs.volume, prefs.ambientVolume, prefs.haptics);
-  $('view-3d').setAttribute('aria-pressed', prefs.view === '3d');
-  $('view-2d').setAttribute('aria-pressed', prefs.view === 'flat');
+  $('view-2d').setAttribute('aria-pressed', prefs.view === 'flat' && !freeView);
+  $('view-3d').setAttribute('aria-pressed', prefs.view === '3d' && !freeView);
+  $('view-free').setAttribute('aria-pressed', !!freeView);
   $('minibox').classList.toggle('hidden', !prefs.minimap);
   drawThumbs();
   drawHeroes();
@@ -1865,6 +1867,7 @@ const KEY_ACTIONS = {
   settings: { key: ',', label: 'Settings', run: () => showSettings() },
   help: { key: '?', label: 'Help', run: () => showHelp() },
   hideui: { key: 'u', label: 'Hide or show the interface', run: () => toggleUi() },
+  freecam: { key: '3', label: 'Free 3D camera', run: () => toggleFree() },
 };
 const FIXED_KEYS = new Set(['w', 'a', 's', 'd', '1', '2', '3', '4', '5', '6', '7', '+', '=', '-', '_', ' ', 'escape', 'enter', 'tab', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
 const keyFor = (id) => (prefs.keys?.[id] ?? KEY_ACTIONS[id].key);
@@ -1915,7 +1918,11 @@ function frame(now) {
     } else pulseTileMove = null;
     if (catalog) { const { x, y } = sim.xy(catalog.tile); hv = { px: me.px, py: me.py, tx: x, ty: y, i: catalog.tile, ok: true, tool: 'build' }; }
     const wx = sim.weather(sim.worldDay());
-    if (dirty || worldTrains.length || agentsByPlot.size || pops.length || pulseTile || pulseTileMove || wx === 'rain' || wx === 'snow') {
+    if (freeView && view3d) {
+      view3d.sync({ plots, selected, agentsByPlot, ready: readyTiles(), palette: palette(prefs), paletteKey: prefs.colours, theme: resolvedTheme(prefs), nightAmt: nightAmt() });
+      view3d.render();
+      dirty = false;
+    } else if (dirty || worldTrains.length || agentsByPlot.size || pops.length || pulseTile || pulseTileMove || wx === 'rain' || wx === 'snow') {
       renderer.draw({
         plots, free: freePlots(), ready: readyTiles(), hover: hv, cursor, selected, overlay, traffic: plan, worldTrains, info: infoTiles(), agentsByPlot, pops, prefs, bridges, pulseTile: pulseTile || pulseTileMove,
         showLand: mode === 'build', landPrice: state ? sim.landPrice(state) : 0, season: sim.season(sim.worldDay()), weather: sim.weather(sim.worldDay()),
@@ -1933,6 +1940,7 @@ requestAnimationFrame(frame);
 function fitHome() {
   if (!me) return;
   followCam = false;
+  if (freeView && view3d) view3d.focus(me.px, me.py);
   renderer.centerOnPlot(me.px, me.py);
   const w = renderer.w, h = renderer.h - 170, span = w < 600 ? 10 : 17;
   renderer.cam.z = prefs.view === 'flat'
@@ -2043,8 +2051,41 @@ function toggleView() {
   renderer.centerOn(c.x, c.y);
   announce(prefs.view === '3d' ? '3D view' : '2D view');
 }
-$('view-3d').onclick = () => prefs.view !== '3d' && toggleView();
-$('view-2d').onclick = () => prefs.view !== 'flat' && toggleView();
+$('view-3d').onclick = () => { if (freeView) toggleFree(); if (prefs.view !== '3d') toggleView(); };
+$('view-2d').onclick = () => { if (freeView) toggleFree(); if (prefs.view !== 'flat') toggleView(); };
+// ---------- the free-camera 3D view ----------
+// three.js loads the first time it's opened. The canvas renderer keeps running underneath for the other views.
+async function toggleFree() {
+  if (loading3d) return;
+  if (freeView) {
+    freeView = false;
+    view3d.canvas.style.display = 'none';   // three.js sets an inline display, so hide it the same way
+    $('map').style.visibility = '';
+    applyAll(); dirty = true;
+    announce('Back to the map view.');
+    return;
+  }
+  if (!view3d) {
+    loading3d = true;
+    notify('Loading the 3D view…', 'info');
+    try {
+      const { View3D } = await import('./view3d.js');
+      view3d = new View3D($('game'), { onPick: (h) => { if (h) click(h); else { closeDrawer(); closeCatalog(); } } });
+      $('game').insertBefore(view3d.canvas, $('map').nextSibling);
+    } catch (e) {
+      console.error('3D view', e);
+      notify('The 3D view isn’t available on this device (it needs WebGL). The map view still works.', 'warn');
+      return;
+    } finally { loading3d = false; }
+  }
+  freeView = true;
+  view3d.canvas.style.display = 'block';
+  $('map').style.visibility = 'hidden';
+  if (!view3d.focused && me) view3d.focus(me.px, me.py);
+  applyAll(); dirty = true;
+  announce('Free camera. Drag to turn, right-drag to move, scroll to zoom. Tap a building to select it.');
+}
+$('view-free').onclick = toggleFree;
 $('btn-traffic').onclick = showViews;
 $('btn-home').onclick = fitHome;
 $('btn-world').onclick = fitWorld;
@@ -2833,8 +2874,14 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 1.14';
+const VERSION = 'Commons 1.15';
 const CHANGELOG = [
+  ['1.15', [
+    'A free 3D camera: press Free by the 3D and 2D buttons (or 3) to see your city in real 3D. Drag to turn, right-drag to move, scroll or pinch to zoom.',
+    'Everything works in the free view: tap a building to select it (it glows), tap land to build, collect harvests, and watch cars and walkers go by. The sun follows the clock, and windows light up at night.',
+    'Selecting a building in the normal view now outlines the building itself, not just its tile.',
+    'Your resources now sit in the city card at the top left, so the top bar has room to breathe.',
+  ]],
   ['1.14', [
     'Your resources are always on show at the top: water, power, food and building materials. Tap them for the full picture.',
     'Harvests: farms, orchards, power stations and every other producer build up a harvest while they work. Tap a building with a bubble over it to collect it.',

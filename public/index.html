@@ -150,8 +150,8 @@
         <button id="city-name" class="city-name" type="button" title="Rename your city" translate="no"></button>
         <span class="clockrow"><span id="clock" class="clock num"></span><span id="live" class="live" role="status">Live</span><button id="savestate" class="savestate" type="button" title="Your city saves automatically">Saved</button></span>
         <span class="daybar" aria-hidden="true"><i id="dayfill"></i></span>
+        <button id="resbar" class="resbar" type="button" title="Resources in store: open City stats, Resources" aria-label="Resources"></button>
       </div>
-      <button id="resbar" class="resbar plate" type="button" title="Resources in store: open City stats, Resources" aria-label="Resources"></button>
       <div class="stats plate" role="group" aria-label="City at a glance">
         <div class="stat" title="Money, and yesterday's income after upkeep"><svg class="ic"><use href="#i-coin"/></svg><div><b id="v-money" class="num">$0</b><small id="v-net" class="num">+0 a day</small></div></div>
         <div class="stat" title="People living here"><svg class="ic"><use href="#i-people"/></svg><div><b id="v-pop" class="num">0</b><small id="v-homes" class="num">0 homes</small></div></div>
@@ -163,6 +163,7 @@
         <div class="seg" role="group" aria-label="View">
           <button type="button" id="view-3d" aria-pressed="true" title="3D view (V)"><svg class="ic"><use href="#i-cube"/></svg><span>3D</span></button>
           <button type="button" id="view-2d" aria-pressed="false" title="2D view (V)"><svg class="ic"><use href="#i-grid"/></svg><span>2D</span></button>
+          <button type="button" id="view-free" aria-pressed="false" title="Free camera: turn, tilt and zoom in real 3D (3)"><svg class="ic"><use href="#i-look"/></svg><span>Free</span></button>
         </div>
         <button class="cbtn" id="btn-traffic" type="button" aria-pressed="false" title="Info views: traffic, mood, services, noise (T)" aria-label="Info views" aria-haspopup="menu"><svg class="ic"><use href="#i-lights"/></svg></button>
         <button class="cbtn" id="btn-home" type="button" title="My plot (H)" aria-label="Go to my plot"><svg class="ic"><use href="#i-target"/></svg></button>
@@ -231,6 +232,8 @@
 
   <dialog id="modal" aria-labelledby="modal-title"><div id="modal-body"></div></dialog>
 
+  <!-- three.js for the free-camera view, pinned and served from this site; only loaded when that view is opened. -->
+  <script type="importmap">{ "imports": { "three": "./vendor/three-0.186.1/three.module.js" } }</script>
   <script type="module" src="js/main.js" onerror="window.__bootFail && __bootFail('The game couldn’t load. Check your connection, then try again.')"></script>
 </body>
 </html>
