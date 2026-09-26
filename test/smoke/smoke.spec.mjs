@@ -25,7 +25,7 @@ async function found(page, { mayor = 'Mona', city = 'Testhaven' } = {}) {
 }
 // Fast-forward every city in the fake world to a metropolis with every technology, so a test can use what they open.
 async function unlockAll(page) {
-  await page.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plotState/')) { const st = JSON.parse(v.state); st.hall = 6; st.hallDone = {}; st.tech = ['highschool', 'university', 'trade', 'finance', 'retail', 'diplomacy', 'orchards', 'dairy', 'ranching', 'poultry', 'logistics', 'carpentry', 'toolmaking', 'bakery']; v.state = JSON.stringify(st); } localStorage.setItem('fakefb', JSON.stringify(db)); });
+  await page.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plotState/')) { const st = JSON.parse(v.state); st.hall = 6; st.hallDone = {}; st.tech = ['highschool', 'university', 'trade', 'finance', 'retail', 'diplomacy', 'orchards', 'dairy', 'ranching', 'poultry', 'logistics', 'carpentry', 'toolmaking', 'bakery', 'masonry']; v.state = JSON.stringify(st); } localStorage.setItem('fakefb', JSON.stringify(db)); });
   await page.reload();
   await expect(page.locator('#game')).toBeVisible({ timeout: 30_000 });
   if (await page.locator('#modal[open]').count()) await page.keyboard.press('Escape');

@@ -3,7 +3,7 @@ import {
   T, B, PLOT, TICK_MS, MAX_OFFLINE_DAYS, HOURS_PER_DAY, SAVE_EVERY_MS, RUBBLE_CLEAR_COST, MAX_LEVEL, LEVEL, UPGRADABLE,
   REBUILD_MONEY, MOVE_KEEP, TUTORIAL_REWARD, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome, DECISIONS, ZONES, ZONE_COST,
   LOAN_DAYS, HISTORIC_DAYS, BADGES, REGIONAL, REGIONAL_SHARE, ALLIANCE_TRADE, DAILY, DAILY_REWARD, WEEKLY, WEEKLY_REWARD, GIFT_LIMITS, REACTIONS,
-  RES, FOOD, TRADE_RES, PRODUCTS, PRODUCT_IDS, USE, HARVEST, MARKET, STOCK, HALL_LEVELS, TECH, STYLES, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
+  RES, FOOD, TRADE_RES, PRODUCTS, PRODUCT_IDS, RAW_GOODS, USE, HARVEST, MARKET, STOCK, HALL_LEVELS, TECH, STYLES, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
 } from './constants.js';
 import { Renderer, STRIDE, thumbnail, modelHeight } from './render.js';
 import { loadPrefs, savePrefs, applyPrefs, resolvedTheme, palette, PALETTES } from './prefs.js';
@@ -654,8 +654,8 @@ function renderResbar() {
   if (!bar || !state) return;
   const st = sim.resourceStock(state), r = state.stats?.res, ps = state.stats?.products, n = (v) => Math.floor(v || 0).toLocaleString();
   const chip = (iconId, label, v, bad, title) => `<span class="rchip ${bad ? 'bad' : ''}" title="${esc(title)}">${icon(iconId)}<b class="num">${v}</b><span class="sr">${label}</span></span>`;
-  const materials = (st.wood || 0) + (st.metal || 0);
-  const materialsTitle = `Building materials: ${['wood', 'metal'].map((k) => `${n(st[k])} ${RES[k].name.toLowerCase()} (${n(r?.prod[k])} made a day)`).join(', ')}`;
+  const materials = RAW_GOODS.reduce((a, k) => a + (st[k] || 0), 0);
+  const materialsTitle = `Materials: ${RAW_GOODS.map((k) => `${n(st[k])} ${RES[k].name.toLowerCase()} (${n(r?.prod[k])} made a day)`).join(', ')}. Wood and metal take $2 off the price of a load when you build; stone and coal are for trade and for Bricks.`;
   const food = FOOD.reduce((a, k) => a + st[k], 0);
   const foodTitle = `Food: ${FOOD.map((k) => `${n(st[k])} ${RES[k].name.toLowerCase()}`).join(', ')}${r?.imported ? `. ${n(r.imported)} bought in yesterday` : ''}`;
   const hasProducts = PRODUCT_IDS.some((k) => st[k] > 0 || ps?.made?.[k] > 0);
@@ -3042,8 +3042,12 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 1.5';
+const VERSION = 'Commons 1.6';
 const CHANGELOG = [
+  ['1.6', [
+    'Two more raw materials: quarries now dig up stone alongside metal, and a new Coal mine digs coal. Both trade on the Market like anything else.',
+    'A fourth factory recipe: Bricks, from stone and coal, once you have the Masonry research. Cheaper building while you keep some in store.',
+  ]],
   ['1.5', [
     'Fixed a layering bug: the low plinth added under houses in 1.3 was drawn after the wall instead of before it, so it painted right over the base of the house instead of sitting under it. Houses now sit properly on the ground.',
     'A locked feature now says "Locked" instead of "Not yet".',

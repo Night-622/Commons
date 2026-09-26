@@ -7,7 +7,7 @@ import {
   MOVE_FEE, ADULT, RETIRE, WAGE, isHome, walkable, BUS_SEATS, COMMUTE_JOBS, TICK_MS, isRoad, isRail, POLICY, WANT_REWARD,
   SEASONS, SEASON_DAYS, YEAR_DAYS, UTILITY_POP, DECISIONS, ELECTION_EVERY, ZONES, ZONE_COST,
   HALL_LEVELS, FEATURE_NEEDS, MAT_PER_COST, MAT_BUY, HARVEST, EXCHANGE, PER_CAPITA, STOCK, TRADE_RES, MARKET, RES, FOOD, USE, STORE_BASE, SURPLUS_SALE, MATERIALS_BOOST, MATERIALS_PER_WORK, PLOT_BUY_PARCELS, PLOT_BUY_STEP, PLOT_BUY_MIN, BUILD_SPEED, RECRUIT_COST, FIRED_DAYS, ADULT_STUDY_YEARS, TRAINING_YEARS, EDU, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
-  PRODUCTS, PRODUCT_IDS, FACTORY_BATCHES, STORE_SALE_SHARE,
+  PRODUCTS, PRODUCT_IDS, FACTORY_BATCHES, STORE_SALE_SHARE, RAW_GOODS,
 } from './constants.js';
 // Products (and raw resources) can be posted or taken on the player-to-player Market; only raw resources trade
 // instantly on the world Exchange (worldPrices/buyResource/sellResource below).
@@ -339,7 +339,7 @@ function resourcesDay(s, uc) {
     short[k] = Math.round(need[k] - used);
     res[k] = Math.round(Math.min(cap, have - used));
   }
-  for (const k of [...FOOD, 'wood', 'metal']) res[k] = (res[k] || 0) + prod[k];
+  for (const k of [...FOOD, ...RAW_GOODS]) res[k] = (res[k] || 0) + prod[k];
   const inStock = FOOD.reduce((a, k) => a + res[k], 0), eat = Math.min(inStock, need.food);
   for (const k of FOOD) res[k] = inStock ? res[k] - eat * (res[k] / inStock) : 0;
   const variety = FOOD.filter((k) => prod[k] > 0 || res[k] >= 1).length;
@@ -348,7 +348,7 @@ function resourcesDay(s, uc) {
   const imported = Math.round(need.food - eat), avg = FOOD.reduce((a, k) => a + band(k), 0) / FOOD.length;
   const importCost = Math.round(imported * avg);
   let sold = 0;
-  for (const k of [...FOOD, 'wood', 'metal']) {
+  for (const k of [...FOOD, ...RAW_GOODS]) {
     if (res[k] > cap) { sold += (res[k] - cap) * priceOf(s, k) * SURPLUS_SALE; res[k] = cap; }
     res[k] = Math.round(res[k] * 10) / 10;
   }

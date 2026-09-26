@@ -71,7 +71,7 @@ export const T = {
   DOJO: 28, POOL: 29, CINEMA: 30, YARD: 31, RAIL: 32, STATION: 33, STOP: 34, DEPOT: 35, XING: 36, LIGHTS: 37, ROUNDABOUT: 38, POWER: 39, WATER: 40, DRAIN: 41,
   SOLAR: 42, WIND: 43, MUSEUM: 44, STADIUM: 45, HOTEL: 46, FARM: 47, HARBOUR: 48, AIRPORT: 49, LANDFILL: 50, RECYCLE: 51, SEWAGE: 52, VET: 53, METRO: 54, MONUMENT: 55,
   ORCHARD: 56, DAIRY: 57, RANCH: 58, MATERIALS: 59, WAREHOUSE: 60,
-  QUARRY: 61, POULTRY: 62, STORE: 63,
+  QUARRY: 61, POULTRY: 62, STORE: 63, COALMINE: 64,
 };
 
 export const CATS = [
@@ -145,8 +145,9 @@ export const B = {
   [T.DAIRY]: { key: 'dairy', name: 'Dairy farm', cat: 'work', col: 'park', cost: 300, work: 28, upkeep: 3, jobs: [['Dairy hand', 0, 4], ['Vet nurse', 1, 1]], makes: { dairy: 25 }, pollution: 1, research: 'dairy', blurb: 'Milk, cheese and yoghurt for 25 people a day. A little smelly for homes right beside it.' },
   [T.RANCH]: { key: 'ranch', name: 'Ranch', cat: 'work', col: 'park', cost: 340, work: 30, upkeep: 3, jobs: [['Rancher', 0, 5]], makes: { meat: 20 }, pollution: 1, research: 'ranching', blurb: 'Meat for 20 people a day. Needs space; homes right beside it mind the smell.' },
   [T.MATERIALS]: { key: 'sawmill', name: 'Sawmill', cat: 'work', col: 'work', cost: 280, work: 30, upkeep: 4, jobs: [['Sawyer', 0, 6], ['Engineer', 2, 1]], makes: { wood: 32 }, pollution: 2, smog: 0.02, blurb: 'Cuts 32 loads of timber a day. With wood or metal in stock, builders work 50% faster.' },
-  [T.QUARRY]: { key: 'quarry', name: 'Quarry', cat: 'work', col: 'work', cost: 320, work: 34, upkeep: 5, jobs: [['Quarry worker', 0, 6], ['Engineer', 2, 1]], makes: { metal: 22 }, pollution: 2, smog: 0.03, blurb: 'Digs 22 loads of ore and metal a day. With wood or metal in stock, builders work 50% faster.' },
+  [T.QUARRY]: { key: 'quarry', name: 'Quarry', cat: 'work', col: 'work', cost: 320, work: 34, upkeep: 5, jobs: [['Quarry worker', 0, 6], ['Engineer', 2, 1]], makes: { metal: 22, stone: 14 }, pollution: 2, smog: 0.03, blurb: 'Digs 22 loads of ore and metal and 14 of stone a day. With wood or metal in stock, builders work 50% faster.' },
   [T.POULTRY]: { key: 'poultry', name: 'Poultry farm', cat: 'work', col: 'park', cost: 240, work: 22, upkeep: 2, jobs: [['Poultry keeper', 0, 4]], makes: { eggs: 22 }, pollution: 1, research: 'poultry', blurb: 'Eggs for 22 people a day.' },
+  [T.COALMINE]: { key: 'coalmine', name: 'Coal mine', cat: 'work', col: 'work', cost: 300, work: 32, upkeep: 5, jobs: [['Miner', 0, 6], ['Engineer', 2, 1]], makes: { coal: 20 }, pollution: 2, smog: 0.03, blurb: 'Digs 20 loads of coal a day, for trade or for turning into bricks once you have the Masonry research.' },
   [T.WAREHOUSE]: { key: 'warehouse', name: 'Storage yard', cat: 'work', col: 'work', cost: 200, work: 20, upkeep: 2, jobs: [['Storekeeper', 0, 2]], store: 600, research: 'logistics', blurb: 'Stores 600 more of every resource and product, to use later or sell.' },
   [T.STORE]: { key: 'store', name: 'Store', cat: 'work', col: 'shop', cost: 260, work: 26, upkeep: 3, jobs: [['Shopkeeper', 0, 3]], sellsProducts: true, research: 'retail', blurb: 'Sells the products your factories make straight to your own residents, at a better price than the Market pays.' },
   [T.MONUMENT]: { key: 'monument', name: 'Monument', cat: 'fun', col: 'hall', cost: 2600, work: 200, upkeep: 6, visits: { n: 40, who: 'all' }, draw: 25, minPop: 80, blurb: 'A grand landmark for 40 visitors a day. Tourists come to see it, and the whole street becomes a sought-after address.' },
@@ -267,6 +268,7 @@ export const TECH = [
   { id: 'greenconcrete', branch: 'industry', name: 'Green concrete', cost: 40, needs: 'logistics', text: 'Everything costs 10% less to build.' },
   { id: 'carpentry', branch: 'industry', name: 'Carpentry', cost: 50, needs: 'logistics', text: 'Unlocks Furniture: a factory recipe that turns wood and metal into a product that makes homes comfier.' },
   { id: 'toolmaking', branch: 'industry', name: 'Toolmaking', cost: 65, needs: 'carpentry', text: 'Unlocks Tools: a factory recipe that turns metal and wood into a product that makes builders faster.' },
+  { id: 'masonry', branch: 'industry', name: 'Masonry', cost: 60, needs: 'logistics', text: 'Unlocks Bricks: a factory recipe that turns stone and coal into a product that makes building cheaper.' },
   { id: 'bakery', branch: 'farming', name: 'Bakery', cost: 55, needs: 'poultry', text: 'Unlocks Baked goods: a factory recipe that turns vegetables and eggs into a product that feeds people faster and cheaper.' },
   { id: 'smartgrid', branch: 'energy', name: 'Smart grid', cost: 70, text: 'Power and water reach 3 tiles further.' },
   { id: 'trafficai', branch: 'energy', name: 'Smart traffic lights', cost: 80, needs: 'smartgrid', text: 'Roads carry 20% more traffic.' },
@@ -285,6 +287,8 @@ export const RES = {
   power: { name: 'Power', unit: 'megawatt-hours' },
   wood: { name: 'Wood', import: 0.7 },
   metal: { name: 'Metal', import: 1.4 },
+  stone: { name: 'Stone', import: 0.9 },
+  coal: { name: 'Coal', import: 1.1 },
   vegetables: { name: 'Vegetables', food: true, import: 0.15 },
   fruit: { name: 'Fruit', food: true, import: 0.2 },
   dairy: { name: 'Dairy', food: true, import: 0.25 },
@@ -292,13 +296,16 @@ export const RES = {
   eggs: { name: 'Eggs', food: true, import: 0.22 },
 };
 export const FOOD = ['vegetables', 'fruit', 'dairy', 'meat', 'eggs'];
+// Raw materials: wood and metal feed straight into building costs (buildPrice); stone and coal don't, they're
+// traded and turned into Bricks instead. All four share the same produce/store/sell-surplus handling in sim.js.
+export const RAW_GOODS = ['wood', 'metal', 'stone', 'coal'];
 // The market: offers to sell or buy resources, and loan requests, open to every mayor in the world.
-export const TRADE_RES = ['wood', 'metal', 'vegetables', 'fruit', 'dairy', 'meat', 'eggs'];
+export const TRADE_RES = [...RAW_GOODS, ...FOOD];
 // The exchange. A resource's price follows how scarce it is across the whole world (days of everyone's needs
 // in store) and a demand that swings from day to day, the same for every player. The exchange buys and sells
 // at that price, less or plus `spread`; automatic food imports pay it too, within `importBand` of the base.
 export const EXCHANGE = { spread: 0.08, importBand: [0.6, 1.6], coverDays: 3, demandSwing: 0.35 };
-export const PER_CAPITA = { wood: 0.2, metal: 0.12, vegetables: 0.25, fruit: 0.25, dairy: 0.25, meat: 0.25, eggs: 0.2 };   // a day, per person, worldwide
+export const PER_CAPITA = { wood: 0.2, metal: 0.12, stone: 0.15, coal: 0.1, vegetables: 0.25, fruit: 0.25, dairy: 0.25, meat: 0.25, eggs: 0.2 };   // a day, per person, worldwide
 // Products: factories turn raw resources into these once you've researched the recipe. A factory with a recipe
 // assigned consumes `recipe` from store each day (scaled by staffing, capped by what's there) and adds `makes` of
 // the product. Sell them in a Store for cash, or trade them on the Market like any resource. `benefit` is what
@@ -307,6 +314,7 @@ export const PRODUCTS = {
   furniture: { name: 'Furniture', recipe: { wood: 2, metal: 1 }, makes: 1, tech: 'carpentry', import: 4.5, benefit: 'Homes with furniture in store are a little happier.' },
   tools: { name: 'Tools', recipe: { metal: 2, wood: 1 }, makes: 1, tech: 'toolmaking', import: 5, benefit: 'Builders work faster while tools are in store.' },
   baked: { name: 'Baked goods', recipe: { vegetables: 2, eggs: 1 }, makes: 1, tech: 'bakery', import: 3, benefit: 'Feeds people faster and cheaper than raw ingredients.' },
+  bricks: { name: 'Bricks', recipe: { stone: 2, coal: 1 }, makes: 1, tech: 'masonry', import: 4, benefit: 'Everything costs a little less to build while bricks are in store.' },
 };
 export const PRODUCT_IDS = Object.keys(PRODUCTS);
 export const STORE_SALE_SHARE = 0.85;    // a Store sells products for this share of the import price (vs SURPLUS_SALE on the open market)

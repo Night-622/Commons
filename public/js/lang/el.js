@@ -109,6 +109,10 @@ Object.assign(dict, {
   'Produce sold': 'Πωλήσεις παραγωγής', 'Products': 'Προϊόντα', 'Product': 'Προϊόν', 'Products sold yesterday': 'Προϊόντα που πουλήθηκαν χθες',
   'Trade resources and factory products with other cities, lend or borrow money, and buy shares.': 'Ανταλλάξτε πόρους και βιομηχανικά προϊόντα με άλλες πόλεις, δανείστε ή δανειστείτε χρήματα, και αγοράστε μετοχές.',
 });
+// More resources (1.6)
+Object.assign(dict, {
+  'Stone': 'Πέτρα', 'Coal': 'Κάρβουνο', 'Bricks': 'Τούβλα', 'Coal mine': 'Ανθρακωρυχείο',
+});
 // Styles (1.18)
 Object.assign(dict, {
   'Style': 'Στυλ', 'Newest': 'Νεότερο', 'The newest style you’ve unlocked': 'Το νεότερο στυλ που έχετε ξεκλειδώσει', 'Frontier': 'Σύνορα', 'Township': 'Κωμόπολη',

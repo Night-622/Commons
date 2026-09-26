@@ -1,5 +1,5 @@
 // HTML for the side drawer and the build catalogue. Pure functions: main.js supplies data and wires up buttons.
-import { REGIONAL, ALLIANCE_TRADE, REACTIONS, T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY, BONDS, INSURANCE, TECH, ERAS, TRAITS, CARBON_TAX, LOANS, LOAN_DAYS, CONGESTION_FEE, BADGES, RES, FOOD, TECH_BRANCHES, STORE_BASE, TRADE_RES, PRODUCTS, PRODUCT_IDS, MARKET, USE, EXCHANGE, STOCK, HALL_LEVELS, FEATURE_NEEDS } from './constants.js';
+import { REGIONAL, ALLIANCE_TRADE, REACTIONS, T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY, BONDS, INSURANCE, TECH, ERAS, TRAITS, CARBON_TAX, LOANS, LOAN_DAYS, CONGESTION_FEE, BADGES, RES, FOOD, TECH_BRANCHES, STORE_BASE, TRADE_RES, PRODUCTS, PRODUCT_IDS, RAW_GOODS, MARKET, USE, EXCHANGE, STOCK, HALL_LEVELS, FEATURE_NEEDS } from './constants.js';
 import { t as tr } from './i18n.js';
 import { creditRating, greenShare, traitOf, hasTech, canResearch, eraOf, resourceStock, matCost } from './sim.js';
 import { ROLES, roleOf, jobText, family, healthText, moodReasons, thought, personName } from './people.js';
@@ -309,11 +309,11 @@ export function statsPanel(ctx, tab) {
     const row2 = (l, v) => `<div class="kv"><span>${l}</span><b class="num">${v}</b></div>`;
     const line = (k, used, note = '') => `<tr><th scope="row">${RES[k].name}</th><td class="num">${num(stock[k])}</td><td class="num">${num(r?.prod[k])}</td><td class="num">${used}</td><td>${note}</td></tr>`;
     const hasProducts = PRODUCT_IDS.some((k) => stock[k] || ps?.made?.[k]);
-    body = `<p class="soft small">Made and used each day. Each resource keeps up to ${num(cap)} in store; warehouses (Logistics research) add more. Surplus wood, metal and food sell for half the import price.</p>
+    body = `<p class="soft small">Made and used each day. Each resource keeps up to ${num(cap)} in store; warehouses (Logistics research) add more. Surplus materials and food sell for half the import price.</p>
       ${r ? `<div class="tablewrap"><table class="restable"><thead><tr><th>Resource</th><th>In store</th><th>Made</th><th>Used</th><th></th></tr></thead><tbody>
         ${line('water', num(r.need.water - r.short.water), r.short.water && r.prod.water ? `<span class="warn">${num(r.short.water)} short</span>` : '')}
         ${line('power', num(r.need.power - r.short.power), r.short.power && r.prod.power ? `<span class="warn">${num(r.short.power)} short</span>` : '')}
-        ${line('wood', '')}${line('metal', '')}
+        ${RAW_GOODS.map((k) => line(k, '')).join('')}
         ${FOOD.map((k) => line(k, '')).join('')}
         <tr><th scope="row">All food</th><td></td><td></td><td class="num">${num(r.need.food)}</td><td>${r.imported ? `${num(r.imported)} bought in` : 'Home-grown'}</td></tr>
       </tbody></table></div>
@@ -321,7 +321,7 @@ export function statsPanel(ctx, tab) {
       ${hasProducts ? `<h3 class="sub">Products</h3><div class="tablewrap"><table class="restable"><thead><tr><th>Product</th><th>In store</th><th>Made</th></tr></thead><tbody>
         ${PRODUCT_IDS.map((k) => `<tr><th scope="row">${PRODUCTS[k].name}</th><td class="num">${num(stock[k])}</td><td class="num">${num(ps?.made?.[k])}</td></tr>`).join('')}
       </tbody></table></div>${ps?.sold ? row2('Products sold yesterday', money(ps.sold)) : ''}` : ''}
-      <p class="soft small">Farms grow vegetables. Research Orchards, Dairy farming and Ranching for fruit, dairy and meat, and Poultry for eggs. Water towers make water; power stations, solar farms and wind turbines make power. Sawmills make wood and quarries make metal: with either in store, builders work 50% faster. A factory with a recipe turns them, or vegetables and eggs, into furniture, tools or baked goods to sell.</p>`;
+      <p class="soft small">Farms grow vegetables. Research Orchards, Dairy farming and Ranching for fruit, dairy and meat, and Poultry for eggs. Water towers make water; power stations, solar farms and wind turbines make power. Sawmills make wood, quarries make metal and stone, and coal mines make coal: with wood or metal in store, builders work 50% faster. A factory with a recipe turns raw resources into furniture, tools, baked goods or bricks to sell.</p>`;
   } else if (tab === 'policy') {
     const pol = s.policy || { tax: 1, funding: 1, freeTransit: false };
     const slider = (k, label, [a, b], help) => `<div class="policy"><div class="phead2"><b>${label}</b><b class="num" id="pol-${k}-v">${pct(pol[k])}</b></div>

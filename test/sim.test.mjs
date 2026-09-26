@@ -637,4 +637,28 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(s.res.furniture < 500, 'a staffed Store sells product stock: ' + s.res.furniture);
   console.log('factories and products ok: store sold down to', s.res.furniture);
 }
+// ---- more raw resources: quarries make stone alongside metal, coal mines make coal, bricks turn both into a product
+{
+  seed = 91;
+  const s = sim.newCity('Digger', rng); s.money = 20000; s.land.fill(1);
+  for (let x = 2; x <= 16; x++) put(s, x, c + 1, T.ROAD);
+  [T.HOUSE, T.HOUSE, T.HOUSE, T.HOUSE, T.QUARRY, T.COALMINE, T.FACTORY].forEach((t, k) => put(s, 3 + k * 2, c + 2, t));
+  finishAll(s);
+  for (let k = 0; k < 40; k++) s.people.push({ ...s.people[0], i: 900 + k, j: -1 });   // plenty of idle adults to staff every job
+  for (let h = 0; h < 48; h++) sim.tick(s, rng);
+  const quarry = sim.idx(11, c + 2), mine = sim.idx(13, c + 2), factory = sim.idx(15, c + 2);
+  assert(sim.staffing(s, quarry) > 0 && sim.staffing(s, mine) > 0 && sim.staffing(s, factory) > 0, 'the quarry, coal mine and factory all have staff');
+  for (let h = 0; h < 24; h++) sim.tick(s, rng);
+  assert(s.res.stone > 0, 'the quarry makes stone alongside metal: ' + JSON.stringify(s.stats.res.prod));
+  assert(s.res.coal > 0, 'the coal mine makes coal: ' + JSON.stringify(s.stats.res.prod));
+  assert(sim.reserve(s, 'st1', 'sell', 'stone', 1, 1).ok && sim.reserve(s, 'co1', 'sell', 'coal', 1, 1).ok, 'stone and coal can be posted on the Market');
+  sim.release(s, 'st1'); sim.release(s, 'co1');
+  assert(!sim.setRecipe(s, factory, 'bricks').ok, 'bricks need the masonry technology');
+  s.tech = [...(s.tech || []), 'logistics', 'masonry'];
+  assert(sim.setRecipe(s, factory, 'bricks').ok, 'recipe assigned once researched');
+  s.res.stone = 200; s.res.coal = 200;
+  for (let h = 0; h < 24; h++) sim.tick(s, rng);
+  assert(s.res.bricks > 0, 'the factory turned stone and coal into bricks: ' + JSON.stringify(s.stats.products));
+  console.log('more resources ok: quarry stone, coal mine, bricks recipe');
+}
 console.log('all tests passed');

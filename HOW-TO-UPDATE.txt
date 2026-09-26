@@ -70,3 +70,7 @@ main"):
    1.5   Fixed houses' base plinth painting over the wall instead of
          under it, and reworded a locked-feature modal title. No new
          deploy steps.
+   1.6   Two more raw resources (stone, coal) and a fourth factory
+         product (Bricks). No firestore.rules change needed - same as
+         1.2, offers aren't checked against a fixed resource list - so
+         just the usual push.

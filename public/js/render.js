@@ -79,7 +79,8 @@ const MODEL_H = { [T.APARTMENT]: 1.3, [T.VILLA]: 0.8, [T.CAFE]: 0.55, [T.FACTORY
   [T.PLAYGROUND]: 0.5, [T.SPORTS]: 0.3, [T.GYM]: 0.7, [T.DOJO]: 0.9, [T.POOL]: 0.3, [T.CINEMA]: 0.9, [T.PATH]: 0.05,
   [T.DRAIN]: 0.3, [T.RAIL]: 0.05, [T.STATION]: 0.9, [T.STOP]: 0.5, [T.DEPOT]: 0.8, [T.POWER]: 1.4, [T.WATER]: 1.3,
   [T.SOLAR]: 0.3, [T.WIND]: 1.8, [T.MUSEUM]: 1.1, [T.STADIUM]: 0.9, [T.HOTEL]: 1.6, [T.FARM]: 0.4, [T.HARBOUR]: 1.2, [T.AIRPORT]: 1.1, [T.LANDFILL]: 0.4, [T.RECYCLE]: 0.8, [T.SEWAGE]: 0.5, [T.VET]: 0.7, [T.METRO]: 0.6, [T.MONUMENT]: 2,
-  [T.ORCHARD]: 0.6, [T.DAIRY]: 0.7, [T.RANCH]: 0.5, [T.MATERIALS]: 0.9, [T.WAREHOUSE]: 0.8 };
+  [T.ORCHARD]: 0.6, [T.DAIRY]: 0.7, [T.RANCH]: 0.5, [T.MATERIALS]: 0.9, [T.WAREHOUSE]: 0.8,
+  [T.QUARRY]: 0.55, [T.POULTRY]: 0.42, [T.STORE]: 0.42, [T.COALMINE]: 0.62 };
 export function glyph(g, kind, x, y, r, col) {
   g.fillStyle = col;
   g.beginPath();
@@ -1113,6 +1114,24 @@ export class Renderer {
         g.strokeStyle = sh('#e0a52e'); g.lineWidth = Math.max(1.5, z / 12); g.beginPath(); g.moveTo(ca, cb); g.lineTo(ca2, cb2); g.lineTo(ca3, cb3); g.stroke();
         for (let k = 0; k < 2; k++) this.box(g, P, tx + 0.14 + k * 0.16, ty + 0.82, tx + 0.26 + k * 0.16, ty + 0.92, 0, 0.1, sh('#7a3b2e', k * 0.1), grey);
         return 0.55;
+      }
+      case T.COALMINE: {
+        // A pit head: a stepped black pit, a coal heap, and a headframe with a winding wheel.
+        for (let k = 0; k < 3; k++) {
+          const inset = k * 0.1, d0 = -0.13 * (k + 1), d1 = -0.13 * k;
+          this.box(g, P, tx + 0.14 + inset, ty + 0.14 + inset, tx + 0.62 - inset, ty + 0.62 - inset, d0, d1, sh('#3a332e', -0.05 * k), grey);
+        }
+        const [hx, hy] = P(tx + 0.72, ty + 0.7, 0);
+        g.fillStyle = sh('#2b2622'); g.beginPath(); g.moveTo(hx, hy - z * 0.3); g.lineTo(hx - z * 0.24, hy + z * 0.08); g.lineTo(hx + z * 0.24, hy + z * 0.08); g.closePath(); g.fill();
+        g.fillStyle = sh('#3f3831'); g.beginPath(); g.moveTo(hx - z * 0.05, hy - z * 0.3); g.lineTo(hx - z * 0.15, hy - z * 0.02); g.lineTo(hx + z * 0.02, hy - z * 0.02); g.closePath(); g.fill();
+        // The headframe: two angled legs up to a small winding wheel.
+        const [la, lb] = P(tx + 0.78, ty + 0.22, 0), [lc, ld] = P(tx + 0.86, ty + 0.3, 0), [wa, wb] = P(tx + 0.82, ty + 0.26, 0.62);
+        g.strokeStyle = sh('#5b6066'); g.lineWidth = Math.max(1.5, z / 14);
+        g.beginPath(); g.moveTo(la, lb); g.lineTo(wa, wb); g.moveTo(lc, ld); g.lineTo(wa, wb); g.stroke();
+        g.strokeStyle = sh('#8a919a'); g.lineWidth = Math.max(1, z / 20);
+        g.beginPath(); g.arc(wa, wb - z * 0.05, Math.max(2, z * 0.07), 0, Math.PI * 2); g.stroke();
+        for (let k = 0; k < 2; k++) this.box(g, P, tx + 0.18 + k * 0.16, ty + 0.84, tx + 0.3 + k * 0.16, ty + 0.94, 0, 0.1, sh('#26221f', k * 0.06), grey);
+        return 0.62;
       }
       case T.POULTRY: {
         // A fenced run around a small gabled coop, with a scatter of chickens.
