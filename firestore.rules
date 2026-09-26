@@ -7,6 +7,8 @@ service cloud.firestore {
     // Where a player's plot pointer lives: users/{uid} for the public world, memberships/{uid}_{world} otherwise.
     // Admins are listed in admins/{uid}; create that document by hand in the console.
     function isAdmin() { return signedIn() && exists(docPath('admins', me())); }
+    // Open worlds everyone can join: the classic ones and each fresh start (s2, s3, ...), so a reset needs no new rules.
+    function openWorld(w) { return w.matches('^(public|main|s[0-9]+)$'); }
     function nameOk(d) { return (!('ownerName' in d) || (d.ownerName is string && d.ownerName.size() <= 24)) && (!('name' in d) || (d.name is string && d.name.size() <= 40)); }
     function linkPath(world) { return world == 'public' ? docPath('users', me()) : docPath('memberships', me() + '_' + world); }
     // Every write to a plot is stamped with the server's clock, so the limits below can trust the time between saves.
@@ -81,8 +83,8 @@ service cloud.firestore {
     match /worlds/{worldId} {
       allow read: if signedIn();
       allow create: if signedIn() && (
-        ((worldId == 'public' || worldId == 'main') && request.resource.data.keys().hasOnly(['nextIndex']) && request.resource.data.nextIndex == 1)
-        || (worldId != 'public' && worldId != 'main'
+        (openWorld(worldId) && request.resource.data.keys().hasOnly(['nextIndex']) && request.resource.data.nextIndex == 1)
+        || (!openWorld(worldId)
           && request.resource.data.keys().hasOnly(['name', 'owner', 'code', 'private', 'nextIndex', 'createdAt'])
           && request.resource.data.owner == me()
           && request.resource.data.nextIndex == 0

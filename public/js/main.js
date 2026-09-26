@@ -31,10 +31,11 @@ let prefs = loadPrefs();
 let user = null, plotId = null, me = null, state = null, mayor = '';
 // 1.11 opened a new, joined-up main world; players who were in the classic public world start there once.
 let world = { id: WORLD_ID, name: OPEN_WORLDS[WORLD_ID] }, worlds = [];
+// 1.18 started every world afresh: everyone begins in the new open world once.
 try {
   const saved = localStorage.getItem('commons-world');
-  if (saved && (saved !== CLASSIC_WORLD || localStorage.getItem('commons-world-v2'))) world = { id: saved, name: OPEN_WORLDS[saved] || 'World' };
-  localStorage.setItem('commons-world-v2', '1');
+  if (saved && localStorage.getItem('commons-world-v3')) world = { id: saved, name: OPEN_WORLDS[saved] || 'World' };
+  localStorage.setItem('commons-world-v3', '1');
 } catch { /* private mode */ }
 let plan = null, totalsNow = null;
 let zoneKind = 1;
@@ -74,17 +75,25 @@ const NEEDS = [
   { k: 'waste', icon: 'i-clear', label: 'Rubbish and drains', fix: `Every resident makes rubbish and sewage. From ${WASTE_POP} people build a landfill or recycling centre; from ${SEWAGE_POP}, a sewage works.` },
   { k: 'air', icon: 'i-spark', label: 'Clean air', fix: 'Fossil power, factories and traffic foul the air. Use solar or wind, plant parks and farms, or try a carbon tax.' },
 ];
-const CITY_NAMES = ['Maple Bay', 'Riverside', 'Kingsford', 'Ashgrove', 'Bellhaven', 'Coral Point', 'Elm Hollow', 'Fernvale', 'Glenmore', 'Harbourview', 'Oakridge', 'Wattle Creek'];
+// City names: a start and an ending that sound like real places, sometimes with a word in front or behind.
+const NAME_START = ['Ash', 'Bright', 'Brook', 'Cedar', 'Clear', 'Copper', 'Elder', 'Elm', 'Fair', 'Fern', 'Glen', 'Gold', 'Green', 'Hart', 'Haw', 'Holly',
+  'Iron', 'Juniper', 'Kings', 'Lark', 'Linden', 'Maple', 'Marsh', 'Mill', 'North', 'Oak', 'Pine', 'Queens', 'Raven', 'Red', 'Rose', 'Rush', 'Salt',
+  'Silver', 'Sparrow', 'Stone', 'Sun', 'Thorn', 'Water', 'West', 'White', 'Willow', 'Wolf', 'Wren', 'Yarrow', 'Amber', 'Bell', 'Harrow', 'Kestrel', 'Tide'];
+const NAME_END = ['ford', 'field', 'wood', 'haven', 'stead', 'bridge', 'brook', 'dale', 'gate', 'hill', 'mere', 'mouth', 'port', 'ridge', 'ton', 'vale',
+  'wick', 'worth', 'bury', 'by', 'cliff', 'combe', 'fell', 'holm', 'hurst', 'ley', 'moor', 'stow', 'thorpe', 'well', 'water', 'wold'];
+function cityName() {
+  const r = Math.random, base = NAME_START[Math.floor(r() * NAME_START.length)] + NAME_END[Math.floor(r() * NAME_END.length)];
+  const k = r();
+  return k < 0.1 ? `New ${base}` : k < 0.18 ? `Port ${base}` : k < 0.24 ? `${base} Bay` : k < 0.29 ? `Upper ${base}` : k < 0.33 ? `${base} Springs` : base;
+}
 const SIDES = [[1, 0, 'East'], [-1, 0, 'West'], [0, 1, 'South'], [0, -1, 'North']];
 
 // ---------- preferences ----------
 function applyAll() {
   applyPrefs(prefs);
   setLang(prefs.lang);
-  renderer.view = prefs.view;
+  renderer.view = '3d';   // the flat 2D view was retired in 1.18
   setSound(prefs.sound, prefs.volume, prefs.ambientVolume, prefs.haptics);
-  $('view-2d').setAttribute('aria-pressed', prefs.view === 'flat');
-  $('view-3d').setAttribute('aria-pressed', prefs.view === '3d');
   $('minibox').classList.toggle('hidden', !prefs.minimap);
   drawThumbs();
   drawHeroes();
@@ -218,7 +227,7 @@ $('found-code').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault()
 async function showFound() {
   const base = user.displayName || (user.email ? user.email.split('@')[0] : '');
   $('found-mayor').value = base.slice(0, 20);
-  $('found-city').value = CITY_NAMES[Math.floor(Math.random() * CITY_NAMES.length)];
+  $('found-city').value = cityName();
   $('found-msg').textContent = '';
   $('found-world').textContent = world.id === WORLD_ID ? 'the world' : world.name;
   $('found-public').classList.toggle('hidden', world.id === WORLD_ID);
@@ -1946,7 +1955,6 @@ const KEY_ACTIONS = {
   region: { key: 'y', label: 'Region', run: () => openPanel('region') },
   market: { key: 'x', label: 'Market', run: () => openPanel('market') },
   views: { key: 't', label: 'Info views', run: () => toggleTraffic() },
-  view: { key: 'v', label: '3D or 2D', run: () => toggleView() },
   home: { key: 'h', label: 'Go home', run: () => fitHome() },
   whole: { key: '0', label: 'Whole map', run: () => fitWorld() },
   grid: { key: 'g', label: 'Tile grid', run: () => setPref('grid', !prefs.grid) },
@@ -1963,7 +1971,7 @@ const keyName = (k) => ({ ',': 'Comma', ' ': 'Space', '?': '?' }[k] || k.toUpper
 
 // ---------- frame ----------
 function visiblePlotIds() {
-  const detailed = prefs.view === 'flat' ? renderer.cam.z * 1.3 >= 9 : renderer.cam.z >= 7;
+  const detailed = renderer.cam.z >= 7;
   if (!detailed) return [];
   const bd = renderer.bounds(), out = [];
   for (const p of plots.values()) {
@@ -2026,10 +2034,8 @@ function fitHome() {
   followCam = false;
   renderer.centerOnPlot(me.px, me.py);
   const w = renderer.w, h = renderer.h - 170, span = w < 600 ? 10 : 17;
-  renderer.cam.z = prefs.view === 'flat'
-    ? Math.max(9, Math.min(44, Math.min(w, h) * 0.92 / (span * 1.3)))
-    : Math.max(9, Math.min(44, Math.min(w * 0.92 / (2 * span), h * 0.95 / (span + 2))));
-  if (prefs.view === '3d') { renderer.cam.x += 0.6; renderer.cam.y += 0.6; }
+  renderer.cam.z = Math.max(9, Math.min(44, Math.min(w * 0.92 / (2 * span), h * 0.95 / (span + 2))));
+  renderer.cam.x += 0.6; renderer.cam.y += 0.6;
   dirty = true;
 }
 function fitWorld() {
@@ -2040,9 +2046,7 @@ function fitWorld() {
   const minX = Math.min(...xs), maxX = Math.max(...xs) + 1, minY = Math.min(...ys), maxY = Math.max(...ys) + 1;
   renderer.centerOn(((minX + maxX) / 2) * STRIDE, ((minY + maxY) / 2) * STRIDE);
   const span = (Math.max(maxX - minX, maxY - minY) + 0.6) * STRIDE;
-  renderer.cam.z = prefs.view === 'flat'
-    ? Math.max(1.6, Math.min(8, Math.min(renderer.w, renderer.h) * 0.85 / (span * 1.3)))
-    : Math.max(1.6, Math.min(8, Math.min(renderer.w / (2 * span), renderer.h / span) * 0.9));
+  renderer.cam.z = Math.max(1.6, Math.min(8, Math.min(renderer.w / (2 * span), renderer.h / span) * 0.9));
   dirty = true;
 }
 function goTo(px, py, tx = PLOT / 2, ty = PLOT / 2, z = 12) {
@@ -2128,14 +2132,6 @@ function showViews() {
   m.querySelector('button').focus();
 }
 function toggleTraffic() { setView(overlay ? overlay : 'traffic'); }
-function toggleView() {
-  const c = { x: renderer.cam.x, y: renderer.cam.y };
-  setPref('view', prefs.view === '3d' ? 'flat' : '3d');
-  renderer.centerOn(c.x, c.y);
-  announce(prefs.view === '3d' ? '3D view' : '2D view');
-}
-$('view-3d').onclick = () => prefs.view !== '3d' && toggleView();
-$('view-2d').onclick = () => prefs.view !== 'flat' && toggleView();
 $('btn-traffic').onclick = showViews;
 $('btn-home').onclick = fitHome;
 $('btn-world').onclick = fitWorld;
@@ -3225,7 +3221,6 @@ function showSettings() {
   const tabs = [['display', 'Display'], ['colours', 'Colours'], ['interface', 'Interface'], ['sound', 'Sound'], ['keys', 'Keys']];
   const panes = {
     display: `<div class="srow"><span>Theme</span>${seg('theme', [['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']])}</div>
-      <div class="srow"><span>View</span>${seg('view', [['3d', '3D'], ['flat', '2D']])}</div>
       <div class="srow"><span>People on screen</span>${seg('density', [[0.5, 'Fewer'], [1, 'Everyone']])}</div>
       ${tgl('cars', 'Show people moving around', 'Cars, bikes and walkers. Turn off to save battery.')}
       ${tgl('dayNight', 'Day and night', 'The map dims in the evening; windows and headlights come on')}
@@ -3279,7 +3274,7 @@ function showSettings() {
   modal.querySelectorAll('button[data-pref]').forEach((b) => {
     b.onclick = () => {
       const k = b.dataset.pref, v = JSON.parse(b.dataset.val);
-      if (k === 'view') { if (prefs.view !== v) toggleView(); } else setPref(k, v);
+      setPref(k, v);
       showSettings();
       modal.querySelector(`[data-pref="${k}"][aria-checked="true"]`)?.focus();
     };

@@ -1,7 +1,9 @@
 // All tunable numbers live here so balancing never means hunting through logic.
 
-// The shared world everyone starts in. 'public' is the classic world from before 1.11, kept so nobody loses a city.
-export const WORLD_ID = 'main';
+// The shared world everyone starts in. 1.18 started every world afresh: the open world is 's2', and private worlds made
+// before RESET_AT are no longer listed. Earlier worlds ('public', 'main') are still in the database, just not shown.
+export const WORLD_ID = 's2';
+export const RESET_AT = Date.UTC(2026, 8, 26);
 export const CLASSIC_WORLD = 'public';
 // A council can own several cities: buy the plot next to one of yours. Priced like land: this many parcels at your
 // current land price, times PLOT_BUY_STEP for each city you already have, and never less than PLOT_BUY_MIN.
@@ -9,7 +11,7 @@ export const CLASSIC_WORLD = 'public';
 // The desk frees up when its holder has been idle this long, or their game stops checking in.
 export const MAX_CO = 3, DESK_IDLE_MS = 120000, DESK_STALE_MS = 60000, DESK_BEAT_MS = 20000;
 export const PLOT_BUY_PARCELS = 4, PLOT_BUY_STEP = 1.6, PLOT_BUY_MIN = 1000, MAX_CITIES = 9;
-export const OPEN_WORLDS = { main: 'The world', public: 'Classic world' };
+export const OPEN_WORLDS = { s2: 'The world' };
 export const PLOT = 24;          // tiles per side of a plot
 export const GAP = 0;            // tiles between neighbouring plots on the master map: none, so the world is one piece
 export const CHUNK = 4;          // land is bought in 4×4 parcels

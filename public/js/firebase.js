@@ -11,7 +11,7 @@ const {
   getDocs, addDoc, serverTimestamp, setDoc, onSnapshot, deleteDoc, writeBatch, deleteField, getCountFromServer, arrayUnion, arrayRemove,
 } = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-firestore.js`);
 import { firebaseConfig } from './config.js';
-import { WORLD_ID, OPEN_WORLDS, REBUILD_MONEY } from './constants.js';
+import { WORLD_ID, OPEN_WORLDS, REBUILD_MONEY, RESET_AT } from './constants.js';
 import { spiral } from './spiral.js';
 import { newCity, serialize, summary, mapString, ensureTerrain } from './sim.js';
 
@@ -102,7 +102,8 @@ export async function getWorld(id) {
 export async function myWorlds(user) {
   const snap = await getDocs(query(collection(db, 'memberships'), where('uid', '==', user.uid), limit(20)));
   const found = await Promise.all(snap.docs.map((m) => getWorld(m.data().world).catch(() => null)));
-  return [...Object.entries(OPEN_WORLDS).map(([id, name]) => ({ id, name, private: false })), ...found.filter((w) => w && !OPEN_WORLDS[w.id])];
+  // Private worlds from before the 1.18 fresh start aren't listed any more.
+  return [...Object.entries(OPEN_WORLDS).map(([id, name]) => ({ id, name, private: false })), ...found.filter((w) => w && !OPEN_WORLDS[w.id] && (w.createdAt?.toMillis?.() ?? 0) >= RESET_AT)];
 }
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

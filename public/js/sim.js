@@ -34,10 +34,25 @@ export function h32(a, b = 0) {
 export const FIRST = ['Ava', 'Noah', 'Mia', 'Leo', 'Zara', 'Kai', 'Ella', 'Omar', 'Ivy', 'Luca', 'Aisha', 'Finn', 'Maya', 'Ravi', 'Chloe', 'Jonah',
   'Sofia', 'Eli', 'Nadia', 'Theo', 'Hana', 'Mateo', 'Grace', 'Arjun', 'Lily', 'Sam', 'Yara', 'Oscar', 'Ruby', 'Tariq', 'Elena', 'Jack',
   'Amara', 'Hugo', 'Priya', 'Felix', 'Leila', 'Ben', 'Mei', 'Diego', 'Isla', 'Kofi', 'Nina', 'Max', 'Rosa', 'Yusuf', 'Clara', 'Dev',
-  'Freya', 'Tom', 'Anya', 'Ezra', 'Lena', 'Ari', 'Zoe', 'Malik', 'Iris', 'Sami', 'Olive', 'Nikos'];
+  'Freya', 'Tom', 'Anya', 'Ezra', 'Lena', 'Ari', 'Zoe', 'Malik', 'Iris', 'Sami', 'Olive', 'Nikos',
+  // Added in 1.18 (new names only go on the end: residents keep theirs by position)
+  'Amelia', 'Oliver', 'Harper', 'Jack', 'Charlotte', 'Henry', 'Evelyn', 'Samuel', 'Matilda', 'Arthur', 'Poppy', 'Alfie', 'Daisy', 'George', 'Elsie', 'Harry',
+  'Sienna', 'Isaac', 'Willow', 'Jasper', 'Imogen', 'Rory', 'Hazel', 'Callum', 'Esme', 'Declan', 'Niamh', 'Ciaran', 'Saoirse', 'Eamon', 'Aoife', 'Lars',
+  'Astrid', 'Nils', 'Ingrid', 'Soren', 'Elif', 'Emre', 'Selin', 'Deniz', 'Yuki', 'Haruto', 'Sakura', 'Ren', 'Jiwoo', 'Minjun', 'Lan', 'Wei', 'Xin',
+  'Aarav', 'Diya', 'Rohan', 'Anika', 'Vikram', 'Meera', 'Chidi', 'Ngozi', 'Tunde', 'Ama', 'Kwame', 'Zawadi', 'Juma', 'Sipho', 'Thandiwe', 'Carmen',
+  'Javier', 'Lucia', 'Pablo', 'Valentina', 'Andres', 'Camila', 'Rafael', 'Beatriz', 'Joao', 'Marta', 'Piotr', 'Zofia', 'Katya', 'Dmitri', 'Eleni',
+  'Giorgos', 'Dimitra', 'Stavros', 'Fatima', 'Hassan', 'Layla', 'Karim', 'Noor', 'Rania', 'Aleksander', 'Milena', 'Tomas', 'Hedda', 'Ronan', 'Bea'];
 export const SURNAMES = ['Nguyen', 'Okafor', 'Papadopoulos', 'Smith', 'Kowalski', 'García', 'Chen', 'Haddad', 'Ivanova', 'Silva', 'Kaur',
   'Tanaka', 'Murphy', 'Rossi', 'Mensah', 'Kim', 'Novak', 'Ali', 'Jensen', 'Costa', 'Walker', 'Fernando', 'Nakamura', 'Petrov', 'Obi',
-  'Laurent', 'Doyle', 'Sato', 'Horvat', 'Tran', 'Kelly', 'Moreau', 'Ahmed', 'Lindqvist', 'Reyes', 'Sharma'];
+  'Laurent', 'Doyle', 'Sato', 'Horvat', 'Tran', 'Kelly', 'Moreau', 'Ahmed', 'Lindqvist', 'Reyes', 'Sharma',
+  // Added in 1.18
+  'Harrington', 'Whitfield', 'Ashworth', 'Blackwood', 'Fairweather', 'Holloway', 'Pemberton', 'Thornton', 'Carrington', 'Bramley', 'Hartley', 'Lockwood',
+  'O\'Brien', 'Gallagher', 'MacLeod', 'Fitzgerald', 'Byrne', 'Quinn', 'Andersson', 'Nilsson', 'Berg', 'Halvorsen', 'Virtanen', 'Korhonen', 'Schmidt',
+  'Becker', 'Hoffmann', 'Keller', 'Vogel', 'Dubois', 'Lefèvre', 'Girard', 'Bonnet', 'Romano', 'Esposito', 'Conti', 'Marino', 'Ferreira', 'Almeida',
+  'Carvalho', 'Moreno', 'Ortega', 'Navarro', 'Castillo', 'Vargas', 'Mendoza', 'Rojas', 'Wiśniewski', 'Lewandowski', 'Dvořák', 'Horváth', 'Popescu',
+  'Petrov', 'Sokolov', 'Georgiou', 'Nikolaidis', 'Yilmaz', 'Demir', 'Kaya', 'Farouk', 'Mansour', 'Rahman', 'Hossain', 'Iyer', 'Menon', 'Reddy',
+  'Gupta', 'Bose', 'Watanabe', 'Suzuki', 'Kobayashi', 'Park', 'Choi', 'Lee', 'Wang', 'Liu', 'Zhang', 'Pham', 'Le', 'Adeyemi', 'Mwangi', 'Otieno',
+  'Boateng', 'Dlamini', 'Ndlovu', 'Kamara', 'Diallo', 'Traoré', 'Tupou', 'Ngata', 'Wilson', 'Clarke', 'Hughes', 'Evans', 'Bennett'];
 export const personName = (p) => `${FIRST[p.f]} ${SURNAMES[p.l]}`;
 
 // One clock for the whole world, so every city shares the same time of day, season and weather.

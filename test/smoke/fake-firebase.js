@@ -81,7 +81,7 @@ export async function getWorld(id) {
   const w = get(`worlds/${id}`);
   return w ? { id, ...w } : null;
 }
-export async function myWorlds(u) {
+export async function myWorlds(u) {   // (the fake has no worlds from before the reset)
   const mine = Object.entries(db.docs).filter(([k, v]) => k.startsWith('memberships/') && v.uid === u.uid).map(([, v]) => v.world);
   return [...Object.entries(OPEN_WORLDS).map(([id, name]) => ({ id, name, private: false })), ...(await Promise.all(mine.map(getWorld))).filter((w) => w && !OPEN_WORLDS[w.id])];
 }
