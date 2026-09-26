@@ -102,7 +102,7 @@ export async function getWorld(id) {
 export async function myWorlds(user) {
   const snap = await getDocs(query(collection(db, 'memberships'), where('uid', '==', user.uid), limit(20)));
   const found = await Promise.all(snap.docs.map((m) => getWorld(m.data().world).catch(() => null)));
-  // Private worlds from before the latest fresh start (1.18, 1.2, then 1.3) aren't listed any more.
+  // Private worlds from before the latest fresh start (1.18, 1.2, 1.3, then 1.8) aren't listed any more.
   return [...Object.entries(OPEN_WORLDS).map(([id, name]) => ({ id, name, private: false })), ...found.filter((w) => w && !OPEN_WORLDS[w.id] && (w.createdAt?.toMillis?.() ?? 0) >= RESET_AT)];
 }
 

@@ -43,6 +43,12 @@ function run(startSeed, verbose) {
     // Like a player, research whatever it can afford (cheapest first) and collect any harvests that are ready.
     for (const t of [...TECH].sort((a, b) => a.cost - b.cost)) if (sim.canResearch(s, t.id).ok) sim.research(s, t.id);
     for (let i = 0; i < PLOT * PLOT; i++) if (sim.harvestReady(s, i)) sim.harvest(s, i);
+    // A sensible mayor gets water and power in well before the town is big enough to need them (a city can now
+    // fall for going without water for days on end - see COLLAPSE_POP/COLLAPSE_WATER_DAYS in constants.js), not
+    // just when the advisor happens to notice a shortage.
+    const utils = sim.totals(s);
+    if (s.people.length >= 15 && !utils.counts[T.WATER] && s.money > B[T.WATER].cost + 150) tryBuild(T.WATER);
+    else if (s.people.length >= 15 && !(utils.counts[T.POWER] || utils.counts[T.SOLAR] || utils.counts[T.WIND]) && s.money > B[T.SOLAR].cost + 150) tryBuild(T.SOLAR);
     const p = s._plan || sim.plan(s, rng);
     const tips = sim.advice(s, p).filter((a) => a.type != null);
     // A sensible mayor saves up for the most urgent thing rather than spending on the rest.

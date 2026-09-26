@@ -2,6 +2,7 @@
 // Two days are a year of life. Every car, bike and walker you see is one of these people on a real trip.
 import {
   PLOT, GAP, TERRAIN, T, B, START_MONEY, REBUILD_MONEY, GRACE_DAYS, VOLUNTEER_RATE, RUBBLE_CLEAR_COST, COLLAPSE_UNPAID_DAYS,
+  COLLAPSE_POP, COLLAPSE_WATER_DAYS, COLLAPSE_TRAFFIC_DAYS, COLLAPSE_TRAFFIC_COMMUTE, COLLAPSE_DEBT, COLLAPSE_DEBT_DAYS,
   ROAD_CAP, HALL_CAP, HOURS_PER_DAY, LEVEL, MAX_LEVEL, UPGRADABLE, TAP_SHARE, TAP_CAP, GOALS, TRADE_PER_LINK,
   LINK_MOOD, MAX_LINKS, HISTORY_DAYS, LOG_SIZE, EVENT_CHANCE, CHUNK, CHUNKS, START_CHUNKS, LAND_PRICE, LAND_STEP,
   MOVE_FEE, ADULT, RETIRE, WAGE, isHome, walkable, BUS_SEATS, COMMUTE_JOBS, TICK_MS, isRoad, isRail, POLICY, WANT_REWARD,
@@ -114,7 +115,7 @@ export function newCity(name, rng = Math.random) {
   for (const c of START_CHUNKS) land[c] = 1;
   const s = {
     v: 4, name, grid, cond, lv: new Array(N).fill(1), land, queue: [], money: START_MONEY, res: { ...STARTING_RES }, people: [], nextId: 1, hall: 0, hallDone: {},
-    happiness: 0.65, hour: 0, day: 0, peakPop: 6, unpaidDays: 0, cityNo: 1, status: 'alive', lastTick: Date.now(),
+    happiness: 0.65, hour: 0, day: 0, peakPop: 6, unpaidDays: 0, waterShortDays: 0, trafficBadDays: 0, debtDays: 0, cityNo: 1, status: 'alive', lastTick: Date.now(),
     goalsDone: [], history: [], log: [], links: 0, flags: {}, graves: 0, cases: 0, clock: 1, wants: [], zone: new Array(N).fill(0), bday: new Array(N).fill(-1), protect: [],
     policy: { tax: 1, funding: 1, freeTransit: false },
     counters: { births: 0, deaths: 0, graduates: 0, crimes: 0, cases: 0, treated: 0, arrivals: 0, departures: 0, built: 0, land: 0, moved: 0 },
@@ -156,6 +157,7 @@ export function migrate(s, rng = Math.random) {
   for (const q of s.queue) if (q.tap === undefined) q.tap = 0;
   if (!s.land) s.land = new Array(CHUNKS * CHUNKS).fill(1);   // older cities keep all their land
   if (!s.counters) s.counters = { births: 0, deaths: 0, graduates: 0, crimes: 0, cases: 0, treated: 0, arrivals: 0, departures: 0, built: 0, land: 0, moved: 0 };
+  s.waterShortDays ||= 0; s.trafficBadDays ||= 0; s.debtDays ||= 0;
   s.graves = s.graves || 0;
   s.cases = s.cases || 0;
   if (Array.isArray(s.people) && Array.isArray(s.people[0])) s.people = s.people.map(unpack);
@@ -1920,12 +1922,17 @@ function daily(s, plan, rng) {
   }
   if (s.money < 0) {
     const debt = Math.min(1, -s.money / Math.max(1, st.upkeep));
+    if (-s.money >= COLLAPSE_DEBT) {
+      s.debtDays = (s.debtDays || 0) + 1;
+      if (s.debtDays < COLLAPSE_DEBT_DAYS) note(s, 'warn', `More than $${COLLAPSE_DEBT} in debt (day ${s.debtDays} of ${COLLAPSE_DEBT_DAYS}). Raise a loan or cut costs before the city goes under for good.`);
+    } else s.debtDays = 0;
     for (const i of buildings) s.cond[i] = Math.max(0, s.cond[i] - (10 + 15 * debt));
     s.money = 0;
     s.unpaidDays++;
     note(s, 'warn', `Couldn’t pay upkeep. Buildings are decaying (day ${s.unpaidDays} unpaid).`);
   } else {
     s.unpaidDays = 0;
+    s.debtDays = 0;
     for (const i of buildings) s.cond[i] = Math.min(100, s.cond[i] + 5);
   }
 
@@ -1943,6 +1950,17 @@ function daily(s, plan, rng) {
   // Having none at all is already covered by power and water coverage; this is for having some, but not enough.
   const shortOf = (k) => (pop >= UTILITY_POP && rs.prod[k] > 0 ? rs.short[k] / Math.max(1, rs.need[k]) : 0);
   const shortK = { water: shortOf('water'), power: shortOf('power') };
+
+  // Two more ways a city can fall (mirrors the debt counter above): completely without water once the city is
+  // big enough to need it, or gridlocked, for several days running. Each resets the moment it's fixed.
+  if (pop >= COLLAPSE_POP && rs.prod.water <= 0 && (s.res.water || 0) <= 0) {
+    s.waterShortDays = (s.waterShortDays || 0) + 1;
+    if (s.waterShortDays < COLLAPSE_WATER_DAYS) note(s, 'warn', `No water at all (day ${s.waterShortDays} of ${COLLAPSE_WATER_DAYS}). Build a water tower before the city runs dry for good.`);
+  } else s.waterShortDays = 0;
+  if (pop >= COLLAPSE_POP && plan.needs.commute < COLLAPSE_TRAFFIC_COMMUTE) {
+    s.trafficBadDays = (s.trafficBadDays || 0) + 1;
+    if (s.trafficBadDays < COLLAPSE_TRAFFIC_DAYS) note(s, 'warn', `Gridlocked (day ${s.trafficBadDays} of ${COLLAPSE_TRAFFIC_DAYS}). Add roads, footpaths or a bus service before people give up on the city.`);
+  } else s.trafficBadDays = 0;
 
   // Mood, person by person. Everything they experienced today counts.
   const fireCover = s.grid.some((t, i) => t === T.FIRE && active(s, i, uc) && staffing(s, i) > 0);
@@ -2233,6 +2251,9 @@ function daily(s, plan, rng) {
 
   const broke = s.money < B[T.HOUSE].cost;
   if ((s.people.length === 0 && broke && s.day > GRACE_DAYS) || s.unpaidDays >= COLLAPSE_UNPAID_DAYS) return collapse(s);
+  if (s.waterShortDays >= COLLAPSE_WATER_DAYS) return collapse(s, 'water');
+  if (s.trafficBadDays >= COLLAPSE_TRAFFIC_DAYS) return collapse(s, 'traffic');
+  if (s.debtDays >= COLLAPSE_DEBT_DAYS) return collapse(s, 'debt');
   return null;
 }
 
@@ -2250,8 +2271,8 @@ export function rebuild(s, name, money = REBUILD_MONEY) {
   s.grid[HALL_INDEX] = T.HALL;
   s.cond[HALL_INDEX] = 100;
   Object.assign(s, {
-    name: name || s.name, queue: [], money, history: [], log: [], flags: {}, people: [], nextId: 1, graves: 0, cases: 0,
-    happiness: 0.65, hour: 0, day: 0, peakPop: 6, unpaidDays: 0, cityNo: s.cityNo + 1, status: 'alive', goalsDone: [],
+    name: name || s.name, queue: [], money, res: { ...STARTING_RES }, history: [], log: [], flags: {}, people: [], nextId: 1, graves: 0, cases: 0,
+    happiness: 0.65, hour: 0, day: 0, peakPop: 6, unpaidDays: 0, waterShortDays: 0, trafficBadDays: 0, debtDays: 0, cityNo: s.cityNo + 1, status: 'alive', goalsDone: [],
   });
   settle(s, Math.random);
 }

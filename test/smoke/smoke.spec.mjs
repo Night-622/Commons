@@ -17,6 +17,9 @@ async function found(page, { mayor = 'Mona', city = 'Testhaven' } = {}) {
   await page.goto('/');
   await page.locator('#auth-guest').click();
   await expect(page.locator('#found')).toBeVisible();
+  // The founding screen explains the goal and the stakes before anyone claims a plot.
+  await expect(page.locator('#found')).toContainText('the town hall grows itself');
+  await expect(page.locator('#found')).toContainText('fall into ruins');
   await page.locator('#found-mayor').fill(mayor);
   await page.locator('#found-city').fill(city);
   await page.locator('#found-go').click();
@@ -275,7 +278,7 @@ test('world: neighbours touch, with borders', async ({ browser }) => {
   await b.waitForTimeout(800);
   if (process.env.SHOTS) await b.screenshot({ path: `${process.env.SHOTS}/world-borders.png` });
   const plots = await b.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('fakefb')).docs).filter((k) => k.startsWith('plots/')));
-  expect(plots).toEqual(expect.arrayContaining([expect.stringMatching(/^plots\/s4_/)]));
+  expect(plots).toEqual(expect.arrayContaining([expect.stringMatching(/^plots\/s5_/)]));
   expect(plots.length).toBe(2);
   expect(clean(errors)).toEqual([]);
   await ctx.close();

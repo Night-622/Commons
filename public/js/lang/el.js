@@ -9,6 +9,8 @@ const dict = {
   'Type your email address above first, then press this again.': 'Γράψτε πρώτα το email σας παραπάνω και πατήστε ξανά.',
   'Found your city': 'Ιδρύστε την πόλη σας', "You'll get a plot on the frontier of": 'Θα πάρετε ένα οικόπεδο στα σύνορα του', 'the public world': 'δημόσιου κόσμου',
   ', with a town hall, three builders and three settlers.': ', με δημαρχείο, τρεις οικοδόμους και τρεις αποίκους.',
+  "Give your people homes, jobs, schools and somewhere to go, and the town hall grows itself as the city does. It keeps running while you're away - but neglect it and it can fall into ruins: no water at all, gridlocked traffic, or deep debt, each for a few days running. Ruins can always be rebuilt, by you or anyone else.":
+    'Δώστε στους κατοίκους σας σπίτια, δουλειές, σχολεία και μέρη να πηγαίνουν, και το δημαρχείο μεγαλώνει μόνο του καθώς μεγαλώνει η πόλη. Συνεχίζει να λειτουργεί όσο λείπετε - αλλά αν την παραμελήσετε μπορεί να καταρρεύσει: καθόλου νερό, κυκλοφοριακό χάος, ή βαθιά χρέη, το καθένα για λίγες μέρες στη σειρά. Τα ερείπια μπορούν πάντα να ξαναχτιστούν, από εσάς ή από οποιονδήποτε άλλον.',
   'Your name as mayor': 'Το όνομά σας ως δήμαρχος', 'City name': 'Όνομα πόλης', 'Claim my plot': 'Διεκδικώ το οικόπεδό μου', 'Invite code from a friend': 'Κωδικός πρόσκλησης από φίλο',
   'Join': 'Είσοδος', 'Join a friend’s private world': 'Μπείτε στον ιδιωτικό κόσμο ενός φίλου', 'Play in the public world instead': 'Παίξτε στον δημόσιο κόσμο', 'Use a different account': 'Άλλος λογαριασμός',
   // Top bar and HUD

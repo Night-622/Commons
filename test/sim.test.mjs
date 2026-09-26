@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import * as sim from '../public/js/sim.js';
-import { T, PLOT, B, START_MONEY, START_CHUNKS, STARTING_RES, BRICK_DISCOUNT } from '../public/js/constants.js';
+import { T, PLOT, B, START_MONEY, START_CHUNKS, STARTING_RES, BRICK_DISCOUNT, COLLAPSE_POP, COLLAPSE_WATER_DAYS, COLLAPSE_DEBT, COLLAPSE_DEBT_DAYS } from '../public/js/constants.js';
 
 let seed = 42;
 const rng = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
@@ -35,7 +35,7 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   for (const x of [14, 15]) put(s, x, c + 2, T.HOUSE);
   put(s, 8, c, T.SHOP); put(s, 9, c, T.WORK); put(s, 10, c, T.FACTORY); put(s, 11, c, T.SCHOOL);
   put(s, 14, c, T.DAYCARE); put(s, 15, c, T.PARK); put(s, c + 2, 9, T.CLINIC); put(s, c + 2, 10, T.PLAYGROUND);
-  put(s, c, 9, T.PATH);
+  put(s, c, 9, T.PATH); put(s, c + 1, c, T.WATER);   // past 25 people the city needs one, or it can fall (COLLAPSE_WATER_DAYS)
   for (let h = 0; h < 24 * 25; h++) sim.tick(s, rng);
   const cs = sim.census(s);
   assert.equal(s.queue.length, 0, 'everything got built');
@@ -667,5 +667,29 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   for (let h = 0; h < 24; h++) sim.tick(s, rng);
   assert(s.res.bricks > 0, 'the factory turned stone and coal into bricks: ' + JSON.stringify(s.stats.products));
   console.log('more resources ok: quarry stone, coal mine, bricks recipe');
+}
+// ---- more ways a city can fall: no water or deep debt, each only after a run of bad days, and each resets
+// the moment the problem is gone. (Gridlock uses the exact same pattern in sim.js - traffic.needs.commute in
+// place of the water/debt checks below - and is exercised for real by test/balance.mjs across many seeds.)
+{
+  seed = 101;
+  // Debt: set the counter one day short of the threshold, put the city deep in the red, and let one more day
+  // settle to confirm it tips into ruins.
+  const s = sim.newCity('Broke', rng); s.money = -(COLLAPSE_DEBT * 5); s.debtDays = COLLAPSE_DEBT_DAYS - 1;
+  for (let h = 0; h < 24; h++) sim.tick(s, rng);
+  assert.equal(s.status, 'ruins', `deep in debt for ${COLLAPSE_DEBT_DAYS} days running falls: debtDays ${s.debtDays}`);
+  // A healthy day resets the counter, so only a real run of bad days is fatal.
+  const s2 = sim.newCity('Recovers', rng); s2.debtDays = COLLAPSE_DEBT_DAYS - 1;
+  for (let h = 0; h < 24; h++) sim.tick(s2, rng);
+  assert.equal(s2.status, 'alive', 'a single bad day short of the run doesn’t end the city');
+  assert.equal(s2.debtDays, 0, 'and the counter resets once things are fine again');
+  // Water: once a city is big enough to need it (COLLAPSE_POP), having none at all for long enough falls too.
+  const s3 = sim.newCity('Parched', rng); s3.land.fill(1);
+  for (let k = 0; k < 40; k++) s3.people.push({ ...s3.people[0], i: 900 + k });
+  s3.res.water = 0;
+  s3.waterShortDays = COLLAPSE_WATER_DAYS - 1;
+  for (let h = 0; h < 24; h++) sim.tick(s3, rng);
+  assert.equal(s3.status, 'ruins', `no water for ${COLLAPSE_WATER_DAYS} days running falls, once past ${COLLAPSE_POP} people`);
+  console.log('more ways to fall ok: debt and drought both end a city after a run of bad days, and both reset when fixed');
 }
 console.log('all tests passed');

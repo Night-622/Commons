@@ -77,3 +77,8 @@ main"):
    1.7   New cities start with a little water, power, wood and bricks;
          bricks now genuinely discount building costs, not just in the
          description text. No new deploy steps.
+   1.8   The founding screen now explains the goal and the stakes; a
+         city can now also fall from running completely dry, gridlock,
+         or deep debt (each after a few days running, with warnings
+         first). Another fresh start (WORLD_ID is now s5). No new
+         deploy steps.

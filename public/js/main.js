@@ -31,11 +31,11 @@ let prefs = loadPrefs();
 let user = null, plotId = null, me = null, state = null, mayor = '';
 // 1.11 opened a new, joined-up main world; players who were in the classic public world start there once.
 let world = { id: WORLD_ID, name: OPEN_WORLDS[WORLD_ID] }, worlds = [];
-// 1.18, 1.2 and 1.3 each started every world afresh: everyone begins in the new open world once.
+// 1.18, 1.2, 1.3 and 1.8 each started every world afresh: everyone begins in the new open world once.
 try {
   const saved = localStorage.getItem('commons-world');
-  if (saved && localStorage.getItem('commons-world-v5')) world = { id: saved, name: OPEN_WORLDS[saved] || 'World' };
-  localStorage.setItem('commons-world-v5', '1');
+  if (saved && localStorage.getItem('commons-world-v6')) world = { id: saved, name: OPEN_WORLDS[saved] || 'World' };
+  localStorage.setItem('commons-world-v6', '1');
 } catch { /* private mode */ }
 let plan = null, totalsNow = null, lastStep = null;
 let zoneKind = 1;
@@ -3042,8 +3042,13 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 1.7';
+const VERSION = 'Commons 1.8';
 const CHANGELOG = [
+  ['1.8', [
+    'Founding a city now explains what you’re playing for: keep it fed, housed and happy, and grow it - and what can end it.',
+    'A city can now fall for more reasons: no water at all, gridlocked traffic, or deep debt, each for a few days running. Every one gives clear warnings first, resets the moment it’s fixed, and (like any collapse) leaves ruins anyone can rebuild.',
+    'A fresh start: every world begins again.',
+  ]],
   ['1.7', [
     'New cities now start with a little water, power, wood and bricks in store, so you can build and make your first trade right away instead of starting from zero.',
     'Bricks now do what their description always said: everything costs a little less to build while you keep some in store.',

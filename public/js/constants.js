@@ -1,9 +1,12 @@
 // All tunable numbers live here so balancing never means hunting through logic.
 
-// The shared world everyone starts in. 1.3 started every world afresh again for the UI/feedback redesign:
-// the open world is 's4', and private worlds made before RESET_AT are no longer listed. Earlier worlds are still
+// The shared world everyone starts in. 1.8 started every world afresh again for the new ways a city can fall:
+// the open world is 's5', and private worlds made before RESET_AT are no longer listed. Earlier worlds are still
 // in the database, just not shown.
-export const WORLD_ID = 's4';
+export const WORLD_ID = 's5';
+// Start of today in UTC, not the user's local calendar date (the world clock, day/night and this cutoff all run
+// on UTC - a local "tomorrow" can still be UTC "today", so bumping this by a calendar day too early would hide
+// worlds made only hours ago). Check the actual UTC date before changing this on a reset.
 export const RESET_AT = Date.UTC(2026, 8, 26);
 export const CLASSIC_WORLD = 'public';
 // A council can own several cities: buy the plot next to one of yours. Priced like land: this many parcels at your
@@ -12,7 +15,7 @@ export const CLASSIC_WORLD = 'public';
 // The desk frees up when its holder has been idle this long, or their game stops checking in.
 export const MAX_CO = 3, DESK_IDLE_MS = 120000, DESK_STALE_MS = 60000, DESK_BEAT_MS = 20000;
 export const PLOT_BUY_PARCELS = 4, PLOT_BUY_STEP = 1.6, PLOT_BUY_MIN = 1000, MAX_CITIES = 9;
-export const OPEN_WORLDS = { s4: 'The world' };
+export const OPEN_WORLDS = { s5: 'The world' };
 export const PLOT = 24;          // tiles per side of a plot
 export const GAP = 0;            // tiles between neighbouring plots on the master map: none, so the world is one piece
 export const CHUNK = 4;          // land is bought in 4×4 parcels
@@ -37,6 +40,18 @@ export const GRACE_DAYS = 3;
 export const VOLUNTEER_RATE = 0.25;
 export const RUBBLE_CLEAR_COST = 25;
 export const COLLAPSE_UNPAID_DAYS = 10;
+// More ways a city can fall, all ending the same way as running out of money does: it falls into ruins, and
+// anyone (including you) can rebuild on the rubble. Each counts consecutive bad days, and resets the moment
+// the problem is fixed, so a single rough day never ends a city outright.
+// A young settlement gets a mood/illness penalty for going without utilities or living with traffic (UTILITY_POP),
+// but can't yet fall for it - that starts once it's grown into a proper Town (see HALL_LEVELS), the same size the
+// "utilities" hall goal already expects a water tower and a power source by.
+export const COLLAPSE_POP = 40;
+export const COLLAPSE_WATER_DAYS = 3;          // no water at all, once the city is big enough to need it (COLLAPSE_POP)
+export const COLLAPSE_TRAFFIC_DAYS = 3;        // this many days of gridlock this bad in a row
+export const COLLAPSE_TRAFFIC_COMMUTE = 0.3;   // "gridlock": the average car trip takes over 3x as long as it should
+export const COLLAPSE_DEBT = 1000;             // being at least this far overdrawn...
+export const COLLAPSE_DEBT_DAYS = 3;           // ...for this many days running
 export const TAP_SHARE = 0.05;
 export const TAP_CAP = 0.25;
 export const ROAD_CAP = 45;
