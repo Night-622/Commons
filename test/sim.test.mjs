@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import * as sim from '../public/js/sim.js';
-import { T, PLOT, B, START_MONEY, START_CHUNKS } from '../public/js/constants.js';
+import { T, PLOT, B, START_MONEY, START_CHUNKS, STARTING_RES, BRICK_DISCOUNT } from '../public/js/constants.js';
 
 let seed = 42;
 const rng = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
@@ -13,6 +13,7 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   const s = sim.newCity('Test', rng);
   assert.equal(s.people.length, 6, 'six settlers');
   assert.equal(s.money, START_MONEY);
+  assert.deepEqual(s.res, STARTING_RES, 'starts with enough to build and trade straight away');
   assert(sim.owns(s, sim.HALL_INDEX), 'owns the hall');
   assert(!sim.owns(s, sim.idx(0, 0)), 'does not own the corner');
   assert(!sim.place(s, sim.idx(0, 0), T.ROAD).ok, 'cannot build on unowned land');
@@ -263,7 +264,7 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   }
   assert(most <= PLOT * PLOT * 0.35 + 1, 'no plot is mostly water: ' + most);
   assert(found, 'some plots have water');
-  const s = sim.newCity('River', rng); s.money = 1e6; s.land.fill(1);
+  const s = sim.newCity('River', rng); s.money = 1e6; s.land.fill(1); s.res = {};
   sim.ensureTerrain(s, ...found, 'public');
   const wi = [...s.terr].indexOf('2');
   assert(!sim.place(s, wi, T.HOUSE).ok, 'no houses on water');
@@ -515,11 +516,16 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   seed = 61;
   const s = sim.newCity('Tapper', rng); s.money = 5000; s.land.fill(1);
   for (let x = 4; x <= 12; x++) put(s, x, c + 1, T.ROAD);
+  s.res = {};
   const plain = sim.buildPrice(s, sim.idx(5, c + 2), T.FARM);
   assert.equal(plain.money, B[T.FARM].cost, 'with no wood or metal in store you pay the list price');
   s.res = { wood: 3 };
   const cheaper = sim.buildPrice(s, sim.idx(5, c + 2), T.FARM);
   assert.equal(cheaper.money, B[T.FARM].cost - 3 * 2, 'each load of your own takes $2 off');
+  s.res = { bricks: 1 };
+  const bricked = sim.buildPrice(s, sim.idx(5, c + 2), T.FARM);
+  assert.equal(bricked.money, Math.round(B[T.FARM].cost * BRICK_DISCOUNT), 'any bricks in store take a little off everything');
+  s.res = { wood: 3 };
   const m0 = s.money;
   put(s, 5, c + 2, T.FARM);
   assert.equal(s.money, m0 - cheaper.money);
@@ -590,6 +596,7 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   // The next level wants resources in store, and uses them.
   s.hallDone = { school: true, farm: true, harvest: true, utilities: true };
   for (let k = 0; k < 30; k++) s.people.push({ ...s.people[0], i: 950 + k });
+  s.res = {};
   assert.equal(sim.checkHall(s), null, 'not without 40 wood');
   s.res = { wood: 55 };
   assert.equal(sim.checkHall(s)?.name, 'Town');

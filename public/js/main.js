@@ -3042,8 +3042,12 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 1.6';
+const VERSION = 'Commons 1.7';
 const CHANGELOG = [
+  ['1.7', [
+    'New cities now start with a little water, power, wood and bricks in store, so you can build and make your first trade right away instead of starting from zero.',
+    'Bricks now do what their description always said: everything costs a little less to build while you keep some in store.',
+  ]],
   ['1.6', [
     'Two more raw materials: quarries now dig up stone alongside metal, and a new Coal mine digs coal. Both trade on the Market like anything else.',
     'A fourth factory recipe: Bricks, from stone and coal, once you have the Masonry research. Cheaper building while you keep some in store.',

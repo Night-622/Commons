@@ -7,7 +7,7 @@ import {
   MOVE_FEE, ADULT, RETIRE, WAGE, isHome, walkable, BUS_SEATS, COMMUTE_JOBS, TICK_MS, isRoad, isRail, POLICY, WANT_REWARD,
   SEASONS, SEASON_DAYS, YEAR_DAYS, UTILITY_POP, DECISIONS, ELECTION_EVERY, ZONES, ZONE_COST,
   HALL_LEVELS, FEATURE_NEEDS, MAT_PER_COST, MAT_BUY, HARVEST, EXCHANGE, PER_CAPITA, STOCK, TRADE_RES, MARKET, RES, FOOD, USE, STORE_BASE, SURPLUS_SALE, MATERIALS_BOOST, MATERIALS_PER_WORK, PLOT_BUY_PARCELS, PLOT_BUY_STEP, PLOT_BUY_MIN, BUILD_SPEED, RECRUIT_COST, FIRED_DAYS, ADULT_STUDY_YEARS, TRAINING_YEARS, EDU, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
-  PRODUCTS, PRODUCT_IDS, FACTORY_BATCHES, STORE_SALE_SHARE, RAW_GOODS,
+  PRODUCTS, PRODUCT_IDS, FACTORY_BATCHES, STORE_SALE_SHARE, RAW_GOODS, STARTING_RES, BRICK_DISCOUNT,
 } from './constants.js';
 // Products (and raw resources) can be posted or taken on the player-to-player Market; only raw resources trade
 // instantly on the world Exchange (worldPrices/buyResource/sellResource below).
@@ -113,7 +113,7 @@ export function newCity(name, rng = Math.random) {
   const land = new Array(CHUNKS * CHUNKS).fill(0);
   for (const c of START_CHUNKS) land[c] = 1;
   const s = {
-    v: 4, name, grid, cond, lv: new Array(N).fill(1), land, queue: [], money: START_MONEY, people: [], nextId: 1, hall: 0, hallDone: {},
+    v: 4, name, grid, cond, lv: new Array(N).fill(1), land, queue: [], money: START_MONEY, res: { ...STARTING_RES }, people: [], nextId: 1, hall: 0, hallDone: {},
     happiness: 0.65, hour: 0, day: 0, peakPop: 6, unpaidDays: 0, cityNo: 1, status: 'alive', lastTick: Date.now(),
     goalsDone: [], history: [], log: [], links: 0, flags: {}, graves: 0, cases: 0, clock: 1, wants: [], zone: new Array(N).fill(0), bday: new Array(N).fill(-1), protect: [],
     policy: { tax: 1, funding: 1, freeTransit: false },
@@ -719,7 +719,8 @@ export function buildPrice(s, i, type) {
   const mat = matCost(type);
   const wood = Math.min(mat, Math.floor(s.res?.wood || 0)), metal = Math.min(mat - wood, Math.floor(s.res?.metal || 0));
   const use = wood + metal, bought = mat - use;
-  const base = type === T.XING ? B[type].cost : tileCost(s, i, type);
+  let base = type === T.XING ? B[type].cost : tileCost(s, i, type);
+  if ((s.res?.bricks || 0) > 0) base = Math.round(base * BRICK_DISCOUNT);   // bricks in store: everything costs a little less
   return { money: Math.max(Math.round(base / 2), base - use * MAT_BUY), mat, use, wood, metal, bought, base };
 }
 

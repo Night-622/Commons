@@ -319,6 +319,10 @@ export const PRODUCTS = {
 export const PRODUCT_IDS = Object.keys(PRODUCTS);
 export const STORE_SALE_SHARE = 0.85;    // a Store sells products for this share of the import price (vs SURPLUS_SALE on the open market)
 export const FACTORY_BATCHES = 6;        // batches of a recipe a fully-staffed, fully-levelled factory can run a day
+// What a brand new city starts with: enough to build straight away and try a trade, without waiting on production.
+export const STARTING_RES = { water: 100, power: 200, wood: 200, bricks: 200 };
+// Bricks in store take this share off every build, on top of whatever wood or metal load discount applies.
+export const BRICK_DISCOUNT = 0.95;
 // City shares. Every city is worth what its public figures say (people, money, buildings, resources, growth,
 // mood) and has `shares` shares. A mayor can list between listMin and listMax of them once the city has minPop
 // people, and is paid for them at once (less ipoDiscount); others then buy and sell them on the exchange.

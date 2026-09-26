@@ -74,3 +74,6 @@ main"):
          product (Bricks). No firestore.rules change needed - same as
          1.2, offers aren't checked against a fixed resource list - so
          just the usual push.
+   1.7   New cities start with a little water, power, wood and bricks;
+         bricks now genuinely discount building costs, not just in the
+         description text. No new deploy steps.

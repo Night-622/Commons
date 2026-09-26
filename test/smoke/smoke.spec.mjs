@@ -370,8 +370,9 @@ test('resources: the Resources tab and research tree after a day', async ({ page
   await closeModal(page);
   await page.locator('#rail [data-panel="stats"]').click();
   await page.locator('#drawer [role="tab"]', { hasText: 'Resources' }).click();
-  await expect(page.locator('#drawer .restable')).toBeVisible();
-  await expect(page.locator('#drawer .restable')).toContainText('Vegetables');
+  // Two tables now: resources, and products (a new city starts with some bricks, so the Products table already shows).
+  await expect(page.locator('#drawer .restable').first()).toBeVisible();
+  await expect(page.locator('#drawer .restable').first()).toContainText('Vegetables');
   if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/resources.png` });
   expect(clean(errors)).toEqual([]);
 });
@@ -465,7 +466,8 @@ test('private messages: message a neighbour, who sees it and replies', async ({ 
 
 test('resources bar, materials in prices, and what buildings make', async ({ page }) => {
   const errors = await newGame(page);
-  await expect(page.locator('#resbar .rchip')).toHaveCount(4);
+  // Water, power, materials, food, and products (a new city starts with some bricks in store).
+  await expect(page.locator('#resbar .rchip')).toHaveCount(5);
   await page.locator('#map').focus();
   await page.keyboard.press('b');
   for (const k of ['ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter']) await page.keyboard.press(k);
