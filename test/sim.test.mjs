@@ -2,6 +2,11 @@ import assert from 'node:assert/strict';
 import * as sim from '../public/js/sim.js';
 import { T, PLOT, B, START_MONEY, START_CHUNKS, STARTING_RES, BRICK_DISCOUNT, COLLAPSE_POP, COLLAPSE_WATER_DAYS, COLLAPSE_DEBT, COLLAPSE_DEBT_DAYS } from '../public/js/constants.js';
 
+// sim.tick() never reads the real clock, but sim.newCity() sets the city's *starting* hour of day from
+// Date.now() - left alone, that makes every run start at a different hour, which can shift a long test's exact
+// day-by-day path enough to matter (a seed-reproducible test should never depend on when it happens to run).
+Date.now = () => Date.UTC(2026, 8, 25, 6);
+
 let seed = 42;
 const rng = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 const c = PLOT >> 1;
@@ -126,7 +131,7 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
     const s = sim.newCity(name, rng); s.money = 50000; s.land.fill(1);
     for (let x = 6; x <= 23; x++) put(s, x, c + 1, T.ROAD);
     for (const x of [6, 7, 8, 9, 10, 11]) put(s, x, c + 2, T.HOUSE);
-    put(s, 14, c + 2, T.SHOP); put(s, 15, c + 2, T.FACTORY);
+    put(s, 14, c + 2, T.SHOP); put(s, 15, c + 2, T.FACTORY); put(s, 20, c + 2, T.WATER);
     if (fun) { put(s, 16, c + 2, T.PARK); put(s, 17, c + 2, T.PARK); put(s, 18, c + 2, T.CLINIC); put(s, 19, c + 2, T.PLAYGROUND); }
     for (let h = 0; h < 24 * 10; h++) sim.tick(s, rng);
     return s;
