@@ -1,12 +1,12 @@
 // Pure city simulation with real residents. No DOM, no Firebase, so it runs in node tests too.
-// A day is a year of life. Every car, bike and walker you see is one of these people on a real trip.
+// Two days are a year of life. Every car, bike and walker you see is one of these people on a real trip.
 import {
   PLOT, GAP, TERRAIN, T, B, START_MONEY, REBUILD_MONEY, GRACE_DAYS, VOLUNTEER_RATE, RUBBLE_CLEAR_COST, COLLAPSE_UNPAID_DAYS,
   ROAD_CAP, HALL_CAP, HOURS_PER_DAY, LEVEL, MAX_LEVEL, UPGRADABLE, TAP_SHARE, TAP_CAP, GOALS, TRADE_PER_LINK,
   LINK_MOOD, MAX_LINKS, HISTORY_DAYS, LOG_SIZE, EVENT_CHANCE, CHUNK, CHUNKS, START_CHUNKS, LAND_PRICE, LAND_STEP,
   MOVE_FEE, ADULT, RETIRE, WAGE, isHome, walkable, BUS_SEATS, COMMUTE_JOBS, TICK_MS, isRoad, isRail, POLICY, WANT_REWARD,
   GOODS_PER_FACTORY, SEASONS, SEASON_DAYS, YEAR_DAYS, UTILITY_POP, DECISIONS, ELECTION_EVERY, ZONES, ZONE_COST,
-  HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
+  BUILD_SPEED, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
 } from './constants.js';
 
 const N = PLOT * PLOT;
@@ -1197,14 +1197,16 @@ function finish(s, q) {
   (s._finished ||= []).push({ i: q.i, up: !!q.up });
 }
 
-function construct(s) {
+// Builders' work for part of an hour (1 = a whole hour).
+function construct(s, hours = 1) {
   let labour = 0;
   for (const p of s.people) {
     if (p.ill) continue;
     if (isBuilder(s, p)) labour += 1;
     else if (p.j < 0 && canWork(p)) labour += VOLUNTEER_RATE;
   }
-  for (const q of s.queue.filter((x) => x.priv)) { q.left -= 3; if (q.left <= 1e-6) finish(s, q); }
+  labour *= BUILD_SPEED * hours;
+  for (const q of s.queue.filter((x) => x.priv)) { q.left -= 3 * BUILD_SPEED * hours; if (q.left <= 1e-6) finish(s, q); }
   const pub = () => s.queue.find((x) => !x.priv);
   while (labour > 0 && pub()) {
     const q = pub();
@@ -1855,9 +1857,20 @@ export function checkGoals(s, tot = totals(s)) {
 }
 
 // One in-game hour.
+// Construction between hours: the game calls this with how much of the current hour has passed, and tick() does the rest.
+export function work(s, upTo) {
+  const d = Math.min(1, upTo) - (s.wk || 0);
+  if (s.status !== 'alive' || d <= 0.001) return 0;
+  const before = s.queue.length;
+  s.wk = Math.min(1, upTo);
+  construct(s, d);
+  return before - s.queue.length;
+}
+
 export function tick(s, rng = Math.random) {
   if (s.status !== 'alive') return { plan: null, collapsed: null };
-  construct(s);
+  construct(s, Math.max(0, 1 - (s.wk || 0)));
+  s.wk = 0;
   const p = s._plan && s._plan.day === s.day ? s._plan : plan(s, rng);
   // An empty town counts as hopeful as a new one, so it can fill up again if it still has homes and money.
   const avg = s.people.length ? s.people.reduce((a, x) => a + x.m, 0) / s.people.length : 0.65;

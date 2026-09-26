@@ -3,7 +3,7 @@ import {
   T, B, PLOT, TICK_MS, MAX_OFFLINE_DAYS, HOURS_PER_DAY, SAVE_EVERY_MS, RUBBLE_CLEAR_COST, MAX_LEVEL, LEVEL, UPGRADABLE,
   REBUILD_MONEY, MOVE_KEEP, TUTORIAL_REWARD, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome, DECISIONS, ZONES, ZONE_COST,
   LOAN_DAYS, HISTORIC_DAYS, BADGES, REGIONAL, REGIONAL_SHARE, ALLIANCE_TRADE, DAILY, DAILY_REWARD, WEEKLY, WEEKLY_REWARD, GIFT_LIMITS, REACTIONS,
-  WASTE_POP, SEWAGE_POP,
+  WASTE_POP, SEWAGE_POP, DAWN, DUSK,
 } from './constants.js';
 import { Renderer, STRIDE, thumbnail, modelHeight } from './render.js';
 import { loadPrefs, savePrefs, applyPrefs, resolvedTheme, palette, PALETTES } from './prefs.js';
@@ -1001,6 +1001,8 @@ function startLoops() {
     if (!state || catching || tabPaused) return;
     if (Date.now() - state.lastTick > TICK_MS * HOURS_PER_DAY * 2) { catchUp().then((r) => { if (r) showAway(r); }); return; }
     advance();
+    // Builders keep working between hours.
+    if (sim.work(state, (Date.now() - state.lastTick) / TICK_MS)) afterChange();
     drainFinished();
     checkGoals();
     syncMine();
@@ -1347,9 +1349,10 @@ const clockNow = () => (state ? state.hour + Math.min(0.999, (Date.now() - state
 function nightAmt() {
   if (!prefs.dayNight || !state) return 0;
   const h = clockNow();
-  if (h >= 20 || h < 5) return 1;
-  if (h >= 18) return (h - 18) / 2;
-  if (h < 7) return 1 - (h - 5) / 2;
+  // Dusk and dawn each take an hour either side of DUSK and DAWN, so it's properly dark for 8 of the 24 hours.
+  if (h >= DUSK + 0.5 || h < DAWN - 0.5) return 1;
+  if (h >= DUSK - 0.5) return h - (DUSK - 0.5);
+  if (h < DAWN + 0.5) return 1 - (h - (DAWN - 0.5));
   return 0;
 }
 
@@ -2426,7 +2429,7 @@ function showHelp() {
       <section><h3>${icon('i-grid')}Zones</h3><p>Paint homes, shops or industry zones. When the demand bars say so, developers build there for free and you pay no upkeep.</p></section>
       <section><h3>${icon('i-map')}Land</h3><p>You start with an 8×8 patch. In Build mode, price tags show land next to yours that you can buy.</p></section>
       <section><h3>${icon('i-people')}Real people</h3><p>Every resident has a name, family, age, education, job and routine. Every car, bike and walker is one of them. Tap them.</p></section>
-      <section><h3>${icon('i-school')}Growing up</h3><p>A day is a year. Toddlers need daycare or a parent stays home. Children need primary and high school; graduates can go to university for the best jobs.</p></section>
+      <section><h3>${icon('i-school')}Growing up</h3><p>Two days are a year. Toddlers need daycare or a parent stays home. Children need primary and high school; graduates can go to university for the best jobs.</p></section>
       <section><h3>${icon('i-jobs')}Staffing</h3><p>Schools, clinics, police and venues only open when people with the right education work there.</p></section>
       <section><h3>${icon('i-mood')}Life happens</h3><p>Illness (clinics), injuries (hospitals), old age (cemeteries), crime (police and courts). Families celebrate births and grieve losses.</p></section>
       <section><h3>${icon('i-coin')}Money</h3><p>Working people pay tax, more for skilled jobs. Upkeep is fixed. Unpaid upkeep decays buildings; a city with no people and no money falls.</p></section>
@@ -2557,7 +2560,7 @@ const FAQ = [
   ['Why are people leaving?', 'Unhappy families move away. Open People and filter by Unhappy to see what’s on their minds, then fix the weakest need in the mood panel.'],
   ['My money keeps going down.', 'Upkeep is fixed even when people leave. In Stats, Budget shows where money goes. Lower service funding in Stats, Policy, or get more people into work.'],
   ['How do I connect to a neighbour?', 'Run a road or railway to your plot edge where the neighbour has one at the same spot. A bridge appears and the cities are linked.'],
-  ['Why is time different when I come back?', 'Every city shares one world clock. While you’re away your city keeps living for up to 20 days (about 20 minutes), then waits for you.'],
+  ['Why is time different when I come back?', 'Every city shares one world clock: a day lasts 30 minutes (20 of daylight, 10 of night). While you’re away your city keeps living for up to 48 days (24 hours), then waits for you.'],
   ['Can I get my guest city on another device?', 'Only if you save it as an account first: Account, then Account again, then Save as an account.'],
 ];
 function showSupport() {

@@ -1,12 +1,12 @@
 // Turns each resident's daily plan into moving people on the map.
 // Every car, bike and walker is a real person on a real trip, leaving at their own time.
-import { T, B, PLOT } from './constants.js';
+import { T, B, PLOT, TICK_MS } from './constants.js';
 import { h32, plan as makePlan, personName } from './sim.js';
 
 const SPEED = { car: 2.4, bike: 1.3, walk: 0.75, bus: 1.8, train: 3 };   // tiles per real second
 const LANE = { car: 0.2, bike: 0.3, walk: 0.4, bus: 0.2, train: 0 };     // distance from the middle of the road
 const SHIRTS = ['#e0588e', '#3b7ddd', '#f0963a', '#2f9e5a', '#8a5bd6', '#e04b3c', '#16a2b8', '#f2c744', '#5b6f76'];
-const HOUR_S = 2.5;
+const HOUR_S = TICK_MS / 1000;
 
 export const TRIP_WORDS = {
   work: 'going to work', school: 'going to school', uni: 'going to university', drop: 'taking the kids to school', tutor: 'going to tutoring',

@@ -397,4 +397,21 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(s.people.length > 0, 'people move into an empty town that has homes');
   console.log('empty town ok:', s.people.length, 'arrived');
 }
+// ---- builders work between hours, so a house doesn't wait for the 75-second hour to end
+{
+  seed = 9;
+  const s = sim.newCity('Quick', rng);
+  put(s, c, c + 1, T.ROAD); put(s, c + 1, c + 2, T.ROAD);
+  for (const q of [...s.queue]) s.cond[q.i] = 100;
+  s.queue = [];
+  put(s, c, c + 2, T.HOUSE);
+  let done = 0, f = 0;
+  while (!done && f < 1) { f += 0.02; done = sim.work(s, f); }
+  assert(done && f < 0.5, 'a house finishes within half an hour of game time: ' + f);
+  const left = s.wk;
+  sim.tick(s, rng);
+  assert.equal(s.wk, 0, 'the hour ends and work starts afresh');
+  assert(left > 0);
+  console.log('quick building ok: house done after', Math.round(f * 75), 'real seconds');
+}
 console.log('all tests passed');

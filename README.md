@@ -1,6 +1,6 @@
 # Commons
 
-A persistent, shared-map city builder. Every player owns a 24×24 plot on one master map, next to real neighbours. Cities keep running while you're away (up to 20 city days), and cities that collapse stay on the map as ruins with a record.
+A persistent, shared-map city builder. Every player owns a 24×24 plot on one master map, next to real neighbours. A day lasts 30 real minutes (20 of daylight, 10 of night). Cities keep running while you're away (up to 48 city days, 24 hours), and cities that collapse stay on the map as ruins with a record.
 
 Plain HTML, CSS and JavaScript modules on Firebase Hosting, with Firestore and Firebase Auth. No build step.
 
@@ -92,7 +92,7 @@ Every collection and subcollection the game touches needs its own `match` block:
 
 ## Features
 
-- Real residents: names, ages, families, education, jobs, health and moods. A day is a year of life.
+- Real residents: names, ages, families, education, jobs, health and moods. Two days are a year of life.
 - Every car, bike and walker is a resident on a real trip: to work, school, the shops, a clinic or a night out. Parents drive young children to school.
 - Life events: births, couples, children growing up and moving out, illness, injury, old age, crime, court cases.
 - 30 building types, each with a job: homes, work, education (daycare to university, tutoring, library), health and safety (clinic, hospital, police, fire, courthouse, cemetery), leisure and sport.

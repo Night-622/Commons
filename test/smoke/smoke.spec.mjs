@@ -138,10 +138,10 @@ test('two tabs on one city: the newer plays, the older pauses', async ({ context
 test('catch-up after three days away', async ({ page }) => {
   const errors = await newGame(page);
   await page.waitForFunction(() => window.__fakeFb.saves > 0, null, { timeout: 30_000 });
-  // Wind the saved clock back three in-game days (a day is 60 seconds), then reload.
+  // Wind the saved clock back three in-game days (a day is 30 minutes), then reload.
   await page.evaluate(() => {
     const db = JSON.parse(localStorage.getItem('fakefb'));
-    for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plotState/')) { const s = JSON.parse(v.state); s.lastTick -= 3 * 60_000; v.state = JSON.stringify(s); }
+    for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plotState/')) { const s = JSON.parse(v.state); s.lastTick -= 3 * 30 * 60_000; v.state = JSON.stringify(s); }
     localStorage.setItem('fakefb', JSON.stringify(db));
   });
   await page.reload();
