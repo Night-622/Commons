@@ -846,6 +846,22 @@ html:not([lang="en"]) .card b { font-size: .95em; }
 @media (max-width: 1180px) { .resbar .rchip { padding: 4px 5px; } }
 @media (max-width: 860px) { .resbar { margin-top: 4px; } .rchip { font-size: .8em; padding: 1px 4px; } }
 
+/* The path */
+.path { background: var(--plate-2); border-radius: 12px; padding: 10px 12px; margin: 8px 0 12px; }
+.path .sub { margin-top: 0; }
+.pathgoals { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 4px; }
+.pathgoals li.done { color: var(--good); }
+.pathgoals li span { display: inline-block; width: 1.2em; font-weight: 800; }
+.chapters { display: flex; flex-wrap: wrap; gap: 4px; list-style: none; padding: 0; margin: 8px 0 0; font-size: .78em; }
+.chapters li { padding: 2px 8px; border-radius: 999px; background: var(--plate); color: var(--soft); }
+.chapters li.done { background: color-mix(in srgb, var(--good) 20%, transparent); color: var(--good); }
+.chapters li.now { background: var(--accent); color: var(--on-accent); font-weight: 800; }
+.locked-card, .unlock-card { display: flex; gap: 12px; align-items: flex-start; background: var(--plate-2); border-radius: 12px; padding: 12px; margin: 8px 0; }
+.unlock-card { display: block; }
+.locked-card .ic { width: 28px; height: 28px; flex: none; color: var(--soft); }
+.rail button.locked { opacity: .55; }
+.rail button.locked::after { content: '🔒'; position: absolute; top: 2px; right: 4px; font-size: 11px; }
+
 /* Shares and alliance rankings */
 .spark { width: 70px; height: 20px; color: var(--soft); flex: none; }
 .picklist.shares li { align-items: flex-start; }

@@ -85,6 +85,15 @@ const dict = {
 };
 
 const SEASON = { Spring: 'Άνοιξη', Summer: 'Καλοκαίρι', Autumn: 'Φθινόπωρο', Winter: 'Χειμώνας' };
+// The path, exchange and city shares (1.17)
+Object.assign(dict, {
+  'Not yet': 'Όχι ακόμα', 'See your path': 'Δείτε την πορεία σας', 'See the next chapter': 'Δείτε το επόμενο κεφάλαιο', 'Keep playing': 'Συνεχίστε',
+  'Why it matters:': 'Γιατί έχει σημασία:', 'Exchange': 'Χρηματιστήριο', 'Cities': 'Πόλεις', 'Price': 'Τιμή', 'Today': 'Σήμερα', 'You have': 'Έχετε',
+  'Buy 50': 'Αγορά 50', 'Sell 50': 'Πώληση 50', 'List my city': 'Εισαγωγή της πόλης μου', 'Your city on the exchange': 'Η πόλη σας στο χρηματιστήριο',
+  'Take it off the exchange': 'Απόσυρση από το χρηματιστήριο', 'Settle in': 'Εγκατάσταση', 'Feed yourselves': 'Τροφή για όλους', 'Power up': 'Ενέργεια',
+  'Open for trade': 'Ανοιχτοί στο εμπόριο', 'Invest and ally': 'Επενδύσεις και συμμαχίες', 'Build a council': 'Χτίστε δήμο', 'Metropolis': 'Μητρόπολη',
+  'Your resources': 'Οι πόροι σας', 'Your path': 'Η πορεία σας',
+});
 // Shares and rankings (1.16)
 Object.assign(dict, {
   'Shares': 'Μετοχές', 'Your shares are worth': 'Οι μετοχές σας αξίζουν', 'You paid': 'Πληρώσατε', 'Buy 10': 'Αγορά 10', 'Sell all': 'Πώληση όλων',

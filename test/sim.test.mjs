@@ -572,4 +572,29 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(!old.shares && old.money === m0 + 600, 'refunded');
   console.log('exchange ok: veg scarce', scarce, 'plenty', plenty, '; share small', sim.sharePrice(small), 'big', p);
 }
+// ---- the path
+{
+  seed = 71;
+  const s = sim.newCity('Pathway', rng); s.money = 20000; s.land.fill(1);
+  let st = sim.pathState(s);
+  assert.equal(st.stage, 0); assert.equal(st.chapter.id, 'settle');
+  assert(!sim.unlocked(s, 'market') && !sim.unlocked(s, 'research'), 'nothing unlocked yet');
+  for (let x = 2; x <= 13; x++) put(s, x, c + 1, T.ROAD);
+  [T.HOUSE, T.HOUSE, T.HOUSE, T.WORK, T.SHOP].forEach((t, k) => put(s, 3 + k * 2, c + 2, t));
+  for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = [];
+  const m = s.money, ch = sim.checkPath(s);
+  assert.equal(ch?.id, 'settle', 'chapter one complete');
+  assert.equal(s.money, m + ch.reward, 'reward paid');
+  assert(sim.unlocked(s, 'research') && !sim.unlocked(s, 'market'), 'research unlocks first');
+  assert.equal(sim.checkPath(s), null, 'the next chapter needs more');
+  s.counters.harvests = 1; s.path.done.pop15 = true;
+  assert(sim.pathState(s).goals.find((g) => g.id === 'harvest').done && sim.pathState(s).goals.find((g) => g.id === 'pop15').done, 'objectives stay done once met');
+  // Older cities start where their size has earned.
+  const old = JSON.parse(sim.serialize(sim.newCity('Veteran', rng))); delete old.path; old.day = 30;
+  for (let k = 0; k < 70; k++) old.people.push([...old.people[0].slice(0, 0), 800 + k, ...old.people[0].slice(1)]);
+  sim.migrate(old);
+  assert.equal(old.path.stage, 3, 'a 76-person city from before starts at chapter four');
+  assert(sim.unlocked(old, 'market') && sim.unlocked(old, 'shares'));
+  console.log('path ok: chapters', (await import('../public/js/constants.js')).PATH.map((p) => p.id).join(' > '));
+}
 console.log('all tests passed');

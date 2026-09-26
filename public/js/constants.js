@@ -159,6 +159,33 @@ export const CONGESTION_FEE = 0.4;     // per car trip, per day
 export const PROPERTY_TAX = [0, 0.4, 0.8];   // off | low | high
 export const RENT_SQUEEZE = 0.72;            // above this land value, families without schooling feel the rent
 export const MILESTONES = [25, 50, 100, 200, 300, 500];
+// The path: chapters from a handful of settlers to a metropolis. Each teaches one idea through a few objectives,
+// pays a reward, and unlocks the next features (UNLOCK_AT: the chapter you must have finished). Objective tests are
+// in sim.js (PATH_TESTS), by id. `card` explains what was unlocked, why it matters now, and where to find it.
+export const PATH = [
+  { id: 'settle', name: 'Settle in', idea: 'Every town starts with homes, work and food.', reward: 300,
+    goals: [['roads', 'Lay 10 road tiles'], ['homes', 'Build 3 homes'], ['work', 'Open an office or a factory'], ['shop', 'Open a grocer']],
+    card: { title: 'Research', what: 'Graduates, libraries and universities now earn research points. Spend them in City stats, Research.', why: 'Research unlocks fruit, dairy and meat, warehouses, cheaper building and the metro: it’s how a town gets more than the basics.' } },
+  { id: 'feed', name: 'Feed yourselves', idea: 'Food you grow is food you don’t have to buy.', reward: 400,
+    goals: [['pop15', 'Reach 15 people'], ['school', 'Open a primary school'], ['farm', 'Build an urban farm'], ['harvest', 'Collect a harvest (tap a building with a bubble)']],
+    card: { title: 'The Market', what: 'Buy what you lack and sell what you have too much of, at prices set by the whole world; lend, borrow and hire out workers. Tap Market (X).', why: 'Now you make things, you can sell them. Prices rise when something is scarce, so a busy farm can pay its way.' } },
+  { id: 'power', name: 'Power up', idea: 'A growing town needs water, power, materials and new ideas.', reward: 600,
+    goals: [['pop40', 'Reach 40 people'], ['utilities', 'Build a water tower and a power station, solar farm or wind turbine'], ['tech1', 'Research your first technology'], ['materials', 'Build a materials works']],
+    card: { title: 'City shares and the Region', what: 'Market, Cities: invest in other mayors’ cities, or list your own to raise money. Region: shared projects and alliances.', why: 'Your town is worth something now. Others can invest in it, and you can grow with your neighbours.' } },
+  { id: 'trade', name: 'Open for trade', idea: 'No town has everything: trade for what you need.', reward: 900,
+    goals: [['pop60', 'Reach 60 people'], ['trade1', 'Make a trade: on the exchange or with another mayor'], ['land', 'Buy a parcel of land'], ['happy60', 'Keep 60 people at 60% mood']],
+    card: { title: 'More cities and co-mayors', what: 'Select free land next to your city to buy it and found another city of your council. In Account, Friends, press Co to let a friend help run your city.', why: 'One plot only holds so much. A council of cities, and friends to help run them, is how you get big.' } },
+  { id: 'ally', name: 'Invest and ally', idea: 'Grow with others: shares, alliances and links.', reward: 1400,
+    goals: [['pop120', 'Reach 120 people'], ['invest', 'Own shares in another city, or list your own'], ['alliance', 'Join or found an alliance (Region)'], ['link', 'Link a road or railway with a neighbour (or make 5 trades)']],
+    card: null },
+  { id: 'council', name: 'Build a council', idea: 'Run more than one city.', reward: 2500,
+    goals: [['cities2', 'Found a second city (buy the plot next door)'], ['pop200', 'Reach 200 people'], ['uni', 'Open a university'], ['tech4', 'Research 4 technologies']],
+    card: null },
+  { id: 'metro', name: 'Metropolis', idea: 'The biggest there is.', reward: 5000,
+    goals: [['pop500', 'Reach 500 people'], ['monument', 'Build a monument'], ['happy70', 'Keep 500 people at 70% mood']],
+    card: null },
+];
+export const UNLOCK_AT = { research: 1, market: 2, shares: 3, region: 3, council: 4, co: 4 };
 export const QUAKE_CHANCE = 0.006;     // per day
 export const TORNADO_CHANCE = 0.012;   // per day in spring and summer storms
 // Badges shown on the map and in leaderboards.

@@ -21,8 +21,12 @@ Guests can turn their guest city into a full account later (Account menu). Linki
 - Saves are split: `plots/{id}` is a small public summary everyone listens to; `plotState/{id}` holds the full city and is only fetched for adjacent neighbours.
 - `node test/balance.mjs` runs a scripted city for 100 days.
 
-## New in 1.16: stock exchange and alliance rankings
-- `COMPANIES` in constants.js; `sim.sharePrice(id, day)` is smooth value noise over the world day (slow, medium and daily waves scaled by `vol`), so every player sees the same price without storing it anywhere. `sim.buyShares`/`sellShares` (with `SHARE_FEE`) keep holdings in `s.shares`; `daily()` pays `yield` x price as "dividends" income.
+## New in 1.17: the path, the exchange, city shares
+- The path: `PATH` (seven chapters, each with goals, a reward and an unlock `card`) and `UNLOCK_AT` in constants.js; `sim.pathState`, `sim.checkPath` (called with the goals check) and `sim.unlocked`, with objective tests in `PATH_TESTS`. Progress lives in `s.path` ({ stage, done }); cities from before 1.17 start at the chapter their size has earned. The UI locks the Market, Region, the Cities tab, Research, buying plots and co-mayors until their chapter, and `lockHtml` explains why.
+- The exchange: `sim.worldPrices(cities, day)` from everyone's public figures (plot summaries now carry `res`, `bld` and `listed`): scarcity (days of the world's needs in store, `PER_CAPITA`) and a daily demand swing (`EXCHANGE`). `state._prices` drives `buyResource`/`sellResource`, surplus sales and automatic food imports (clamped to `importBand`).
+- City shares: `sim.cityValue`/`sharePrice` from a city's summary; `listCity`, `buyCityShares`, `sellCityShares` (`STOCK`); holdings in `s.holdings`. `worlds/{w}/stocks/{plotId}` counts shares for sale; `fb.tradeStock` moves it in a transaction; rules keep it between 0 and the listed float and allow delisting only when all are back. The 1.16 companies are gone; `migrate` refunds what was paid.
+
+## New in 1.16: alliance rankings
 - Region panel ranks alliances by members' growth this month (from each plot's `growth`/`season` summary) or population; the leader gets a crown.
 
 ## New in 1.15: resources on show, harvests, materials in prices, and the free 3D camera

@@ -126,7 +126,7 @@ export function accountHtml(ctx, tab) {
         <span class="inline">${c.here ? '' : `<button class="btn small" type="button" data-open-city="${c.id}">Open</button>`}${c.co ? `<button class="btn small" type="button" data-leave-co="${c.id}">Step down</button>` : ''}</span></li>`).join('')}</ul>`;
   } else if (tab === 'friends') {
     const list = ctx.friends || [];
-    body = `<p class="soft small">Add friends from a neighbour’s city panel. Press Co to make a friend a co-mayor of ${esc(s.name)} (up to ${ctx.maxCo}): they can run it too. One of you plays at a time; the others watch, and can take over when the one playing is idle.</p>
+    body = `${ctx.coLocked ? '<p class="warn small">Co-mayors open when you finish chapter 4 of your path (Goals). You can add friends and message them now.</p>' : ''}<p class="soft small">Add friends from a neighbour’s city panel. Press Co to make a friend a co-mayor of ${esc(s.name)} (up to ${ctx.maxCo}): they can run it too. One of you plays at a time; the others watch, and can take over when the one playing is idle.</p>
       ${list.length ? `<ul class="picklist">${list.map((f) => `<li><span><b>${esc(f.name)}</b>${f.co ? ' <small class="good-t">Co-mayor here</small>' : ''}</span>
         <span class="inline">${ctx.canCo ? `<button class="btn small ${f.co ? '' : 'primary'}" type="button" data-co="${f.uid}" aria-pressed="${f.co}">${f.co ? 'Remove co' : 'Co'}</button>` : ''}<button class="btn small" type="button" data-dm-friend="${f.uid}|${esc(f.name)}">Message</button><button class="btn small" type="button" data-unfriend="${f.uid}">Remove</button></span></li>`).join('')}</ul>`
         : '<p class="soft">No friends yet. Select a neighbour’s city and press “Add as a friend”.</p>'}

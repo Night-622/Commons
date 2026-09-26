@@ -23,6 +23,13 @@ async function found(page, { mayor = 'Mona', city = 'Testhaven' } = {}) {
   await expect(page.locator('#game')).toBeVisible();
   await expect(page.locator('#city-name')).toContainText(city);
 }
+// Fast-forward every city in the fake world to the end of the path, so a test can use what it unlocks.
+async function unlockAll(page) {
+  await page.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plotState/')) { const st = JSON.parse(v.state); st.path = { stage: 7, done: {} }; v.state = JSON.stringify(st); } localStorage.setItem('fakefb', JSON.stringify(db)); });
+  await page.reload();
+  await expect(page.locator('#game')).toBeVisible({ timeout: 30_000 });
+  if (await page.locator('#modal[open]').count()) await page.keyboard.press('Escape');
+}
 const closeModal = async (page) => { if (await page.locator('#modal[open]').count()) { await page.keyboard.press('Escape'); await expect(page.locator('#modal[open]')).toHaveCount(0); } };
 
 test('the fake has the same exports as the real firebase.js', () => {
@@ -58,6 +65,7 @@ async function newGame(page) {
 
 test('every panel opens, with every tab', async ({ page }) => {
   const errors = await newGame(page);
+  await unlockAll(page);
   for (const name of ['goals', 'people', 'stats', 'news', 'chat', 'world', 'region']) {
     await page.locator(`#rail [data-panel="${name}"]`).click();
     await expect(page.locator('#drawer')).toBeVisible();
@@ -224,6 +232,7 @@ test('staff: recruit and hire from a building’s panel', async ({ page }) => {
 
 test('interface: sizes, menu directions, hiding and a bigger panel', async ({ page }) => {
   const errors = await newGame(page);
+  await unlockAll(page);
   const shot = (name) => process.env.SHOTS && page.screenshot({ path: `${process.env.SHOTS}/${name}.png` });
   const setting = async (pref, val) => {
     await page.locator('#btn-settings').click();
@@ -274,6 +283,7 @@ test('world: neighbours touch, with borders', async ({ browser }) => {
 
 test('council: buy the plot next door and switch between cities', async ({ page }) => {
   const errors = await newGame(page);
+  await unlockAll(page);
   await page.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plotState/')) { const s = JSON.parse(v.state); s.money = 5000; v.state = JSON.stringify(s); } for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plots/')) v.money = 5000; localStorage.setItem('fakefb', JSON.stringify(db)); });
   await page.reload();
   await expect(page.locator('#game')).toBeVisible();
@@ -310,6 +320,7 @@ test('co-mayors: befriend a neighbour, make them co-mayor, watch and take the de
   await b.addInitScript(() => { try { localStorage.setItem('commons-seen-help', '1'); } catch { /* ignore */ } });
   await found(b, { mayor: 'Nia', city: 'Nextdoor' });
   await closeModal(b);
+  await unlockAll(b); await unlockAll(a);
   // Mona walks the keyboard cursor over to Nia's plot and adds her as a friend.
   const [dx, dy] = await a.evaluate(() => {
     const ps = Object.entries(JSON.parse(localStorage.getItem('fakefb')).docs).filter(([k]) => k.startsWith('plots/')).map(([, v]) => v);
@@ -375,6 +386,7 @@ test('market: one mayor sells vegetables, another buys them, and a loan request 
   await a.reload();
   await expect(a.locator('#game')).toBeVisible();
   await closeModal(a);
+  await unlockAll(a);
   await a.locator('#rail [data-panel="market"]').click();
   await a.locator('#drawer [data-mtab="post"]').click();
   await a.locator('#drawer select[name="res"]').selectOption('veg');
@@ -388,7 +400,9 @@ test('market: one mayor sells vegetables, another buys them, and a loan request 
   await b.addInitScript(() => { try { localStorage.setItem('commons-seen-help', '1'); } catch { /* ignore */ } });
   await found(b, { mayor: 'Nia', city: 'Nextdoor' });
   await closeModal(b);
+  await unlockAll(b);
   await b.locator('#rail [data-panel="market"]').click();
+  await b.locator('#drawer [data-mtab="offers"]').click();
   await expect(b.locator('#drawer')).toContainText('Testhaven');
   await b.locator('#drawer [data-take]').first().click();
   await expect(b.locator('#toasts')).toContainText('Bought 100 vegetables');
@@ -508,6 +522,7 @@ test('free camera with a built-up town', async ({ page }) => {
 
 test('exchange: buy and sell resources at today’s price', async ({ page }) => {
   const errors = await newGame(page);
+  await unlockAll(page);
   await page.locator('#rail [data-panel="market"]').click();
   await expect(page.locator('#drawer .restable')).toContainText('Vegetables');
   await page.locator('#drawer [data-buy-res="materials|50"]').click();
@@ -528,6 +543,7 @@ test('city shares: one mayor lists her city, another invests', async ({ browser 
   await a.reload();
   await expect(a.locator('#game')).toBeVisible();
   await closeModal(a);
+  await unlockAll(a);
   await a.locator('#rail [data-panel="market"]').click();
   await a.locator('#drawer [data-mtab="shares"]').click();
   await a.locator('#list-form input').fill('200');
@@ -538,6 +554,7 @@ test('city shares: one mayor lists her city, another invests', async ({ browser 
   await b.addInitScript(() => { try { localStorage.setItem('commons-seen-help', '1'); } catch { /* ignore */ } });
   await found(b, { mayor: 'Nia', city: 'Nextdoor' });
   await closeModal(b);
+  await unlockAll(b);
   await b.locator('#rail [data-panel="market"]').click();
   await b.locator('#drawer [data-mtab="shares"]').click();
   await expect(b.locator('#drawer .shares')).toContainText('Testhaven');
@@ -549,4 +566,20 @@ test('city shares: one mayor lists her city, another invests', async ({ browser 
   await expect(b.locator('#toasts')).toContainText('Sold 10 shares in Testhaven');
   expect(clean(errors)).toEqual([]);
   await ctx.close();
+});
+
+test('path: a new mayor sees the path, and locked features explain themselves', async ({ page }) => {
+  const errors = await newGame(page);
+  await page.locator('#rail [data-panel="goals"]').click();
+  await expect(page.locator('#drawer .path')).toContainText('chapter 1 of 7');
+  await expect(page.locator('#drawer .pathgoals li')).toHaveCount(4);
+  await expect(page.locator('#rail [data-panel="market"]')).toHaveClass(/locked/);
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/path.png` });
+  await page.locator('#rail [data-panel="market"]').click();
+  await expect(page.locator('#modal[open]')).toContainText('Opens when you finish chapter 2');
+  await expect(page.locator('#modal[open]')).toContainText('Why it matters');
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/locked.png` });
+  await page.locator('#see-path').click();
+  await expect(page.locator('#drawer .path')).toBeVisible();
+  expect(clean(errors)).toEqual([]);
 });

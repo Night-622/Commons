@@ -49,6 +49,8 @@ const STEPS = [
   { title: 'Meet your people', text: 'Everyone has a name, a family, a job and something on their mind. Click anyone to see their day, or follow them around town.',
     task: 'Open People (P)', target: '[data-panel="people"]', done: (a) => a.panel() === 'people' },
   { title: 'Move things around', text: 'Move mode picks up a finished building and puts it down somewhere else, residents and all, for a quarter of its price.', target: '[data-mode="move"]' },
+  { title: 'Your resources', text: 'Water, power, food and building materials, always on show here. Farms, water towers and the materials works make them; tap a producing building when a bubble floats over it to collect a harvest.', target: '#resbar' },
+  { title: 'Your path', text: 'Goals shows your path: seven chapters from a few settlers to a metropolis. Each one teaches something, pays a reward and unlocks more of the game, like research, the market and investing.', target: '[data-panel="goals"]' },
   { title: 'Talk to your neighbours', text: 'Chat reaches everyone in this world. Link roads with a neighbour for trade and a mood boost.', target: '[data-panel="chat"]' },
   { title: 'Your account', text: 'Account has your lifetime stats and 27 achievements to unlock.', target: '#btn-account' },
   { title: 'You’re ready', text: `Here’s $${TUTORIAL_REWARD} to keep going. You can replay this tour from Help.` },

@@ -6,7 +6,7 @@ import {
   LINK_MOOD, MAX_LINKS, HISTORY_DAYS, LOG_SIZE, EVENT_CHANCE, CHUNK, CHUNKS, START_CHUNKS, LAND_PRICE, LAND_STEP,
   MOVE_FEE, ADULT, RETIRE, WAGE, isHome, walkable, BUS_SEATS, COMMUTE_JOBS, TICK_MS, isRoad, isRail, POLICY, WANT_REWARD,
   GOODS_PER_FACTORY, SEASONS, SEASON_DAYS, YEAR_DAYS, UTILITY_POP, DECISIONS, ELECTION_EVERY, ZONES, ZONE_COST,
-  MAT_PER_COST, MAT_BUY, HARVEST, EXCHANGE, PER_CAPITA, STOCK, TRADE_RES, MARKET, RES, FOOD, USE, STORE_BASE, SURPLUS_SALE, MATERIALS_BOOST, MATERIALS_PER_WORK, PLOT_BUY_PARCELS, PLOT_BUY_STEP, PLOT_BUY_MIN, BUILD_SPEED, RECRUIT_COST, FIRED_DAYS, ADULT_STUDY_YEARS, TRAINING_YEARS, EDU, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
+  PATH, UNLOCK_AT, MAT_PER_COST, MAT_BUY, HARVEST, EXCHANGE, PER_CAPITA, STOCK, TRADE_RES, MARKET, RES, FOOD, USE, STORE_BASE, SURPLUS_SALE, MATERIALS_BOOST, MATERIALS_PER_WORK, PLOT_BUY_PARCELS, PLOT_BUY_STEP, PLOT_BUY_MIN, BUILD_SPEED, RECRUIT_COST, FIRED_DAYS, ADULT_STUDY_YEARS, TRAINING_YEARS, EDU, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
 } from './constants.js';
 
 const N = PLOT * PLOT;
@@ -94,7 +94,7 @@ export function newCity(name, rng = Math.random) {
   const land = new Array(CHUNKS * CHUNKS).fill(0);
   for (const c of START_CHUNKS) land[c] = 1;
   const s = {
-    v: 4, name, grid, cond, lv: new Array(N).fill(1), land, queue: [], money: START_MONEY, people: [], nextId: 1,
+    v: 4, name, grid, cond, lv: new Array(N).fill(1), land, queue: [], money: START_MONEY, people: [], nextId: 1, path: { stage: 0, done: {} },
     happiness: 0.65, hour: 0, day: 0, peakPop: 6, unpaidDays: 0, cityNo: 1, status: 'alive', lastTick: Date.now(),
     goalsDone: [], history: [], log: [], links: 0, flags: {}, graves: 0, cases: 0, clock: 1, wants: [], zone: new Array(N).fill(0), bday: new Array(N).fill(-1), protect: [],
     policy: { tax: 1, funding: 1, freeTransit: false },
@@ -140,6 +140,8 @@ export function migrate(s, rng = Math.random) {
   s.graves = s.graves || 0;
   s.cases = s.cases || 0;
   if (Array.isArray(s.people) && Array.isArray(s.people[0])) s.people = s.people.map(unpack);
+  // Cities from before the path start at the chapter their size has earned, so nobody loses what they use.
+  if (!s.path) s.path = { stage: s.day > 2 ? [15, 40, 60, 120, 200].filter((n) => s.people.length >= n).length : 0, done: {} };
   // 1.16 had made-up companies to invest in; 1.17 replaced them with city shares. Give back what was paid.
   if (s.shares) { s.money += Object.values(s.shares).reduce((a, h) => a + (h.paid || 0), 0); delete s.shares; }
   if (!s.policy) s.policy = { tax: 1, funding: 1, freeTransit: false };
@@ -323,6 +325,43 @@ function resourcesDay(s, uc) {
   }
   return { prod, need, short, imported, importCost, sold: Math.round(sold), variety, cap };
 }
+// ---------- the path ----------
+// How each objective is checked. `x` has what the city can't know by itself: its alliance and how many cities
+// its council runs.
+const pathCount = (s, ...types) => s.grid.reduce((a, t, i) => a + (types.includes(t) && s.cond[i] > 0 ? 1 : 0), 0);
+const PATH_TESTS = {
+  roads: (s) => pathCount(s, T.ROAD, T.XING) >= 10, homes: (s) => pathCount(s, T.HOUSE, T.APARTMENT, T.VILLA) >= 3,
+  work: (s) => pathCount(s, T.WORK, T.FACTORY) >= 1, shop: (s) => pathCount(s, T.SHOP) >= 1,
+  pop15: (s) => s.people.length >= 15, school: (s) => pathCount(s, T.SCHOOL) >= 1, farm: (s) => pathCount(s, T.FARM) >= 1,
+  harvest: (s) => (s.counters.harvests || 0) >= 1,
+  pop40: (s) => s.people.length >= 40, utilities: (s) => pathCount(s, T.WATER) >= 1 && pathCount(s, T.POWER, T.SOLAR, T.WIND) >= 1,
+  tech1: (s) => (s.tech || []).length >= 1, materials: (s) => pathCount(s, T.MATERIALS) >= 1,
+  pop60: (s) => s.people.length >= 60, trade1: (s) => (s.counters.traded || 0) >= 1, land: (s) => (s.counters.land || 0) >= 1,
+  happy60: (s) => s.people.length >= 60 && s.happiness >= 0.6,
+  pop120: (s) => s.people.length >= 120, invest: (s) => !!s.listed || Object.keys(s.holdings || {}).length > 0,
+  alliance: (s, x) => !!x?.alliance, link: (s) => (s.links || 0) + (s.railLinks || 0) >= 1 || (s.counters.traded || 0) >= 5,   // no neighbour yet? trading counts
+  cities2: (s, x) => (x?.cities || 1) >= 2, pop200: (s) => s.people.length >= 200, uni: (s) => pathCount(s, T.UNI) >= 1, tech4: (s) => (s.tech || []).length >= 4,
+  pop500: (s) => s.people.length >= 500, monument: (s) => pathCount(s, T.MONUMENT) >= 1, happy70: (s) => s.people.length >= 500 && s.happiness >= 0.7,
+};
+// Where the city is on the path, and what's done (objectives stay done once met).
+export function pathState(s, x = {}) {
+  const p = (s.path ||= { stage: 0, done: {} }), ch = PATH[p.stage];
+  if (!ch) return { stage: p.stage, chapter: null, goals: [], complete: true };
+  return { stage: p.stage, chapter: ch, goals: ch.goals.map(([id, text]) => ({ id, text, done: !!p.done[id] || !!PATH_TESTS[id]?.(s, x) })), complete: false };
+}
+// Record objectives met since last time; finish the chapter (and pay its reward) when all are.
+export function checkPath(s, x = {}) {
+  const st = pathState(s, x);
+  if (st.complete || s.status !== 'alive') return null;
+  for (const g of st.goals) if (g.done) s.path.done[g.id] = true;
+  if (!st.goals.every((g) => g.done)) return null;
+  s.path.stage++;
+  s.money += st.chapter.reward;
+  note(s, 'good', `Chapter complete: ${st.chapter.name}. You earned $${st.chapter.reward}.`);
+  return st.chapter;
+}
+export const unlocked = (s, feature) => (s.path?.stage ?? 0) >= (UNLOCK_AT[feature] ?? 0);
+
 // ---------- the exchange: resource prices and city shares ----------
 // Smooth noise over the world's days, the same for every player.
 const wave = (seed, x) => { const a = Math.floor(x), f = x - a, u = f * f * (3 - 2 * f); return h32(a, seed) * (1 - u) + h32(a + 1, seed) * u; };
@@ -348,12 +387,14 @@ export function buyResource(s, k, n) {
   const cost = Math.round(priceOf(s, k) * (1 + EXCHANGE.spread) * n * 100) / 100;
   if (s.money < cost) return { ok: false, reason: `Needs $${Math.ceil(cost)}` };
   s.money -= cost; s.res ||= {}; s.res[k] = (s.res[k] || 0) + n;
+  s.counters.traded = (s.counters.traded || 0) + 1;
   return { ok: true, cost };
 }
 export function sellResource(s, k, n) {
   if (!TRADE_RES.includes(k) || !(n >= 1) || (s.res?.[k] || 0) < n) return { ok: false, reason: `You have ${Math.floor(s.res?.[k] || 0)} in store` };
   const got = Math.round(priceOf(s, k) * (1 - EXCHANGE.spread) * n * 100) / 100;
   s.res[k] -= n; s.money += got;
+  s.counters.traded = (s.counters.traded || 0) + 1;
   return { ok: true, got };
 }
 
@@ -443,6 +484,7 @@ export function release(s, offer, completed = false) {
 }
 // Something arriving from another city: money, goods, or both.
 export function receive(s, { money = 0, res = null, qty = 0 }) {
+  s.counters.traded = (s.counters.traded || 0) + 1;
   if (money) s.money += money;
   if (res && TRADE_RES.includes(res) && qty > 0) { s.res ||= {}; s.res[res] = (s.res[res] || 0) + qty; }
 }

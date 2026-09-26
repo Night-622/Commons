@@ -3,7 +3,7 @@ import {
   T, B, PLOT, TICK_MS, MAX_OFFLINE_DAYS, HOURS_PER_DAY, SAVE_EVERY_MS, RUBBLE_CLEAR_COST, MAX_LEVEL, LEVEL, UPGRADABLE,
   REBUILD_MONEY, MOVE_KEEP, TUTORIAL_REWARD, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome, DECISIONS, ZONES, ZONE_COST,
   LOAN_DAYS, HISTORIC_DAYS, BADGES, REGIONAL, REGIONAL_SHARE, ALLIANCE_TRADE, DAILY, DAILY_REWARD, WEEKLY, WEEKLY_REWARD, GIFT_LIMITS, REACTIONS,
-  RES, FOOD, USE, HARVEST, MARKET, STOCK, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
+  RES, FOOD, USE, HARVEST, MARKET, STOCK, PATH, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
 } from './constants.js';
 import { Renderer, STRIDE, thumbnail, modelHeight } from './render.js';
 import { loadPrefs, savePrefs, applyPrefs, resolvedTheme, palette, PALETTES } from './prefs.js';
@@ -692,6 +692,7 @@ async function acceptOffer(o) {
   if (o.kind === 'buy') { if ((state.res?.[o.res] || 0) < o.qty) throw new Error(`You have ${Math.floor(state.res?.[o.res] || 0)} ${RES_NAME(o.res)} in store.`); deal.res = o.res; deal.qty = o.qty; }
   if (o.kind === 'loan' || o.kind === 'labour') { if (state.money < o.total) throw new Error(`Needs ${money(o.total)}.`); deal.money = o.total; }
   await fb.takeOffer(world.id, o.id, user, plotId, state.name.slice(0, 40), deal);
+  state.counters.traded = (state.counters.traded || 0) + 1;
   if (o.kind === 'sell') { state.money -= o.total; sim.receive(state, { res: o.res, qty: o.qty }); notify(`Bought ${o.qty} ${RES_NAME(o.res)} from ${o.city}.`, 'good'); }
   if (o.kind === 'buy') { state.res[o.res] -= o.qty; state.money += o.total; notify(`Sold ${o.qty} ${RES_NAME(o.res)} to ${o.city} for ${money(o.total)}.`, 'good'); }
   if (o.kind === 'labour') { state.money -= o.total; sim.hireCrew(state, { n: o.qty, e: o.edu || 0, days: o.days || 1, from: o.city }); notify(`${o.qty} workers from ${o.city} start today, for ${o.days} days.`, 'good'); }
@@ -725,7 +726,7 @@ function marketCtx() {
     return { id: st.id, city: p.name, mayor: p.ownerName, pop: p.pop, growth: p.season === new Date().toISOString().slice(0, 7) ? p.growth : 0, price: sim.sharePrice(p), available: st.available, float: st.float, held: state.holdings?.[st.id] }; })
     .sort((a, b) => b.price - a.price);
   // Shares you still hold in cities that were taken off the exchange or left the world show too, so you can see them.
-  return { day: sim.worldDay(), prices: state._prices || {}, yday: sim.worldPrices(worldCities(), sim.worldDay() - 1), cities,
+  return { locked: { shares: !isOpen('shares') }, day: sim.worldDay(), prices: state._prices || {}, yday: sim.worldPrices(worldCities(), sim.worldDay() - 1), cities,
     listing: state.listed ? stocks.get(plotId) || {} : null, canList: sim.canList(state, STOCK.listMin), myPrice: sim.sharePrice(sim.summary(state)), offers: offers.filter((o) => o.owner !== user.uid), mine: myOffers.filter((o) => o.status === 'open'), s: state, tab: marketTab, kind: marketKind,
     debts: state.debts || [], loansOut: state.loansOut || [], money: state.money, stock: sim.resourceStock(state) };
 }
@@ -1173,7 +1174,10 @@ function drainFinished() {
   if (list.length) { refreshDerived(); computeLinks(); }
 }
 
+const pathCtx = () => ({ alliance: !!myAlliance(), cities: myCities().length || 1 });
+const isOpen = (f) => !state || sim.unlocked(state, f);
 function checkGoals() {
+  if (!watching) { const ch = sim.checkPath(state, pathCtx()); if (ch) showChapter(ch); }
   const got = sim.checkGoals(state, totalsNow || sim.totals(state));
   if (got.length) {
     const sum = got.reduce((a, g) => a + g.reward, 0), hall = sim.xy(sim.HALL_INDEX);
@@ -2273,6 +2277,7 @@ function updateHud() {
   $('news-dot').textContent = unread ? String(Math.min(9, unread)) : '';
   $('news-dot').classList.toggle('hidden', !unread);
   renderResbar();
+  for (const f of ['market', 'region']) document.querySelector(`#rail [data-panel="${f}"]`)?.classList.toggle('locked', !isOpen(f));
   const unreadAll = chatUnread + dmUnread();
   $('chat-dot').textContent = unreadAll ? String(Math.min(9, unreadAll)) : '';
   $('chat-dot').classList.toggle('hidden', !unreadAll);
@@ -2320,6 +2325,7 @@ function drawMinimap() {
 
 // ---------- drawer ----------
 function openPanel(m) {
+  if ((m === 'market' || m === 'region') && !isOpen(m)) { showLocked(m); return; }
   if (drawer === m) { closeDrawer(); return; }
   drawer = m;
   selected = null;
@@ -2373,9 +2379,9 @@ function renderDrawer() {
     if (!p) { drawer = 'people'; return renderDrawer(); }
     const agent = trips.agents(plotId).find((a) => a.p === p.i);
     html = panels.personCard(state, plan, p, whereabouts(state, plan, p, clockNow(), agent), favs().has(p.i));
-  } else if (drawer === 'goals') html = panels.goalsPanel(state, state.status === 'alive' ? daily() : null);
+  } else if (drawer === 'goals') html = panels.goalsPanel(state, state.status === 'alive' ? daily() : null, sim.pathState(state, pathCtx()));
   else if (drawer === 'people') html = panels.peoplePanel(state, plan, peopleFilter, peopleQuery, favs());
-  else if (drawer === 'stats') html = panels.statsPanel({ state, totals: totalsNow || sim.totals(state), plan, census: sim.census(state) }, statsTab);
+  else if (drawer === 'stats') html = panels.statsPanel({ state, totals: totalsNow || sim.totals(state), plan, census: sim.census(state), locked: { research: !isOpen('research') } }, statsTab);
   else if (drawer === 'news') html = panels.newsPanel(state, unseenFrom(), { tab: newsTab, inbox: [...inbox].reverse(), plan, forecast: [1, 2, 3].map((k) => sim.weather(sim.worldDay() + k)) });
   else if (drawer === 'chat') { const m = muted(); html = panels.chatPanel({ messages: chatMessages.filter((x) => !m.has(x.uid)).map((x) => ({ ...x, text: clean(x.text) })), me: user.uid, world, colourOf, error: chatError && fb.authMessage(chatError), dmUnread: dmUnread() }); }
   else if (drawer === 'world') html = panels.worldPanel(worldCtx());
@@ -2773,6 +2779,7 @@ function otherPlot(h) {
   if (!p) {
     const via = myCities().find((c) => c.status === 'alive' && Math.abs(c.px - h.px) + Math.abs(c.py - h.py) === 1);
     if (!via || state.status !== 'alive') return '<h2>Unclaimed land</h2><p>New players get plots out here on the frontier. You can buy plots that touch one of your cities.</p>';
+    if (!isOpen('council')) return `<h2>Unclaimed land</h2>${panels.lockHtml('council')}`;
     const price = sim.plotPrice(state, myCities().length), full = myCities().length >= MAX_CITIES;
     return `<h2>Unclaimed land</h2><p>This plot touches ${esc(via.name)}. Buy it to start another city of your council here, with its own town hall, settlers and ${money(REBUILD_MONEY)}.</p>
       ${row('Price', money(price))}${row('Your cities here', myCities().length)}
@@ -2926,8 +2933,15 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 1.16';
+const VERSION = 'Commons 1.17';
 const CHANGELOG = [
+  ['1.17', [
+    'Your path: seven chapters from a handful of settlers to a metropolis, in Goals. Each teaches one idea, pays a reward and unlocks more of the game, with a card saying what it’s for and why it matters now.',
+    'Features open as you grow: research, the Market, city shares and the Region, then more cities and co-mayors. Tap a locked one to see which chapter opens it. Cities that were already big start further along.',
+    'Real trading. The Exchange: buy and sell resources at prices set by the whole world, higher when something is scarce and swinging with demand from day to day. Food bought in automatically follows these prices too.',
+    'City shares replace the made-up companies (anything you’d bought is refunded). List your city to raise money now, or invest in other mayors’ cities: a share is worth a thousandth of the city, so it rises and falls with it.',
+    'New tutorial steps for your resources, harvests and your path.',
+  ]],
   ['1.16', [
     'The stock exchange: Market, Shares. Five companies whose prices move every day, the same for every player. Buy low, sell high, and collect a dividend every day from most of them.',
     'Alliance rankings in the Region panel: see which alliance is growing fastest this month (it wears the crown), or which is biggest.',
@@ -3296,7 +3310,7 @@ function showAccount(tab = acctTab) {
   const cities = [...myCities(), ...[...plots.values()].filter((p) => p.owner !== user.uid && (p.co || []).includes(user.uid))]
     .map((p) => ({ id: p.id, name: p.id === plotId ? state.name : p.name, pop: p.id === plotId ? state.people.length : p.pop, status: p.status, here: p.id === plotId, co: p.owner !== user.uid, owner: p.ownerName }));
   const friendList = friends().map((f) => ({ ...f, co: (me?.co || []).includes(f.uid) }));
-  openModal(`${closeX}<h2 id="modal-title">Account</h2>${acct.accountHtml({ user, mayor, profile, s: state, world, colour: profile.colour || acct.COLOURS[0], cities, maxCities: MAX_CITIES, friends: friendList, canCo: !coMode, maxCo: MAX_CO }, tab)}`, 'wide');
+  openModal(`${closeX}<h2 id="modal-title">Account</h2>${acct.accountHtml({ user, mayor, profile, s: state, world, colour: profile.colour || acct.COLOURS[0], cities, maxCities: MAX_CITIES, friends: friendList, canCo: !coMode && isOpen('co'), coLocked: !isOpen('co'), maxCo: MAX_CO }, tab)}`, 'wide');
   modal.querySelectorAll('[data-open-city]').forEach((b) => { b.onclick = () => { closeModal(); switchCity(b.dataset.openCity); }; });
   modal.querySelectorAll('[data-co]').forEach((b) => { b.onclick = () => busy(b, async () => { await toggleCo(b.dataset.co); showAccount('friends'); }, $('acct-msg')); });
   modal.querySelectorAll('[data-dm-friend]').forEach((b) => { b.onclick = () => { const [uid, ...n] = b.dataset.dmFriend.split('|'); closeModal(); openDM(uid, n.join('|')); }; });
@@ -3352,6 +3366,23 @@ async function switchCity(id) {
   if (p && p.owner !== user.uid) { enter(user, id); return; }   // a friend's city you co-run: your home stays yours
   await fb.setHome(user, world.id, id);
   enter(user);
+}
+// A chapter of the path is done: the reward, what it unlocked and why, and what comes next.
+function showChapter(ch) {
+  const i = PATH.indexOf(ch), next = PATH[i + 1];
+  play('level'); afterChange(); save();
+  openModal(`${closeX}<h2 id="modal-title">Chapter complete: ${esc(ch.name)}</h2>
+    <p>You earned <b>${money(ch.reward)}</b>.</p>
+    ${ch.card ? `<div class="unlock-card"><h3>${icon('i-spark')}Unlocked: ${esc(ch.card.title)}</h3><p>${esc(ch.card.what)}</p><p class="small"><b>Why it matters:</b> ${esc(ch.card.why)}</p></div>` : ''}
+    ${next ? `<p class="soft">Next, chapter ${i + 2}: <b>${esc(next.name)}</b>. ${esc(next.idea)}</p>` : '<p>That’s the whole path. Your city is a metropolis.</p>'}
+    <div class="mfoot"><button class="btn" data-close>Keep playing</button><button class="btn primary" id="see-path">See the next chapter</button></div>`);
+  $('see-path').onclick = () => { closeModal(); drawer = null; openPanel('goals'); };
+}
+// A locked feature: what it is, which chapter opens it, and why it's worth getting to.
+function showLocked(feature) {
+  openModal(`${closeX}<h2 id="modal-title">Not yet</h2>${panels.lockHtml(feature)}
+    <div class="mfoot"><button class="btn" data-close>OK</button><button class="btn primary" id="see-path">See your path</button></div>`);
+  $('see-path').onclick = () => { closeModal(); drawer = null; openPanel('goals'); };
 }
 function confirmDelete() {
   openModal(`${closeX}<h2 id="modal-title">Delete your account?</h2>
