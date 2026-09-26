@@ -495,7 +495,7 @@ export class Renderer {
 
     if (t === T.HOUSE) {
       const x0 = tx + 0.18, x1 = tx + 0.82, y0 = ty + 0.2, y1 = ty + 0.8, fh = 0.36, h = 0.42 + fh * (lv - 1);
-      this.box(g, P, x0, y0, x1, y1, 0, h, th.wall, grey);
+      this.box(g, P, x0, y0, x1, y1, 0, h, col, grey);
       this.windows(g, P, x0, y0, x1, y1, lv, fh, 0.02, shade(glass, 0, grey), 2);
       this.face(g, P, 'S', y1, x0 + 0.26, x0 + 0.38, 0, 0.24, shade(col, -0.45, grey));
       if (hash(i, 41) < 0.33) this.hip(g, P, x0 - 0.03, y0 - 0.03, x1 + 0.03, y1 + 0.03, h, 0.3, col, grey);
@@ -765,7 +765,7 @@ export class Renderer {
       case T.VILLA: {
         const h = 0.45 + 0.18 * L;
         poly(g, [P(tx + 0.62, ty + 0.58), P(tx + 0.92, ty + 0.58), P(tx + 0.92, ty + 0.9), P(tx + 0.62, ty + 0.9)], '#5ab8e0');
-        this.box(g, P, tx + 0.12, ty + 0.12, tx + 0.6, ty + 0.62, 0, h, th.wall, grey);
+        this.box(g, P, tx + 0.12, ty + 0.12, tx + 0.6, ty + 0.62, 0, h, sh(col, 0.55), grey);
         this.windows(g, P, tx + 0.12, ty + 0.12, tx + 0.6, ty + 0.62, 1, h, 0.04, sh(glass), 2);
         this.hip(g, P, tx + 0.08, ty + 0.08, tx + 0.64, ty + 0.66, h, 0.28, col, grey);
         this.tree(g, P, tx + 0.8, ty + 0.25, 0.4, sh(this.pal.park), z);

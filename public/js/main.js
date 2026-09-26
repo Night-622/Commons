@@ -3042,8 +3042,12 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 1.3';
+const VERSION = 'Commons 1.4';
 const CHANGELOG = [
+  ['1.4', [
+    'Fixed houses and villas: they were quietly painted the same plain wall colour as everything else instead of their own colour, so a street of homes looked flatter and more alike than it should. Every house now shows its own shade again.',
+    'The Settings icon is a proper gear now, not an odd sunburst.',
+  ]],
   ['1.3', [
     'A clear objective, always on screen: a banner at the top now shows your next step at a glance, with a Show me button, so a new mayor always knows what to do.',
     'No more emoji: the resource bar and every other icon are now the same line-icon style as the rest of the interface.',

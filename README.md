@@ -21,6 +21,10 @@ Guests can turn their guest city into a full account later (Account menu). Linki
 - Saves are split: `plots/{id}` is a small public summary everyone listens to; `plotState/{id}` holds the full city and is only fetched for adjacent neighbours.
 - `node test/balance.mjs` runs a scripted city for 100 days.
 
+## New in 1.4: two fixes
+- `render.js`: `T.HOUSE`'s and `T.VILLA`'s walls were painted `th.wall` (the theme's generic wall colour) instead of `col` (their own palette colour with the per-instance hash variation computed at the top of `object()` — the exact mechanism `T.WORK`/`T.SHOP`/`T.APARTMENT` already used correctly), so every home looked the same flat theme colour and the variation code was silently dead for two of the three home types. Now uses `col` (House) and `sh(col, 0.55)` (Villa, matching Apartment's tint) like everything else.
+- `i-gear` (Settings) was a sunburst/asterisk shape (a circle with 8 radiating lines), not a gear — replaced with an actual cog outline (Feather Icons' well-known "settings" glyph).
+
 ## New in 1.3: a clear objective, no emoji, depth and feedback
 - A new `#objective` banner in the top bar (`updateHud()` in main.js) always shows the same `step` value the `#pulse` hint uses — one source of truth, two places it's shown, so a new mayor can't miss it. Turns to a `--bad`-tinted "urgent" style via `.objective.urgent`.
 - Every decorative emoji in the UI is gone: the resource bar and the 🧱/👑 spots in panels.js now use the existing SVG icon sheet (`index.html`'s `<symbol>` defs, `panels.js`'s `icon()`), with five new icons (`i-water`, `i-power`, `i-materials`, `i-food`, `i-products`). The emoji reaction picker (`REACTIONS` in constants.js) is a deliberate feature, not decoration, and was left alone.
