@@ -794,9 +794,36 @@ html[data-simple="1"] .adv, html[data-simple="1"] [data-brush="zone"] { display:
 }
 
 /* Longer words (Greek and others): let labels break and wrap rather than spill. */
-.brush span, .card b, .rail button span, .stat small { overflow-wrap: anywhere; hyphens: auto; }
+.brush span, .card b, .rail button span, .stat small { overflow-wrap: break-word; hyphens: auto; }
 html:not([lang="en"]) .brush span { font-size: .9em; line-height: 1.1; text-align: center; }
 html:not([lang="en"]) .card b { font-size: .95em; }
+
+/* ---------- interface size, menu direction, hiding and maximising ---------- */
+[data-uisize="small"] :is(.top, .pulse, .rail, .dock, .drawer, .minibox, .catalog, .toasts, .coach, .ui-restore) { zoom: .85; }
+[data-uisize="large"] :is(.top, .pulse, .rail, .dock, .drawer, .minibox, .catalog, .toasts, .coach, .ui-restore) { zoom: 1.2; }
+.ui-restore { display: none; position: absolute; right: 12px; top: max(12px, env(safe-area-inset-top)); z-index: 7; padding: 8px 14px; font-weight: 700; }
+[data-uimin="1"] .ui-restore { display: block; }
+[data-uimin="1"] :is(.top, .pulse, .rail, .dock, .drawer, .minibox, .coach) { display: none !important; }
+.drawer .maxbtn:not(.inline) { position: absolute; top: 10px; right: 46px; }
+.drawer.max { width: min(960px, calc(100vw - 24px)) !important; max-height: calc(100vh - 100px); }
+/* Down the sides (wide screens): panel buttons in a column on the left with the mood panel beside them,
+   build tools in a column on the right, and panels open to the left of the tools. */
+@media (min-width: 861px) {
+  [data-menus="down"] .rail { flex-direction: column; }
+  [data-menus="down"] .pulse { left: 96px; }
+  [data-menus="down"] .coach { left: 96px; }
+  [data-menus="down"] .dock {
+    left: auto; right: 12px; bottom: auto; top: calc(max(12px, env(safe-area-inset-top)) + 84px); transform: none;
+    flex-direction: column; max-width: none; max-height: calc(100vh - 84px - 190px); overflow-y: auto;
+  }
+  [data-menus="down"] .dock { width: 96px; }
+  [data-menus="down"] .dock :is(.tools, .modes, .modebar, .hotbar) { flex-direction: column; overflow-x: hidden; width: 100%; }
+  [data-menus="down"] .dock :is(.modes button, .brush, .tool) { width: 100%; }
+  [data-menus="down"] .dock .mhint { display: none; }   /* the hint is also read out; there's no room for it in a column */
+  [data-menus="down"] .dock .csep { width: auto; height: 1px; margin: 4px; }
+  [data-menus="down"] .drawer { right: 118px; }
+  [data-menus="down"] .tool-tip { right: 118px; left: auto; }
+}
 
 /* Staff: vacancies, the staff list and the hire picker */
 .vacancy { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
@@ -808,3 +835,9 @@ details.staff li, .picklist li { display: flex; align-items: center; justify-con
 details.staff li small, .picklist li small { display: block; }
 .picklist { max-height: 50vh; overflow-y: auto; }
 .btn.small { padding: 4px 10px; font-size: .85em; min-height: 0; }
+/* The mood panel scrolls rather than growing up under the panel buttons on short screens (zoom scales the limit too). */
+@media (min-width: 861px) {
+  .pulse { max-height: calc(100vh - 215px); overflow-y: auto; }
+  [data-uisize="large"] .pulse { max-height: calc((100vh - 230px) / 1.2); }
+  [data-uisize="small"] .pulse { max-height: calc((100vh - 200px) / .85); }
+}

@@ -47,6 +47,9 @@ export const DEFAULTS = {
   musicVolume: 0.4,
   hand: 'off',            // off | right | left: thumb-friendly layout on phones
   keys: {},
+  uiSize: 'normal',       // small | normal | large: scales every panel, not just the text
+  menus: 'across',        // across (panel buttons in a row, tools along the bottom) | down (both in columns at the sides)
+  uiMin: false,           // interface hidden to see the whole map (U)
   lang: 'auto',           // auto | en | el               // remapped shortcut keys, by action        // stripes on info views as well as colour          // hide advanced systems: research, policy, the bank, zoning
 };
 
@@ -82,6 +85,9 @@ export function applyPrefs(p) {
   root.dataset.font = p.font;
   root.dataset.simple = p.simple ? '1' : '0';
   root.dataset.hand = p.hand;
+  root.dataset.uisize = p.uiSize;
+  root.dataset.menus = p.menus;
+  root.dataset.uimin = p.uiMin ? '1' : '0';
 }
 
 export const palette = (p) => PALETTES[p.colours].cols;

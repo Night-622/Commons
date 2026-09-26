@@ -85,6 +85,14 @@ const dict = {
 };
 
 const SEASON = { Spring: 'Άνοιξη', Summer: 'Καλοκαίρι', Autumn: 'Φθινόπωρο', Winter: 'Χειμώνας' };
+// Interface layout (1.10)
+Object.assign(dict, {
+  'Interface size': 'Μέγεθος διεπαφής', 'Small': 'Μικρό', 'Menus': 'Μενού', 'Across': 'Οριζόντια', 'Down the sides': 'Κάθετα στα πλάγια',
+  'Show interface': 'Εμφάνιση διεπαφής', 'Show the interface (U)': 'Εμφάνιση διεπαφής (U)', 'Hide the interface (U)': 'Απόκρυψη διεπαφής (U)',
+  'Hide the interface': 'Απόκρυψη διεπαφής', 'Make the panel bigger': 'Μεγαλύτερο πάνελ', 'Make the panel smaller': 'Μικρότερο πάνελ',
+  'Hide or show the interface': 'Απόκρυψη ή εμφάνιση διεπαφής', 'Interface hidden. Press U to show it.': 'Η διεπαφή κρύφτηκε. Πατήστε U για να εμφανιστεί.',
+  'Interface shown.': 'Η διεπαφή εμφανίστηκε.',
+});
 // Staff (1.10)
 Object.assign(dict, {
   'Hire someone': 'Πρόσληψη κατοίκου', 'Manage staff': 'Διαχείριση προσωπικού', 'Let go': 'Απόλυση', 'Hire': 'Πρόσληψη',

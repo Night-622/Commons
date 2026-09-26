@@ -221,3 +221,33 @@ test('staff: recruit and hire from a building’s panel', async ({ page }) => {
   }
   expect(clean(errors)).toEqual([]);
 });
+
+test('interface: sizes, menu directions, hiding and a bigger panel', async ({ page }) => {
+  const errors = await newGame(page);
+  const shot = (name) => process.env.SHOTS && page.screenshot({ path: `${process.env.SHOTS}/${name}.png` });
+  const setting = async (pref, val) => {
+    await page.locator('#btn-settings').click();
+    await page.locator('#modal [data-tab="interface"]').click();
+    await page.locator(`#modal [data-pref="${pref}"][data-val='"${val}"']`).click();
+    await closeModal(page);
+  };
+  let step = 0;
+  for (const [pref, val] of [['uiSize', 'large'], ['menus', 'down'], ['uiSize', 'small'], ['menus', 'across'], ['uiSize', 'normal']]) {
+    await setting(pref, val);
+    await expect(page.locator('html')).toHaveAttribute(`data-${pref.toLowerCase()}`, val);
+    const panel = ['people', 'stats', 'goals', 'news', 'region'][step++];   // a different one each time, since clicking an open one closes it
+    await page.locator(`#rail [data-panel="${panel}"]`).click();
+    await expect(page.locator('#drawer')).toBeVisible();
+    await shot(`${pref}-${val}`);
+  }
+  await page.locator('#drawer [data-max-drawer]').click();
+  await expect(page.locator('#drawer')).toHaveClass(/max/);
+  await shot('drawer-max');
+  await page.locator('#btn-min').click();
+  await expect(page.locator('#dock')).toBeHidden();
+  await expect(page.locator('#ui-restore')).toBeVisible();
+  await shot('ui-hidden');
+  await page.locator('#ui-restore').click();
+  await expect(page.locator('#dock')).toBeVisible();
+  expect(clean(errors)).toEqual([]);
+});

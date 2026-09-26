@@ -1577,6 +1577,7 @@ const KEY_ACTIONS = {
   board: { key: 'l', label: 'Leaderboards', run: () => showBoard() },
   settings: { key: ',', label: 'Settings', run: () => showSettings() },
   help: { key: '?', label: 'Help', run: () => showHelp() },
+  hideui: { key: 'u', label: 'Hide or show the interface', run: () => toggleUi() },
 };
 const FIXED_KEYS = new Set(['w', 'a', 's', 'd', '1', '2', '3', '4', '5', '6', '7', '+', '=', '-', '_', ' ', 'escape', 'enter', 'tab', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
 const keyFor = (id) => (prefs.keys?.[id] ?? KEY_ACTIONS[id].key);
@@ -1764,6 +1765,10 @@ $('btn-board').onclick = showBoard;
 $('btn-settings').onclick = showSettings;
 $('btn-account').onclick = () => showAccount();
 $('btn-help').onclick = showHelp;
+// Hide everything but the map (and a button to bring it back).
+function toggleUi() { setPref('uiMin', !prefs.uiMin); if (prefs.uiMin) closeDrawer(); announce(prefs.uiMin ? 'Interface hidden. Press U to show it.' : 'Interface shown.'); }
+$('btn-min').onclick = toggleUi;
+$('ui-restore').onclick = toggleUi;
 $('btn-undo').onclick = undo;
 // Right-click or long-press the undo button for the list of recent changes.
 $('btn-undo').oncontextmenu = (e) => { e.preventDefault(); showUndoList(); };
@@ -1996,6 +2001,14 @@ function renderDrawer() {
   box.innerHTML = html;
   box.classList.remove('hidden');
   box.dataset.mode = drawer;
+  box.classList.toggle('max', drawerMax);
+  const maxLabel = drawerMax ? 'Make the panel smaller' : 'Make the panel bigger';
+  const maxBtn = `<button class="iconbtn maxbtn" type="button" data-max-drawer aria-pressed="${drawerMax}" title="${maxLabel}" aria-label="${maxLabel}">${icon('i-full')}</button>`;
+  // Beside the close button: inside the panel's header when it has one, otherwise in the corner.
+  const headClose = box.querySelector('.phead [data-close-drawer]');
+  if (headClose) headClose.insertAdjacentHTML('beforebegin', maxBtn.replace('maxbtn', 'maxbtn inline'));
+  else box.insertAdjacentHTML('afterbegin', maxBtn);
+  box.querySelector('[data-max-drawer]').onclick = () => { drawerMax = !drawerMax; renderDrawer(); };
   for (const [id, v] of kept) { const el = box.querySelector(`#${CSS.escape(id)}`); if (el && id !== 'chat-text' && id !== 'people-q' && v) el.value = v; }
   for (const [id, t, ok] of msgs) { const el = box.querySelector(`#${CSS.escape(id)}`); if (el && t) { el.textContent = t; el.classList.toggle('ok', ok); } }
   wireDrawer(box);
@@ -2009,7 +2022,7 @@ function renderDrawer() {
   }
 }
 
-let lastLikes = null, likeCache = '';
+let drawerMax = false, lastLikes = null, likeCache = '';
 async function loadLikes(id) {
   try {
     const { count, mine } = await fb.likes(world.id, id, user.uid);
@@ -2716,6 +2729,8 @@ function showSettings() {
       ${tgl('patterns', 'Stripes on info views', 'Traffic, mood, services, noise and land value show stripes as well as colour: more stripes, stronger')}
       ${tgl('shapes', 'Shape badges on buildings', 'Circle homes, square work, triangle shops, diamond education, star leisure, hexagon services')}`,
     interface: `<div class="srow"><span>Language</span>${seg('lang', languages)}</div>
+      <div class="srow"><span>Interface size</span>${seg('uiSize', [['small', 'Small'], ['normal', 'Normal'], ['large', 'Large']])}</div>
+      <div class="srow"><span>Menus</span>${seg('menus', [['across', 'Across'], ['down', 'Down the sides']])}</div>
       <p class="soft small">Menus, buttons and panels are translated; news items and tips are still in English for now.</p>
       <div class="srow"><span>Text and interface size</span>${seg('textSize', [[1, 'Normal'], [1.15, 'Large'], [1.3, 'Larger'], [1.5, 'Largest']])}</div>
       <div class="srow"><span>Font</span>${seg('font', [['standard', 'Standard'], ['readable', 'Easy to read']])}</div>
