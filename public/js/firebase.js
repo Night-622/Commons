@@ -259,6 +259,28 @@ export function listenDeals(world, uid, cb) {
 }
 export const finishDeal = (world, id) => deleteDoc(doc(db, 'worlds', world, 'deals', id));
 
+// ---------- city shares ----------
+// worlds/{w}/stocks/{plotId}: a listed city: how many of its shares were put up (float) and how many are still unsold.
+export const listStock = (world, plotId, user, city, float) =>
+  setDoc(doc(db, 'worlds', world, 'stocks', plotId), { owner: user.uid, city, float, available: float, createdAt: serverTimestamp() });
+export function listenStocks(world, cb) {
+  return onSnapshot(query(collection(db, 'worlds', world, 'stocks'), limit(100)), (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), (e) => console.error('Stocks', e));
+}
+// Buying takes shares off the counter (delta < 0); selling puts them back. A transaction, so two buyers can't take the same ones.
+export async function tradeStock(world, plotId, delta) {
+  const ref = doc(db, 'worlds', world, 'stocks', plotId);
+  return runTransaction(db, async (tx) => {
+    const st = await tx.get(ref);
+    if (!st.exists()) throw new Error('That city isn’t listed any more.');
+    const available = st.data().available + delta;
+    if (available < 0) throw new Error(`Only ${st.data().available} shares are for sale.`);
+    if (available > st.data().float) throw new Error('The exchange can’t take back more shares than were listed.');
+    tx.update(ref, { available });
+    return available;
+  });
+}
+export const delistStock = (world, plotId) => deleteDoc(doc(db, 'worlds', world, 'stocks', plotId));
+
 // ---------- private messages ----------
 // dms/{pair}/messages: a conversation between two players (pair = both uids, sorted, joined with _).
 // inbox/{uid}/threads/{other}: one line per conversation, so you hear about new messages without listening to them all.

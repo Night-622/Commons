@@ -6,7 +6,7 @@ import {
   LINK_MOOD, MAX_LINKS, HISTORY_DAYS, LOG_SIZE, EVENT_CHANCE, CHUNK, CHUNKS, START_CHUNKS, LAND_PRICE, LAND_STEP,
   MOVE_FEE, ADULT, RETIRE, WAGE, isHome, walkable, BUS_SEATS, COMMUTE_JOBS, TICK_MS, isRoad, isRail, POLICY, WANT_REWARD,
   GOODS_PER_FACTORY, SEASONS, SEASON_DAYS, YEAR_DAYS, UTILITY_POP, DECISIONS, ELECTION_EVERY, ZONES, ZONE_COST,
-  MAT_PER_COST, MAT_BUY, HARVEST, COMPANIES, SHARE_FEE, TRADE_RES, MARKET, RES, FOOD, USE, STORE_BASE, SURPLUS_SALE, MATERIALS_BOOST, MATERIALS_PER_WORK, PLOT_BUY_PARCELS, PLOT_BUY_STEP, PLOT_BUY_MIN, BUILD_SPEED, RECRUIT_COST, FIRED_DAYS, ADULT_STUDY_YEARS, TRAINING_YEARS, EDU, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
+  MAT_PER_COST, MAT_BUY, HARVEST, EXCHANGE, PER_CAPITA, STOCK, TRADE_RES, MARKET, RES, FOOD, USE, STORE_BASE, SURPLUS_SALE, MATERIALS_BOOST, MATERIALS_PER_WORK, PLOT_BUY_PARCELS, PLOT_BUY_STEP, PLOT_BUY_MIN, BUILD_SPEED, RECRUIT_COST, FIRED_DAYS, ADULT_STUDY_YEARS, TRAINING_YEARS, EDU, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
 } from './constants.js';
 
 const N = PLOT * PLOT;
@@ -140,6 +140,8 @@ export function migrate(s, rng = Math.random) {
   s.graves = s.graves || 0;
   s.cases = s.cases || 0;
   if (Array.isArray(s.people) && Array.isArray(s.people[0])) s.people = s.people.map(unpack);
+  // 1.16 had made-up companies to invest in; 1.17 replaced them with city shares. Give back what was paid.
+  if (s.shares) { s.money += Object.values(s.shares).reduce((a, h) => a + (h.paid || 0), 0); delete s.shares; }
   if (!s.policy) s.policy = { tax: 1, funding: 1, freeTransit: false };
   if (![0, 1, 2].includes(s.policy.property)) s.policy.property = 0;
   s.policy.insured = !!s.policy.insured;
@@ -209,6 +211,9 @@ export function summary(s) {
     money: Math.floor(s.money), day: s.day, status: s.status, cityNo: s.cityNo, offer: offer(s),
     season: s.flags?.season?.m || '', growth: s.people.length - (s.flags?.season?.pop ?? s.people.length),
     green: Math.round(greenShare(s) * 100) / 100, air: s.stats?.air ?? 1, riders: s.stats?.riders || 0, tourists: s.stats?.tourists || 0,
+    res: Object.fromEntries(TRADE_RES.map((k) => [k, Math.floor(s.res?.[k] || 0)])),
+    bld: s.grid.reduce((a, t, i) => a + (B[t]?.cat && s.cond[i] > 0 ? 1 : 0), 0),
+    listed: s.listed?.float || 0,
   };
   out.badges = s.status === 'alive' ? BADGES.filter((b) => b.test(out)).map((b) => b.id) : [];
   s._badges = out.badges.length;
@@ -308,47 +313,91 @@ function resourcesDay(s, uc) {
   for (const k of FOOD) res[k] = inStock ? res[k] - eat * (res[k] / inStock) : 0;
   const variety = FOOD.filter((k) => prod[k] > 0 || res[k] >= 1).length;
   // Imported food: the cheapest kinds first would be dull, so an even mix.
-  const imported = Math.round(need.food - eat), avg = FOOD.reduce((a, k) => a + RES[k].import, 0) / FOOD.length;
+  const band = (k) => clamp(priceOf(s, k), RES[k].import * EXCHANGE.importBand[0], RES[k].import * EXCHANGE.importBand[1]);
+  const imported = Math.round(need.food - eat), avg = FOOD.reduce((a, k) => a + band(k), 0) / FOOD.length;
   const importCost = Math.round(imported * avg);
   let sold = 0;
   for (const k of [...FOOD, 'materials']) {
-    if (res[k] > cap) { sold += (res[k] - cap) * RES[k].import * SURPLUS_SALE; res[k] = cap; }
+    if (res[k] > cap) { sold += (res[k] - cap) * priceOf(s, k) * SURPLUS_SALE; res[k] = cap; }
     res[k] = Math.round(res[k] * 10) / 10;
   }
   return { prod, need, short, imported, importCost, sold: Math.round(sold), variety, cap };
 }
-// ---------- the stock exchange ----------
-// A share price is smooth noise over the world's days: slow waves, medium ones and a daily wobble. Anyone
-// working it out for the same company and day gets the same price.
+// ---------- the exchange: resource prices and city shares ----------
+// Smooth noise over the world's days, the same for every player.
 const wave = (seed, x) => { const a = Math.floor(x), f = x - a, u = f * f * (3 - 2 * f); return h32(a, seed) * (1 - u) + h32(a + 1, seed) * u; };
-export function sharePrice(id, day) {
-  const c = COMPANIES.find((x) => x.id === id);
-  if (!c) return 0;
-  const seed = [...id].reduce((a, ch) => a * 31 + ch.charCodeAt(0), 7);
-  const n = wave(seed, day / 12) * 0.55 + wave(seed + 1, day / 4) * 0.3 + wave(seed + 2, day) * 0.15 - 0.5;
-  return Math.max(1, Math.round(c.base * Math.exp(c.vol * 2 * n) * 100) / 100);
+const seedOf = (id) => [...id].reduce((a, ch) => a * 31 + ch.charCodeAt(0), 7);
+// Today's demand for a resource: it swings a little from day to day, for everyone at once.
+export const demandOf = (k, day) => 1 + EXCHANGE.demandSwing * ((wave(seedOf(k), day / 3) * 0.7 + wave(seedOf(k) + 1, day) * 0.3) * 2 - 1);
+// Prices from the world: `cities` are plot summaries ({ pop, res }). Scarce things (few days of everyone's needs
+// in store) cost more, plentiful ones less; then today's demand.
+export function worldPrices(cities, day) {
+  const pop = cities.reduce((a, c) => a + (c.status === 'ruins' ? 0 : c.pop || 0), 0), out = {};
+  for (const k of TRADE_RES) {
+    const supply = cities.reduce((a, c) => a + (c.res?.[k] || 0), 0);
+    const cover = supply / Math.max(1, pop * PER_CAPITA[k]);
+    const scarcity = clamp(EXCHANGE.coverDays / Math.max(0.3, cover), 0.4, 3);
+    out[k] = Math.round(RES[k].import * Math.sqrt(scarcity) * demandOf(k, day) * 100) / 100;
+  }
+  return out;
 }
-export function buyShares(s, id, n, day) {
-  const p = sharePrice(id, day), cost = Math.round(p * n * (1 + SHARE_FEE) * 100) / 100;
-  if (!p || !(n >= 1)) return { ok: false, reason: 'No such company' };
+// The price a city uses today (the world's, once it knows it; the base import price until then).
+export const priceOf = (s, k) => s._prices?.[k] ?? RES[k].import;
+export function buyResource(s, k, n) {
+  if (!TRADE_RES.includes(k) || !(n >= 1)) return { ok: false, reason: 'That can’t be bought' };
+  const cost = Math.round(priceOf(s, k) * (1 + EXCHANGE.spread) * n * 100) / 100;
+  if (s.money < cost) return { ok: false, reason: `Needs $${Math.ceil(cost)}` };
+  s.money -= cost; s.res ||= {}; s.res[k] = (s.res[k] || 0) + n;
+  return { ok: true, cost };
+}
+export function sellResource(s, k, n) {
+  if (!TRADE_RES.includes(k) || !(n >= 1) || (s.res?.[k] || 0) < n) return { ok: false, reason: `You have ${Math.floor(s.res?.[k] || 0)} in store` };
+  const got = Math.round(priceOf(s, k) * (1 - EXCHANGE.spread) * n * 100) / 100;
+  s.res[k] -= n; s.money += got;
+  return { ok: true, got };
+}
+
+// What a city is worth, from the figures everyone can see; a share is a thousandth of it.
+export function cityValue(c) {
+  const res = TRADE_RES.reduce((a, k) => a + (c.res?.[k] || 0) * RES[k].import, 0);
+  if (c.status === 'ruins') return 0;
+  return Math.max(0, (c.pop || 0) * 60 + (c.peakPop || 0) * 10 + Math.max(0, c.money || 0) * 0.6 + (c.bld || 0) * 35 + res
+    + Math.max(0, c.growth || 0) * 40 + (c.happiness || 0) * (c.pop || 0) * 20);
+}
+export const sharePrice = (c) => Math.max(0.5, Math.round(cityValue(c) / STOCK.shares * 100) / 100);
+// Listing your city: sell some of its shares now, for cash.
+export function canList(s, n) {
+  if (s.listed) return { ok: false, reason: 'Already listed' };
+  if (s.people.length < STOCK.minPop) return { ok: false, reason: `Needs ${STOCK.minPop} people` };
+  if (!(Number.isInteger(n) && n >= STOCK.listMin && n <= STOCK.listMax)) return { ok: false, reason: `List between ${STOCK.listMin} and ${STOCK.listMax} shares` };
+  return { ok: true };
+}
+export function listCity(s, n) {
+  const r = canList(s, n);
+  if (!r.ok) return r;
+  const price = sharePrice(summary(s)), got = Math.round(n * price * STOCK.ipoDiscount);
+  s.listed = { float: n, at: s.day, price };
+  s.money += got;
+  return { ok: true, got, price };
+}
+// Shares you hold in other cities: s.holdings[plotId] = { n, paid, city }.
+export function buyCityShares(s, plotId, city, n, price) {
+  const cost = Math.round(n * price * (1 + STOCK.fee) * 100) / 100;
+  if (!(n >= 1)) return { ok: false, reason: 'How many?' };
   if (s.money < cost) return { ok: false, reason: `Needs $${Math.ceil(cost)}` };
   s.money -= cost;
-  const h = ((s.shares ||= {})[id] ||= { n: 0, paid: 0 });
-  h.n += n; h.paid += cost;
-  return { ok: true, cost, price: p };
+  const h = ((s.holdings ||= {})[plotId] ||= { n: 0, paid: 0, city });
+  h.n += n; h.paid += cost; h.city = city;
+  return { ok: true, cost };
 }
-export function sellShares(s, id, n, day) {
-  const h = s.shares?.[id];
-  if (!h || h.n < n || !(n >= 1)) return { ok: false, reason: 'You don’t have that many' };
-  const p = sharePrice(id, day), got = Math.round(p * n * (1 - SHARE_FEE) * 100) / 100;
-  h.paid = h.paid * (1 - n / h.n);
-  h.n -= n;
-  if (!h.n) delete s.shares[id];
+export function sellCityShares(s, plotId, n, price) {
+  const h = s.holdings?.[plotId];
+  if (!h || h.n < n || !(n >= 1)) return { ok: false, reason: 'You don’t hold that many' };
+  const got = Math.round(n * price * (1 - STOCK.fee) * 100) / 100;
+  h.paid *= 1 - n / h.n; h.n -= n;
+  if (!h.n) delete s.holdings[plotId];
   s.money += got;
-  return { ok: true, got, price: p };
-}
-export function portfolio(s, day) {
-  return Object.entries(s.shares || {}).reduce((a, [id, h]) => a + h.n * sharePrice(id, day), 0);
+  return { ok: true, got };
 }
 
 // ---------- the market: escrow, deliveries and debts ----------
@@ -1745,12 +1794,6 @@ function daily(s, plan, rng) {
   for (const d of s.debts || []) if (s.day > d.due) d.late = (d.late || 0) + 1;
   for (const p of s.people) if (p.oc && s.day >= p.oc) { p.oc = 0; remember(s, p, 'Came back from a job in another city'); }
   if (s.contracts) s.contracts = s.contracts.filter((k) => k.until > s.day);
-  // Dividends from shares, at today's prices.
-  if (s.shares) {
-    const wd = cityDay(s);
-    const div = Math.round(Object.entries(s.shares).reduce((a, [id, h]) => a + h.n * sharePrice(id, wd) * (COMPANIES.find((c) => c.id === id)?.yield || 0), 0));
-    if (div) { st.income += div; st.byClass = { ...st.byClass, dividends: div }; }
-  }
   const rs = resourcesDay(s, uc);
   st.res = rs;
   if (rs.importCost) { st.upkeep += rs.importCost; st.upkeepBy = { ...st.upkeepBy, imports: rs.importCost }; }

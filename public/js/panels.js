@@ -1,14 +1,14 @@
 // HTML for the side drawer and the build catalogue. Pure functions: main.js supplies data and wires up buttons.
-import { REGIONAL, ALLIANCE_TRADE, REACTIONS, T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY, BONDS, INSURANCE, TECH, ERAS, TRAITS, CARBON_TAX, LOANS, LOAN_DAYS, CONGESTION_FEE, BADGES, RES, FOOD, TECH_BRANCHES, STORE_BASE, TRADE_RES, MARKET, USE, COMPANIES, SHARE_FEE } from './constants.js';
+import { REGIONAL, ALLIANCE_TRADE, REACTIONS, T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY, BONDS, INSURANCE, TECH, ERAS, TRAITS, CARBON_TAX, LOANS, LOAN_DAYS, CONGESTION_FEE, BADGES, RES, FOOD, TECH_BRANCHES, STORE_BASE, TRADE_RES, MARKET, USE, EXCHANGE, STOCK } from './constants.js';
 import { t as tr } from './i18n.js';
-import { creditRating, greenShare, traitOf, hasTech, canResearch, eraOf, resourceStock, matCost, sharePrice, portfolio } from './sim.js';
+import { creditRating, greenShare, traitOf, hasTech, canResearch, eraOf, resourceStock, matCost } from './sim.js';
 import { ROLES, roleOf, jobText, family, healthText, moodReasons, thought, personName } from './people.js';
 
 // The market: open offers from other cities, a form to post your own, and what you owe or are owed.
 export function marketPanel(ctx) {
   const { offers, mine, s, tab, kind, debts, loansOut, stock } = ctx;
   const nm = (k) => RES[k]?.name.toLowerCase() || k, each = (p) => `$${(+p).toFixed(2)}`;
-  const tabs = [['offers', `Offers ${offers.length ? offers.length : ''}`], ['post', 'Post'], ['yours', 'Yours'], ['shares', 'Shares']];
+  const tabs = [['exchange', 'Exchange'], ['shares', 'Cities'], ['offers', `Offers ${offers.length ? offers.length : ''}`], ['post', 'Post'], ['yours', 'Yours']];
   const offerLine = (o) => {
     if (o.kind === 'sell') return [`<b>${esc(o.city)}</b> sells ${o.qty} ${nm(o.res)} at ${each(o.price)} each`, `Buy for ${money(o.total)}`, s.money >= o.total];
     if (o.kind === 'buy') return [`<b>${esc(o.city)}</b> wants ${o.qty} ${nm(o.res)}, paying ${each(o.price)} each`, `Sell for ${money(o.total)}`, (stock[o.res] || 0) >= o.qty];
@@ -16,16 +16,28 @@ export function marketPanel(ctx) {
     return [`<b>${esc(o.city)}</b> asks to borrow ${money(o.total)}, repaying ${money(o.repay)} within ${o.days} days`, `Lend ${money(o.total)}`, s.money >= o.total];
   };
   let body = '';
-  if (tab === 'shares') {
-    const day = ctx.day, held = s.shares || {}, value = portfolio(s, day);
-    const spark = (id) => { const ps = Array.from({ length: 15 }, (_, k) => sharePrice(id, day - 14 + k)), lo = Math.min(...ps), hi = Math.max(...ps);
-      return `<svg class="spark" viewBox="0 0 70 20" aria-hidden="true"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="${ps.map((p, k) => `${k * 5},${18 - ((p - lo) / Math.max(0.01, hi - lo)) * 16}`).join(' ')}"/></svg>`; };
-    body = `<p class="soft small">Buy shares with your city’s money. Prices move every day, the same for everyone; most companies pay a dividend each day. Brokers take ${Math.round(SHARE_FEE * 100)}% of every trade.</p>
-      <div class="grid2"><div class="kv"><span>Your shares are worth</span><b class="num">${money(value)}</b></div><div class="kv"><span>You paid</span><b class="num">${money(Object.values(held).reduce((a, h) => a + h.paid, 0))}</b></div></div>
-      <ul class="picklist shares">${COMPANIES.map((c) => { const p = sharePrice(c.id, day), y = sharePrice(c.id, day - 1), ch = (p - y) / y, h = held[c.id];
-        return `<li><span><b>${c.name}</b> <b class="num">$${p.toFixed(2)}</b> <small class="${ch >= 0 ? 'good-t' : 'warn'}">${ch >= 0 ? '▲' : '▼'} ${Math.abs(ch * 100).toFixed(1)}%</small>
-            <small class="soft">${c.text}${c.yield ? ` Dividend ${(c.yield * 100).toFixed(1)}% a day.` : ''}${h ? ` You own ${h.n}, worth ${money(h.n * p)}.` : ''}</small></span>
-          <span class="inline">${spark(c.id)}<button class="btn small" type="button" data-buy-shares="${c.id}|10" ${s.money >= p * 10 * (1 + SHARE_FEE) ? '' : 'disabled'}>Buy 10</button>${h ? `<button class="btn small" type="button" data-sell-shares="${c.id}|${h.n}">Sell all</button>` : ''}</span></li>`; }).join('')}</ul>`;
+  if (tab === 'exchange') {
+    const { prices, yday } = ctx;
+    body = `<p class="soft small">Buy and sell resources at today’s prices. Prices rise when something is scarce across the world and fall when there’s plenty; demand also swings from day to day. The exchange buys ${Math.round(EXCHANGE.spread * 100)}% under the price and sells ${Math.round(EXCHANGE.spread * 100)}% over it.</p>
+      <div class="tablewrap"><table class="restable"><thead><tr><th>Resource</th><th>Price</th><th>Today</th><th>You have</th><th></th></tr></thead><tbody>
+      ${TRADE_RES.map((k) => { const p = prices[k] ?? RES[k].import, ch = yday[k] ? (p - yday[k]) / yday[k] : 0;
+        return `<tr><th scope="row">${RES[k].name}</th><td class="num">$${p.toFixed(2)}</td><td class="${ch >= 0 ? 'good-t' : 'warn'}">${ch >= 0 ? '▲' : '▼'}${Math.abs(ch * 100).toFixed(0)}%</td><td class="num">${Math.floor(stock[k] || 0)}</td>
+          <td><span class="inline"><button class="btn small" type="button" data-buy-res="${k}|50" ${s.money >= p * 50 * (1 + EXCHANGE.spread) ? '' : 'disabled'}>Buy 50</button><button class="btn small" type="button" data-sell-res="${k}|50" ${(stock[k] || 0) >= 50 ? '' : 'disabled'}>Sell 50</button></span></td></tr>`; }).join('')}
+      </tbody></table></div>
+      <p class="soft small">Cheaper to grow food and make materials yourself? Or to buy them? It changes with the market: that’s the game.</p>`;
+  } else if (tab === 'shares') {
+    const { cities, listing, canList: cl } = ctx;
+    body = `<p class="soft small">Invest in other mayors’ cities. A share is worth a thousandth of the city: its people, money, buildings, resources, growth and mood. When the city grows, your shares are worth more; if it falls, they’re worth almost nothing. The exchange takes ${Math.round(STOCK.fee * 100)}% of each trade.</p>
+      ${cities.length ? `<ul class="picklist shares">${cities.map((c) => `<li><span><b translate="no">${esc(c.city)}</b> <b class="num">$${c.price.toFixed(2)}</b>
+          <small class="soft">Mayor ${esc(c.mayor)}; ${c.pop} people${c.growth ? `, ${c.growth > 0 ? '+' : ''}${c.growth} this month` : ''}. ${c.available} of ${c.float} shares for sale.${c.held ? ` You hold ${c.held.n}, worth ${money(c.held.n * c.price)} (paid ${money(c.held.paid)}).` : ''}</small></span>
+          <span class="inline"><button class="btn small" type="button" data-buy-city="${c.id}|10" ${c.available >= 10 && s.money >= c.price * 10 * (1 + STOCK.fee) ? '' : 'disabled'}>Buy 10</button>${c.held ? `<button class="btn small" type="button" data-sell-city="${c.id}|${c.held.n}">Sell all</button>` : ''}</span></li>`).join('')}</ul>`
+        : '<p class="soft">No cities are listed yet. Be the first: list yours below.</p>'}
+      <h3 class="sub">Your city on the exchange</h3>
+      ${listing ? `<p>${esc(s.name)} is listed: ${listing.available ?? '?'} of ${s.listed.float} shares still for sale at $${ctx.myPrice.toFixed(2)}. Grow the city and its shares are worth more to the mayors who bought them.</p>
+          ${listing.available === s.listed.float ? '<div class="actions"><button class="btn" type="button" data-delist>Take it off the exchange</button></div>' : ''}`
+        : cl.ok ? `<p class="soft small">Raise money now by selling part of your city: up to ${STOCK.listMax} of its ${STOCK.shares} shares, at $${ctx.myPrice.toFixed(2)} each (less ${Math.round((1 - STOCK.ipoDiscount) * 100)}%). You keep control.</p>
+          <form id="list-form" class="inline"><input name="float" type="number" min="${STOCK.listMin}" max="${STOCK.listMax}" step="10" value="200" aria-label="Shares to list"><button class="btn primary" type="submit">List my city</button></form>`
+        : `<p class="soft small">${s.listed ? '' : `Once ${esc(s.name)} has ${STOCK.minPop} people you can list it and raise money by selling some of its shares.`}</p>`}`;
   } else if (tab === 'offers') {
     body = offers.length ? `<ul class="picklist market">${offers.map((o) => { const [text, act, ok] = offerLine(o);
       return `<li><span>${text}<small class="soft">Mayor ${esc(o.ownerName)}</small></span><button class="btn small ${ok ? 'primary' : ''}" type="button" data-take="${o.id}" ${ok ? '' : 'disabled'}>${act}</button></li>`; }).join('')}</ul>`

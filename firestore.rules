@@ -198,6 +198,23 @@ service cloud.firestore {
       allow delete: if signedIn() && resource.data.toOwner == me();
     }
 
+    // City shares: a listed city's counter of shares for sale. Only its owner lists it (up to 490 of 1,000 shares);
+    // buying and selling only move the counter, between none and what was listed; it can be closed once every share is back.
+    match /worlds/{worldId}/stocks/{plotId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['owner', 'city', 'float', 'available', 'createdAt'])
+        && request.resource.data.owner == me() && get(docPath('plots', plotId)).data.owner == me()
+        && request.resource.data.float is int && request.resource.data.float >= 50 && request.resource.data.float <= 490
+        && request.resource.data.available == request.resource.data.float
+        && request.resource.data.city is string && request.resource.data.city.size() <= 40
+        && request.resource.data.createdAt == request.time;
+      allow update: if signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['available'])
+        && request.resource.data.available is int && request.resource.data.available >= 0 && request.resource.data.available <= resource.data.float;
+      allow delete: if signedIn() && resource.data.owner == me() && resource.data.available == resource.data.float;
+    }
+
     // Private messages between two players; the pair id is both uids, sorted, joined with _.
     match /dms/{pair}/messages/{msgId} {
       allow read: if signedIn() && me() in pair.split('_');

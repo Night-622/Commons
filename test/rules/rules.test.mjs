@@ -497,3 +497,19 @@ test('market: labour contracts are a kind of offer', async () => {
   await a.fb.postOffer(w.id, id, { kind: 'labour', res: null, qty: 3, price: 4, total: 60, days: 5, edu: 1, owner: a.uid, ownerName: 'Ana', plot: pa.id, city: 'A' });
   await b.fb.takeOffer(w.id, id, b.user, pb.id, 'Ben', { kind: 'labour', fromName: 'B', toOwner: a.uid, toPlot: pa.id, money: 60, res: null, qty: 0 });
 });
+
+test('city shares: only the owner lists; trades only move the counter within bounds; delist when all are back', async () => {
+  const a = await player(), b = await player();
+  const w = await newWorld(a);
+  const pa = await a.fb.claimPlot(a.user, 'Ana', 'A', w.id);
+  await assertFails(b.fb.listStock(w.id, pa.id, b.user, 'A', 200));   // not Ben's city
+  await assertFails(a.fb.listStock(w.id, pa.id, a.user, 'A', 900));   // more than 490
+  await a.fb.listStock(w.id, pa.id, a.user, 'A', 200);
+  assert.equal(await b.fb.tradeStock(w.id, pa.id, -30), 170);
+  await assert.rejects(b.fb.tradeStock(w.id, pa.id, -500), /Only 170/);
+  await assertFails(updateDoc(doc(b.db, 'worlds', w.id, 'stocks', pa.id), { available: 999 }));
+  await assertFails(updateDoc(doc(b.db, 'worlds', w.id, 'stocks', pa.id), { float: 490 }));
+  await assertFails(a.fb.delistStock(w.id, pa.id));   // Ben still holds 30
+  assert.equal(await b.fb.tradeStock(w.id, pa.id, 30), 200);
+  await a.fb.delistStock(w.id, pa.id);
+});

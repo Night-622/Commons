@@ -506,16 +506,47 @@ test('free camera with a built-up town', async ({ page }) => {
   expect(clean(errors)).toEqual([]);
 });
 
-test('stock exchange: buy and sell shares', async ({ page }) => {
+test('exchange: buy and sell resources at today’s price', async ({ page }) => {
   const errors = await newGame(page);
   await page.locator('#rail [data-panel="market"]').click();
-  await page.locator('#drawer [data-mtab="shares"]').click();
-  await expect(page.locator('#drawer .shares li')).toHaveCount(5);
-  await page.locator('#drawer [data-buy-shares^="rail"]').click();
-  await expect(page.locator('#toasts')).toContainText('Bought 10 Commons Rail shares');
-  await expect(page.locator('#drawer')).toContainText('You own 10');
-  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/shares.png` });
-  await page.locator('#drawer [data-sell-shares^="rail"]').click();
-  await expect(page.locator('#toasts')).toContainText('Sold 10 Commons Rail shares');
+  await expect(page.locator('#drawer .restable')).toContainText('Vegetables');
+  await page.locator('#drawer [data-buy-res="materials|50"]').click();
+  await expect(page.locator('#toasts')).toContainText('Bought 50 building materials');
+  await page.locator('#drawer [data-sell-res="materials|50"]').click();
+  await expect(page.locator('#toasts')).toContainText('Sold 50 building materials');
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/exchange.png` });
   expect(clean(errors)).toEqual([]);
+});
+
+test('city shares: one mayor lists her city, another invests', async ({ browser }) => {
+  test.setTimeout(120_000);
+  const ctx = await browser.newContext();
+  const a = await ctx.newPage();
+  const errors = await newGame(a);
+  // Mona's town has grown to 46 people (enough to list).
+  await a.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plotState/')) { const s = JSON.parse(v.state); for (let n = 0; n < 40; n++) s.people.push([...s.people[0].slice(0, 0), 700 + n, ...s.people[0].slice(1)]); v.state = JSON.stringify(s); } db.user = null; localStorage.setItem('fakefb', JSON.stringify(db)); });
+  await a.reload();
+  await expect(a.locator('#game')).toBeVisible();
+  await closeModal(a);
+  await a.locator('#rail [data-panel="market"]').click();
+  await a.locator('#drawer [data-mtab="shares"]').click();
+  await a.locator('#list-form input').fill('200');
+  await a.locator('#list-form button').click();
+  await expect(a.locator('#toasts')).toContainText('is on the exchange. You raised');
+  const b = await ctx.newPage();
+  errors.push(...await watch(b));
+  await b.addInitScript(() => { try { localStorage.setItem('commons-seen-help', '1'); } catch { /* ignore */ } });
+  await found(b, { mayor: 'Nia', city: 'Nextdoor' });
+  await closeModal(b);
+  await b.locator('#rail [data-panel="market"]').click();
+  await b.locator('#drawer [data-mtab="shares"]').click();
+  await expect(b.locator('#drawer .shares')).toContainText('Testhaven');
+  await b.locator('#drawer [data-buy-city]').first().click();
+  await expect(b.locator('#toasts')).toContainText('Bought 10 shares in Testhaven');
+  await expect(b.locator('#drawer')).toContainText('190 of 200 shares for sale');
+  if (process.env.SHOTS) await b.screenshot({ path: `${process.env.SHOTS}/city-shares.png` });
+  await b.locator('#drawer [data-sell-city]').first().click();
+  await expect(b.locator('#toasts')).toContainText('Sold 10 shares in Testhaven');
+  expect(clean(errors)).toEqual([]);
+  await ctx.close();
 });

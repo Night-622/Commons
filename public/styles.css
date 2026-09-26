@@ -887,3 +887,7 @@ details.staff li small, .picklist li small { display: block; }
   [data-uisize="large"] :is(.top, .pulse, .rail, .dock, .drawer, .minibox, .catalog, .toasts, .coach, .ui-restore) { zoom: 1.1; }
   [data-uisize="large"] .pulse { max-height: calc((100vh - 250px) / 1.1); }
 }
+/* Tab rows scroll sideways rather than cut off their last tab */
+.drawer .seg.tabs { overflow-x: auto; scrollbar-width: none; }
+.drawer .seg.tabs::-webkit-scrollbar { display: none; }
+.drawer .seg.tabs button { flex: none; }

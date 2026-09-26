@@ -195,6 +195,16 @@ export async function sendDM(u, myName, other, otherName, text) {
 export const listenThreads = (uid, cb) => listen(() => cb(under(`inbox/${uid}/threads`).map((t) => ({ ...t, uid: t.id })).sort((a, b) => b.at.toMillis() - a.at.toMillis())));
 export const listenDM = (me, other, cb) => listen(() => cb(under(`dms/${dmPair(me, other)}/messages`).sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis())));
 export const markRead = async (uid, other) => { merge(`inbox/${uid}/threads/${other}`, { unread: false }); persist(); };
+export async function listStock(world, plotId, u, city, float) { set(`worlds/${world}/stocks/${plotId}`, { owner: u.uid, city, float, available: float, createdAt: now() }); persist(); }
+export const listenStocks = (world, cb) => listen(() => cb(under(`worlds/${world}/stocks`)));
+export async function tradeStock(world, plotId, delta) {
+  const st = get(`worlds/${world}/stocks/${plotId}`);
+  if (!st) throw new Error('That city isn’t listed any more.');
+  if (st.available + delta < 0) throw new Error(`Only ${st.available} shares are for sale.`);
+  if (st.available + delta > st.float) throw new Error('The exchange can’t take back more shares than were listed.');
+  st.available += delta; persist(); return st.available;
+}
+export async function delistStock(world, plotId) { del(`worlds/${world}/stocks/${plotId}`); persist(); }
 export const usingLegacySaves = () => false;
 export async function savePlot(id, state, extra = {}) {
   await tick();

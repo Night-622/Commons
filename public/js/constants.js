@@ -241,16 +241,15 @@ export const RES = {
 export const FOOD = ['veg', 'fruit', 'dairy', 'meat'];
 // The market: offers to sell or buy resources, and loan requests, open to every mayor in the world.
 export const TRADE_RES = ['veg', 'fruit', 'dairy', 'meat', 'materials'];
-// The stock exchange: companies whose share prices move with the world's calendar, the same for every player.
-// vol: how much the price swings; yield: the share of the price paid out as a dividend each day.
-export const COMPANIES = [
-  { id: 'rail', name: 'Commons Rail', base: 60, vol: 0.25, yield: 0.004, text: 'Steady. Trains run whatever the weather.' },
-  { id: 'power', name: 'Frontier Power', base: 40, vol: 0.35, yield: 0.006, text: 'A utility: good dividends, gentle swings.' },
-  { id: 'harvest', name: 'Harvest & Co', base: 25, vol: 0.45, yield: 0.004, text: 'Farms and orchards. Rises and falls with the seasons.' },
-  { id: 'bricks', name: 'Brick & Timber', base: 30, vol: 0.5, yield: 0.003, text: 'Builders’ supplies. Booms and busts.' },
-  { id: 'tech', name: 'Skyline Tech', base: 15, vol: 0.9, yield: 0, text: 'A start-up: no dividend, wild swings.' },
-];
-export const SHARE_FEE = 0.01;   // brokers take 1% of every trade
+// The exchange. A resource's price follows how scarce it is across the whole world (days of everyone's needs
+// in store) and a demand that swings from day to day, the same for every player. The exchange buys and sells
+// at that price, less or plus `spread`; automatic food imports pay it too, within `importBand` of the base.
+export const EXCHANGE = { spread: 0.08, importBand: [0.6, 1.6], coverDays: 3, demandSwing: 0.35 };
+export const PER_CAPITA = { veg: 0.25, fruit: 0.25, dairy: 0.25, meat: 0.25, materials: 0.3 };   // a day, per person, worldwide
+// City shares. Every city is worth what its public figures say (people, money, buildings, resources, growth,
+// mood) and has `shares` shares. A mayor can list between listMin and listMax of them once the city has minPop
+// people, and is paid for them at once (less ipoDiscount); others then buy and sell them on the exchange.
+export const STOCK = { shares: 1000, listMin: 50, listMax: 490, minPop: 40, ipoDiscount: 0.95, fee: 0.01 };
 export const MARKET = { maxQty: 5000, maxPrice: 50, maxLoan: 20000, maxLoanDays: 30, maxOpen: 6 };
 export const USE = { water: 1, power: 0.5, food: 1, powerPerBuilding: 1 };   // a day, per person (and per staffed building for power)
 export const STORE_BASE = 200;          // of each resource, before warehouses

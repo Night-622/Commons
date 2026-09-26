@@ -536,23 +536,40 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(!sim.harvestReady(s, farm), 'and starts again');
   console.log('materials prices and harvests ok: harvest gave', r.got.veg, 'veg');
 }
-// ---- the stock exchange
+// ---- the exchange: resource prices from scarcity and demand, and city shares
 {
-  const p1 = sim.sharePrice('rail', 100), p2 = sim.sharePrice('rail', 100);
-  assert.equal(p1, p2, 'everyone sees the same price on the same day');
-  const days = Array.from({ length: 60 }, (_, d) => sim.sharePrice('tech', d));
-  assert(Math.max(...days) > Math.min(...days) * 1.3, 'tech swings');
-  assert(days.every((p) => p >= 1), 'prices stay positive');
-  const s = sim.newCity('Broker', rng); s.money = 10000;
-  const b = sim.buyShares(s, 'power', 20, 5);
-  assert(b.ok && s.shares.power.n === 20 && s.money < 10000, 'buying');
-  assert(!sim.buyShares(s, 'power', 1e6, 5).ok, 'not with money you haven’t got');
-  const before = s.money;
-  for (let h = 0; h < 24; h++) sim.tick(s, rng);
-  assert(s.stats.byClass.dividends > 0, 'dividends are paid');
-  const r = sim.sellShares(s, 'power', 20, 6);
-  assert(r.ok && !s.shares.power, 'selling all of them');
-  assert(!sim.sellShares(s, 'power', 1, 6).ok);
-  console.log('stock exchange ok: power', b.price, '->', r.price, 'money', Math.round(before), '->', Math.round(s.money));
+  const cities = (veg) => [{ pop: 100, res: { veg, fruit: 0, dairy: 0, meat: 0, materials: 0 } }];
+  const scarce = sim.worldPrices(cities(0), 50).veg, plenty = sim.worldPrices(cities(5000), 50).veg;
+  assert(scarce > plenty, `scarce vegetables cost more: ${scarce} vs ${plenty}`);
+  assert.deepEqual(sim.worldPrices(cities(100), 50), sim.worldPrices(cities(100), 50), 'the same for everyone on the same day');
+  const days = Array.from({ length: 40 }, (_, d) => sim.worldPrices(cities(100), d).veg);
+  assert(Math.max(...days) > Math.min(...days) * 1.2, 'demand moves prices from day to day');
+  const s = sim.newCity('Trader', rng); s.money = 5000; s._prices = sim.worldPrices(cities(0), 50);
+  assert(sim.buyResource(s, 'veg', 100).ok && s.res.veg === 100, 'buying from the exchange');
+  const m = s.money;
+  assert(sim.sellResource(s, 'veg', 100).ok && s.money > m && s.money < m + 100 * s._prices.veg, 'selling back, less the spread');
+  assert(!sim.sellResource(s, 'veg', 1).ok, 'not what you haven’t got');
+  // City shares: worth what the city is.
+  const small = { pop: 20, peakPop: 20, money: 500, bld: 5, happiness: 0.6, growth: 0 };
+  const big = { pop: 300, peakPop: 320, money: 8000, bld: 90, happiness: 0.7, growth: 40, res: { materials: 200 } };
+  assert(sim.sharePrice(big) > sim.sharePrice(small) * 5, 'a big city’s shares are worth more');
+  assert.equal(sim.sharePrice({ ...big, status: 'ruins' }), 0.5, 'a fallen city’s shares are worth almost nothing');
+  const buyer = sim.newCity('Investor', rng); buyer.money = 10000;
+  const p = sim.sharePrice(big);
+  assert(sim.buyCityShares(buyer, 'x_1_1', 'Big', 20, p).ok && buyer.holdings.x_1_1.n === 20);
+  assert(sim.sellCityShares(buyer, 'x_1_1', 20, p * 1.5).ok && !buyer.holdings.x_1_1, 'selling after the city grew');
+  assert(buyer.money > 10000, 'and made money');
+  // Listing needs a real town, and pays out at once.
+  const town = sim.newCity('Listed', rng);
+  assert(!sim.canList(town, 100).ok, 'too small to list');
+  for (let k = 0; k < 40; k++) town.people.push({ ...town.people[0], i: 900 + k });
+  const before = town.money, r = sim.listCity(town, 200);
+  assert(r.ok && town.money > before && town.listed.float === 200, 'listing raises money');
+  assert(!sim.listCity(town, 100).ok, 'once');
+  // Old company shares from 1.16 are refunded.
+  const old = JSON.parse(sim.serialize(sim.newCity('Old', rng))); old.shares = { rail: { n: 10, paid: 600 } }; const m0 = old.money;
+  sim.migrate(old);
+  assert(!old.shares && old.money === m0 + 600, 'refunded');
+  console.log('exchange ok: veg scarce', scarce, 'plenty', plenty, '; share small', sim.sharePrice(small), 'big', p);
 }
 console.log('all tests passed');

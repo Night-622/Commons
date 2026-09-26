@@ -3,7 +3,7 @@ import {
   T, B, PLOT, TICK_MS, MAX_OFFLINE_DAYS, HOURS_PER_DAY, SAVE_EVERY_MS, RUBBLE_CLEAR_COST, MAX_LEVEL, LEVEL, UPGRADABLE,
   REBUILD_MONEY, MOVE_KEEP, TUTORIAL_REWARD, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome, DECISIONS, ZONES, ZONE_COST,
   LOAN_DAYS, HISTORIC_DAYS, BADGES, REGIONAL, REGIONAL_SHARE, ALLIANCE_TRADE, DAILY, DAILY_REWARD, WEEKLY, WEEKLY_REWARD, GIFT_LIMITS, REACTIONS,
-  RES, FOOD, USE, HARVEST, MARKET, COMPANIES, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
+  RES, FOOD, USE, HARVEST, MARKET, STOCK, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
 } from './constants.js';
 import { Renderer, STRIDE, thumbnail, modelHeight } from './render.js';
 import { loadPrefs, savePrefs, applyPrefs, resolvedTheme, palette, PALETTES } from './prefs.js';
@@ -272,7 +272,7 @@ async function enter(u, openId = null) {
   worldUnsub?.(); movesUnsub?.(); worldUnsub = movesUnsub = null;
   chatUnsub?.(); chatUnsub = null; giftsUnsub?.(); giftsUnsub = null; worldNews = [];
   projUnsub?.(); allyUnsub?.(); allyChatUnsub?.(); projUnsub = allyUnsub = allyChatUnsub = null; projects = []; alliances = []; allyChat = []; allyChatFor = null;
-  marketUnsub?.(); myOffersUnsub?.(); dealsUnsub?.(); marketUnsub = myOffersUnsub = dealsUnsub = null; offers = []; myOffers = [];
+  marketUnsub?.(); myOffersUnsub?.(); dealsUnsub?.(); stocksUnsub?.(); marketUnsub = myOffersUnsub = dealsUnsub = stocksUnsub = null; offers = []; myOffers = []; stocks = new Map();
   threadsUnsub?.(); dmUnsub?.(); threadsUnsub = dmUnsub = null; threads = []; dmWith = null;
   clearTimeout(liveTimer); clearTimeout(saveTimer); clearTimeout(retryTimer);
   tut.stop();
@@ -386,6 +386,7 @@ function toPlot(d) {
     pop: d.pop || 0, peakPop: d.peakPop || 0, day: d.day || 0, happiness: d.happiness || 0, cityNo: d.cityNo || 1,
     grid: m.grid, cond: m.cond, lv: m.lv, land: m.land, uc: m.uc, terr: m.terr || terrCache(d.id, d.px, d.py), queueMap: new Map(), version: meta.version, mine: meta.mine,
     owner: d.owner, out: d.out || {}, offer: d.offer, active: meta.version, co: d.co || [], growth: d.growth || 0, season: d.season || '',
+    res: d.res || {}, bld: d.bld || 0, listed: d.listed || 0,
     flag: d.flag, badges: d.badges || [], green: d.green ?? 1, riders: d.riders || 0, tourists: d.tourists || 0, money: d.money || 0,
   };
 }
@@ -434,6 +435,7 @@ function startLive() {
     liveTimer = setTimeout(() => {
       if (!state || !me) return;
       computeLinks();
+      refreshPrices();
       refreshDerived();
       drawMinimap();
       updateHud();
@@ -626,9 +628,18 @@ function wireDM(box) {
 }
 
 // ---------- the market ----------
-let offers = [], myOffers = [], marketUnsub = null, myOffersUnsub = null, dealsUnsub = null, marketTab = 'offers', marketKind = 'sell';
+let offers = [], myOffers = [], marketUnsub = null, myOffersUnsub = null, dealsUnsub = null, marketTab = 'exchange', marketKind = 'sell';
+let stocks = new Map(), stocksUnsub = null;
+// Everyone's public figures, for prices and share values (your own city from the live state).
+const worldCities = () => [...plots.values()].map((p) => (p.id === plotId ? { ...sim.summary(state), id: p.id } : p));
+function refreshPrices() {
+  if (!state) return;
+  state._prices = sim.worldPrices(worldCities(), sim.worldDay());
+}
 const RES_NAME = (k) => RES[k]?.name.toLowerCase() || k;
 function startMarket() {
+  stocksUnsub = fb.listenStocks(world.id, (list) => { stocks = new Map(list.map((x) => [x.id, x])); if (drawer === 'market') refreshDrawer(); });
+  refreshPrices();
   marketUnsub = fb.listenOffers(world.id, (list) => { offers = list; if (drawer === 'market') refreshDrawer(); });
   // My offers: once one is taken and its deal has arrived, or cancelled and given back, tidy it off the board.
   myOffersUnsub = fb.listenMyOffers(world.id, user.uid, (list) => {
@@ -709,16 +720,44 @@ async function postOffer(form) {
   play('coin'); notify('Your offer is on the market.', 'act'); afterChange(); marketTab = 'yours';
 }
 function marketCtx() {
-  return { day: sim.worldDay(), offers: offers.filter((o) => o.owner !== user.uid), mine: myOffers.filter((o) => o.status === 'open'), s: state, tab: marketTab, kind: marketKind,
+  refreshPrices();
+  const cities = [...stocks.values()].filter((st) => st.id !== plotId && plots.get(st.id)).map((st) => { const p = plots.get(st.id);
+    return { id: st.id, city: p.name, mayor: p.ownerName, pop: p.pop, growth: p.season === new Date().toISOString().slice(0, 7) ? p.growth : 0, price: sim.sharePrice(p), available: st.available, float: st.float, held: state.holdings?.[st.id] }; })
+    .sort((a, b) => b.price - a.price);
+  // Shares you still hold in cities that were taken off the exchange or left the world show too, so you can see them.
+  return { day: sim.worldDay(), prices: state._prices || {}, yday: sim.worldPrices(worldCities(), sim.worldDay() - 1), cities,
+    listing: state.listed ? stocks.get(plotId) || {} : null, canList: sim.canList(state, STOCK.listMin), myPrice: sim.sharePrice(sim.summary(state)), offers: offers.filter((o) => o.owner !== user.uid), mine: myOffers.filter((o) => o.status === 'open'), s: state, tab: marketTab, kind: marketKind,
     debts: state.debts || [], loansOut: state.loansOut || [], money: state.money, stock: sim.resourceStock(state) };
 }
 function wireMarket(box) {
-  const trade = (b, fn, verb) => { const [id, n] = b.dataset[fn === sim.buyShares ? 'buyShares' : 'sellShares'].split('|');
-    const r = fn(state, id, +n, sim.worldDay());
-    if (!r.ok) { notify(r.reason + '.', 'act'); play('error'); return; }
-    play('coin'); notify(`${verb} ${n} ${COMPANIES.find((c) => c.id === id).name} shares for ${money(r.cost ?? r.got)}.`, 'act'); afterChange(); save(); };
-  box.querySelectorAll('[data-buy-shares]').forEach((b) => { b.onclick = () => trade(b, sim.buyShares, 'Bought'); });
-  box.querySelectorAll('[data-sell-shares]').forEach((b) => { b.onclick = () => trade(b, sim.sellShares, 'Sold'); });
+  const done = (r, text) => { if (!r.ok) { notify(r.reason + '.', 'act'); play('error'); return false; } play('coin'); notify(text, 'act'); afterChange(); save(); return true; };
+  box.querySelectorAll('[data-buy-res]').forEach((b) => { b.onclick = () => { const [k, n] = b.dataset.buyRes.split('|'); const r = sim.buyResource(state, k, +n); done(r, `Bought ${n} ${RES[k].name.toLowerCase()} for ${money(r.cost)}.`); }; });
+  box.querySelectorAll('[data-sell-res]').forEach((b) => { b.onclick = () => { const [k, n] = b.dataset.sellRes.split('|'); const r = sim.sellResource(state, k, +n); done(r, `Sold ${n} ${RES[k].name.toLowerCase()} for ${money(r.got)}.`); }; });
+  box.querySelectorAll('[data-buy-city]').forEach((b) => { b.onclick = () => busy(b, async () => {
+    const [id, n] = b.dataset.buyCity.split('|'), p = plots.get(id), price = sim.sharePrice(p);
+    if (state.money < price * +n * (1 + STOCK.fee)) throw new Error(`Needs ${money(price * +n * (1 + STOCK.fee))}.`);
+    await fb.tradeStock(world.id, id, -n);
+    done(sim.buyCityShares(state, id, p.name, +n, price), `Bought ${n} shares in ${p.name} at $${price.toFixed(2)}.`);
+  }, $('mk-msg')); });
+  box.querySelectorAll('[data-sell-city]').forEach((b) => { b.onclick = () => busy(b, async () => {
+    const [id, n] = b.dataset.sellCity.split('|'), p = plots.get(id), price = p ? sim.sharePrice(p) : 0.5;
+    await fb.tradeStock(world.id, id, +n);
+    const r = sim.sellCityShares(state, id, +n, price);
+    done(r, `Sold ${n} shares in ${p?.name || 'that city'} for ${money(r.got)}.`);
+  }, $('mk-msg')); });
+  const lf = box.querySelector('#list-form');
+  if (lf) lf.onsubmit = (e) => { e.preventDefault(); busy(lf.querySelector('button'), async () => {
+    const n = Math.round(+new FormData(lf).get('float')), c = sim.canList(state, n);
+    if (!c.ok) throw new Error(c.reason + '.');
+    await fb.listStock(world.id, plotId, user, state.name.slice(0, 40), n);
+    const r = sim.listCity(state, n);
+    done(r, `${state.name} is on the exchange. You raised ${money(r.got)} for ${n} shares.`);
+  }, $('mk-msg')); };
+  box.querySelector('[data-delist]')?.addEventListener('click', () => busy(box.querySelector('[data-delist]'), async () => {
+    await fb.delistStock(world.id, plotId);
+    delete state.listed;
+    done({ ok: true }, `${state.name} is off the exchange.`);
+  }, $('mk-msg')));
   box.querySelectorAll('[data-mtab]').forEach((b) => { b.onclick = () => { marketTab = b.dataset.mtab; renderDrawer(); }; });
   box.querySelector('#mk-kind')?.addEventListener('change', (e) => { marketKind = e.target.value; renderDrawer(); });
   box.querySelectorAll('[data-take]').forEach((b) => { b.onclick = () => busy(b, async () => { const o = offers.find((x) => x.id === b.dataset.take); if (o) await acceptOffer(o); }, $('mk-msg')); });
