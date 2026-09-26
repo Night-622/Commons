@@ -53,7 +53,7 @@ const STEPS = [
   { title: 'Your next step', text: 'This line always says what to do next, with a Show me button. Your town hall grows by itself as the city does: Goals shows what the next level needs, and each level lets you buy more land and store more.', target: '#hint' },
   { title: 'Research', text: 'City stats, Research: spend research points on high schools, universities, the Market, city shares, farming and more. Your town hall earns some every day.', target: '[data-panel="stats"]' },
   { title: 'Talk to your neighbours', text: 'Chat reaches everyone in this world. Link roads with a neighbour for trade and a mood boost.', target: '[data-panel="chat"]' },
-  { title: 'Your account', text: 'Account has your lifetime stats and 27 achievements to unlock.', target: '#btn-account' },
+  { title: 'Your account', text: 'Account has your lifetime stats and achievements to unlock.', target: '#btn-account' },
   { title: 'You’re ready', text: `Here’s $${TUTORIAL_REWARD} to keep going. You can replay this tour from Help.` },
 ];
 

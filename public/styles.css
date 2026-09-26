@@ -862,6 +862,9 @@ html:not([lang="en"]) .card b { font-size: .95em; }
 
 .hint .step-label { display: block; font-size: .72em; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--soft); margin-bottom: 2px; }
 
+.needlist { list-style: none; padding: 0; margin: 6px 0; display: grid; gap: 6px; }
+.needlist li { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+
 /* Shares and alliance rankings */
 .spark { width: 70px; height: 20px; color: var(--soft); flex: none; }
 .picklist.shares li { align-items: flex-start; }
@@ -907,3 +910,7 @@ details.staff li small, .picklist li small { display: block; }
 .drawer .seg.tabs { overflow-x: auto; scrollbar-width: none; }
 .drawer .seg.tabs::-webkit-scrollbar { display: none; }
 .drawer .seg.tabs button { flex: none; }
+/* Panel buttons in groups: your city, other players, the market */
+.rail .rsep { width: 1px; align-self: stretch; margin: 6px 2px; background: var(--line); }
+[data-menus="down"] .rail .rsep { width: auto; height: 1px; margin: 2px 6px; }
+@media (max-width: 860px) { .rail .rsep { display: none; } }

@@ -39,6 +39,10 @@ export function syncLife(profile, s, plotId) {
 
 const count = (s, ...types) => s.grid.reduce((a, t, i) => a + (types.includes(t) && s.cond[i] > 0 ? 1 : 0), 0);
 export const ACHIEVEMENTS = [
+  { id: 'neighbour', name: 'Good neighbour', text: 'Link roads or rail with 3 neighbouring cities', test: ({ s }) => (s.links || 0) + (s.railLinks || 0) >= 3, goal: 3, of: ({ s }) => (s.links || 0) + (s.railLinks || 0) },
+  { id: 'trader', name: 'Trader', text: 'Make 10 deals with other mayors', test: ({ s }) => (s.counters.deals || 0) >= 10, goal: 10, of: ({ s }) => s.counters.deals || 0 },
+  { id: 'allied', name: 'Allied', text: 'Be in an alliance', test: ({ s }) => !!s.flags?.ally, goal: 1, of: ({ s }) => (s.flags?.ally ? 1 : 0) },
+  { id: 'investor', name: 'Investor', text: 'Hold shares in 3 other cities', test: ({ s }) => Object.keys(s.holdings || {}).length >= 3, goal: 3, of: ({ s }) => Object.keys(s.holdings || {}).length },
   { id: 'ground', name: 'Break ground', text: 'Build anything', test: ({ life }) => life.built >= 1, goal: 1, of: ({ life }) => life.built },
   { id: 'hood', name: 'Neighbourhood', text: 'Have 10 homes in one city', test: ({ s }) => count(s, T.HOUSE, T.APARTMENT, T.VILLA) >= 10, goal: 10, of: ({ s }) => count(s, T.HOUSE, T.APARTMENT, T.VILLA) },
   { id: 'town', name: 'Town', text: 'Reach 50 residents', test: ({ life }) => life.peakPop >= 50, goal: 50, of: ({ life }) => life.peakPop },

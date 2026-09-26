@@ -532,7 +532,7 @@ function giveGift(p) {
     const amt = Math.floor(+$('gift-amt').value);
     if (!(amt >= 10) || amt > Math.min(1000, left)) throw new Error(`Choose between $10 and ${money(Math.min(1000, left))}.`);
     await fb.sendGift(world.id, { from: plotId, fromName: state.name.slice(0, 40), fromOwner: user.uid, to: p.id, toOwner: p.owner, amount: amt, note: $('gift-note').value.trim().slice(0, 120) });
-    state.money -= amt; state.flags.giftOut += amt;
+    state.money -= amt; state.flags.giftOut += amt; state.counters.gifts = (state.counters.gifts || 0) + 1;
     sim.note(state, 'info', `Sent $${amt} to ${p.name}.`);
     closeModal(); play('coin'); notify(`Sent ${money(amt)} to ${p.name}.`, 'act'); afterChange();
   }, $('gift-msg'));
@@ -683,6 +683,7 @@ function startMarket() {
       // A deal can show up again before its removal lands (or after a reload): the city remembers the ones it has applied.
       if (!firstTime(d.id)) { fb.finishDeal(world.id, d.id).catch(() => {}); continue; }
       const e = sim.release(state, d.offer, true);
+      if (d.kind !== 'repay') state.counters.deals = (state.counters.deals || 0) + 1;
       if (d.kind === 'sell') { sim.receive(state, { money: d.money }); notify(`${d.fromName} bought your ${RES_NAME(e?.res)} for ${money(d.money)}.`, 'good'); }
       else if (d.kind === 'buy') { sim.receive(state, { res: d.res, qty: d.qty }); notify(`${d.fromName} delivered ${d.qty} ${RES_NAME(d.res)}.`, 'good'); }
       else if (d.kind === 'loan') {
@@ -722,6 +723,7 @@ async function acceptOffer(o) {
   if (o.kind === 'loan' || o.kind === 'labour') { if (state.money < o.total) throw new Error(`Needs ${money(o.total)}.`); deal.money = o.total; }
   await fb.takeOffer(world.id, o.id, user, plotId, state.name.slice(0, 40), deal);
   state.counters.traded = (state.counters.traded || 0) + 1;
+  state.counters.deals = (state.counters.deals || 0) + 1;
   if (o.kind === 'sell') { state.money -= o.total; sim.receive(state, { res: o.res, qty: o.qty }); notify(`Bought ${o.qty} ${RES_NAME(o.res)} from ${o.city}.`, 'good'); }
   if (o.kind === 'buy') { state.res[o.res] -= o.qty; state.money += o.total; notify(`Sold ${o.qty} ${RES_NAME(o.res)} to ${o.city} for ${money(o.total)}.`, 'good'); }
   if (o.kind === 'labour') { state.money -= o.total; sim.hireCrew(state, { n: o.qty, e: o.edu || 0, days: o.days || 1, from: o.city }); notify(`${o.qty} workers from ${o.city} start today, for ${o.days} days.`, 'good'); }
@@ -1206,6 +1208,7 @@ function drainFinished() {
 const pathCtx = () => ({ alliance: !!myAlliance(), cities: myCities().length || 1 });
 const isOpen = (f) => !state || sim.unlocked(state, f);
 function checkGoals() {
+  state.flags.ally = !!myAlliance(); state.flags.friends = friends().length;   // for the goals you reach with neighbours
   if (!watching) { const lv = sim.checkHall(state, pathCtx()); if (lv) showHallUp(lv); }
   const got = sim.checkGoals(state, totalsNow || sim.totals(state));
   if (got.length) {
@@ -2005,7 +2008,7 @@ function frame(now) {
     const wx = sim.weather(sim.worldDay());
     if (dirty || worldTrains.length || agentsByPlot.size || pops.length || pulseTile || pulseTileMove || wx === 'rain' || wx === 'snow') {
       renderer.draw({
-        plots, free: freePlots(), ready: readyTiles(), hover: hv, cursor, selected, overlay, traffic: plan, worldTrains, info: infoTiles(), agentsByPlot, pops, prefs, bridges, pulseTile: pulseTile || pulseTileMove,
+        plots, wild: wildPlots(), free: freePlots(), ready: readyTiles(), hover: hv, cursor, selected, overlay, traffic: plan, worldTrains, info: infoTiles(), agentsByPlot, pops, prefs, bridges, pulseTile: pulseTile || pulseTileMove,
         showLand: mode === 'build', landPrice: state ? sim.landPrice(state) : 0, season: sim.season(sim.worldDay()), weather: sim.weather(sim.worldDay()),
         theme: resolvedTheme(prefs), palette: palette(prefs), paletteKey: prefs.colours, shapes: prefs.shapes, nightAmt: nightAmt(),
       });
@@ -2370,7 +2373,7 @@ function renderDrawer() {
     if (!p) { drawer = 'people'; return renderDrawer(); }
     const agent = trips.agents(plotId).find((a) => a.p === p.i);
     html = panels.personCard(state, plan, p, whereabouts(state, plan, p, clockNow(), agent), favs().has(p.i));
-  } else if (drawer === 'goals') html = panels.goalsPanel(state, state.status === 'alive' ? daily() : null, sim.hallState(state, pathCtx()));
+  } else if (drawer === 'goals') html = panels.goalsPanel(state, state.status === 'alive' ? daily() : null, sim.hallState(state, pathCtx()), state.status === 'alive' ? sim.advice(state, plan).slice(0, 4) : []);
   else if (drawer === 'people') html = panels.peoplePanel(state, plan, peopleFilter, peopleQuery, favs());
   else if (drawer === 'stats') html = panels.statsPanel({ state, totals: totalsNow || sim.totals(state), plan, census: sim.census(state) }, statsTab);
   else if (drawer === 'news') html = panels.newsPanel(state, unseenFrom(), { tab: newsTab, inbox: [...inbox].reverse(), plan, forecast: [1, 2, 3].map((k) => sim.weather(sim.worldDay() + k)) });
@@ -2417,6 +2420,7 @@ async function loadLikes(id) {
 function wireDrawer(box) {
   box.querySelectorAll('[data-close-drawer]').forEach((b) => { b.onclick = closeDrawer; });
   box.querySelectorAll('[data-do]').forEach((b) => { b.onclick = () => inspectorAction(b.dataset.do, b.dataset.arg); });
+  box.querySelectorAll('[data-build-type]').forEach((b) => { b.onclick = () => buildGo(+b.dataset.buildType)(); });
   box.querySelectorAll('[data-filter]').forEach((b) => { b.onclick = () => { peopleFilter = b.dataset.filter; renderDrawer(); }; });
   box.querySelectorAll('[data-stats-tab]').forEach((b) => { b.onclick = () => { statsTab = b.dataset.statsTab; renderDrawer(); }; });
   if (drawer === 'region') wireRegion(box);
@@ -2752,6 +2756,24 @@ function ownTile(i) {
 // Your council's cities in this world.
 const myCities = () => [...plots.values()].filter((p) => p.owner === user?.uid);
 // Unclaimed plots touching one of your cities: drawn with a dashed border so you can see what you could buy.
+// Unclaimed plots around the cities, drawn as the land they are (terrain and trees), so the world has no gaps.
+const wildCache = new Map();
+function wildPlots() {
+  if (!plots.size) return [];
+  const bd = renderer.bounds(), all = [...plots.values()];
+  const minX = Math.min(...all.map((p) => p.px)) - 2, maxX = Math.max(...all.map((p) => p.px)) + 2, minY = Math.min(...all.map((p) => p.py)) - 2, maxY = Math.max(...all.map((p) => p.py)) + 2;
+  const out = [];
+  for (let py = Math.max(minY, Math.floor(bd.y0 / STRIDE)); py <= Math.min(maxY, Math.floor(bd.y1 / STRIDE)); py++) {
+    for (let px = Math.max(minX, Math.floor(bd.x0 / STRIDE)); px <= Math.min(maxX, Math.floor(bd.x1 / STRIDE)); px++) {
+      if (plotAt(px, py) || out.length >= 80) continue;
+      const key = `${world.id}|${px}|${py}`;
+      if (!wildCache.has(key)) wildCache.set(key, { id: `wild_${px}_${py}`, px, py, wild: true, status: 'wild', version: 'wild', name: '', grid: new Array(PLOT * PLOT).fill(T.EMPTY), cond: [], lv: null,
+        land: new Array(CHUNKS * CHUNKS).fill(0), uc: new Set(), queueMap: new Map(), terr: sim.terrainFor(px, py, world.id), mine: false, out: {}, co: [] });
+      out.push(wildCache.get(key));
+    }
+  }
+  return out;
+}
 function readyTiles() {
   if (!state?.ready || !me) return [];
   return Object.entries(state.ready).filter(([i, h]) => h >= HARVEST.min && state.grid[i]).map(([i, h]) => ({ px: me.px, py: me.py, ...sim.xy(+i), full: h >= HARVEST.max }));
@@ -2927,11 +2949,13 @@ function showHelp() {
 const VERSION = 'Commons 1.17';
 const CHANGELOG = [
   ['1.17', [
-    'Your path: seven chapters from a handful of settlers to a metropolis, in Goals. Each teaches one idea, pays a reward and unlocks more of the game, with a card saying what it’s for and why it matters now.',
-    'Features open as you grow: research, the Market, city shares and the Region, then more cities and co-mayors. Tap a locked one to see which chapter opens it. Cities that were already big start further along.',
-    'Real trading. The Exchange: buy and sell resources at prices set by the whole world, higher when something is scarce and swinging with demand from day to day. Food bought in automatically follows these prices too.',
-    'City shares replace the made-up companies (anything you’d bought is refunded). List your city to raise money now, or invest in other mayors’ cities: a share is worth a thousandth of the city, so it rises and falls with it.',
-    'New tutorial steps for your resources, harvests and your path.',
+    'Your town hall is your city’s size: Settlement, Village, Town, Large town, City, Large city, Metropolis. It grows by itself once you have the people, the objectives and the resources, and each level lets you buy more land, store more and research faster.',
+    'A Next step line under your mood always says what to do, with a Show me button. Goals shows what the next level needs and what your city needs right now.',
+    'The technology tree now opens the game: high schools and universities, the Market, city shares, the Region and the internet. Your town hall earns research every day. Locked things say exactly what opens them.',
+    'Real trading: the Exchange buys and sells resources at prices set by the whole world, higher when something is scarce, swinging with demand. City shares replace the made-up companies (refunded): list your city to raise money, or invest in others.',
+    'Neighbours: new goals and achievements for making friends, sending gifts, linking roads, trading and allying.',
+    'The map: the land between cities is real countryside now, and each city’s border follows the land it owns. Grass has texture.',
+    'Tapping the map now always acts on the ground tile you tap, not a tall building drawn over it. The free 3D view has been removed.',
   ]],
   ['1.16', [
     'The stock exchange: Market, Shares. Five companies whose prices move every day, the same for every player. Buy low, sell high, and collect a dividend every day from most of them.',

@@ -344,6 +344,12 @@ export const GOALS = [
   { id: 'days10', text: 'Keep your city running 10 days', reward: 500 },
   { id: 'pop100', text: 'Reach 100 people', reward: 800 },
   { id: 'days30', text: 'Keep your city running 30 days', reward: 1500 },
+  // With neighbours
+  { id: 'friend1', text: 'Make a friend of a neighbouring mayor', reward: 150 },
+  { id: 'gift1', text: 'Send a gift to a neighbour', reward: 150 },
+  { id: 'link1', text: 'Link a road or railway with a neighbour', reward: 400 },
+  { id: 'deal1', text: 'Trade with another mayor', reward: 300 },
+  { id: 'ally1', text: 'Join or found an alliance', reward: 400 },
 ];
 
 // Policies the mayor can set. Tax raises income but lowers mood; funding scales every service.

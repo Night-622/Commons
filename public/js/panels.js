@@ -126,11 +126,15 @@ export function hallHtml(hs) {
     <p class="small">A ${esc(n.name.toLowerCase())} can buy up to ${n.land} parcels of land (now ${cur.land}), stores ${n.store - cur.store} more of everything, earns ${n.rp} research a day and has a bigger hall with more builders.${n.res && Object.keys(n.res).length ? ' The upgrade uses the resources.' : ''}</p>
     ${strip}</div>`;
 }
-export function goalsPanel(state, daily, hs) {
+export function goalsPanel(state, daily, hs, needs = []) {
   const done = state.goalsDone.length;
   const wants = (state.wants || []).map((w) => ({ ...w, p: state.people.find((x) => x.i === w.p) })).filter((w) => w.p);
   return `${head('Goals', `<span class="soft num fill">${done} of ${GOALS.length}</span>`)}
     ${hs ? hallHtml(hs) : ''}
+    <h3 class="sub">${icon('i-alert')}What your city needs</h3>
+    ${needs.length ? `<ul class="needlist">${needs.map((n) => `<li><span>${esc(n.text)}</span>${n.type != null ? `<button class="btn small" type="button" data-build-type="${n.type}">Show me</button>` : ''}</li>`).join('')}</ul>`
+      : '<p class="soft small">Nothing pressing. Keep growing.</p>'}
+    <p class="soft small">Check any time: the bars under Mood show each need (hover or tap for what fixes it), and City stats, Services shows every building’s reach.</p>
     ${daily ? `<div class="weekly"><h3 class="sub">${icon('i-flag')}Today’s challenge</h3><p><b>${esc(daily.text)}</b></p>
       ${bar('Daily challenge', daily.got / daily.n)}<p class="soft small">${daily.got} of ${daily.n}. A new one each day.</p>
       ${daily.claimed ? '<p class="good-t small">Done for today. Come back tomorrow.</p>' : daily.done ? `<button class="btn primary" type="button" id="daily-claim">Collect ${money(200)}</button>` : ''}</div>` : ''}

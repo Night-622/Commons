@@ -92,7 +92,11 @@ Object.assign(dict, {
   'Buy 50': 'Αγορά 50', 'Sell 50': 'Πώληση 50', 'List my city': 'Εισαγωγή της πόλης μου', 'Your city on the exchange': 'Η πόλη σας στο χρηματιστήριο',
   'Take it off the exchange': 'Απόσυρση από το χρηματιστήριο', 'Settle in': 'Εγκατάσταση', 'Feed yourselves': 'Τροφή για όλους', 'Power up': 'Ενέργεια',
   'Open for trade': 'Ανοιχτοί στο εμπόριο', 'Invest and ally': 'Επενδύσεις και συμμαχίες', 'Build a council': 'Χτίστε δήμο', 'Metropolis': 'Μητρόπολη',
-  'Your resources': 'Οι πόροι σας', 'Your path': 'Η πορεία σας',
+  'Your resources': 'Οι πόροι σας', 'Your next step': 'Το επόμενο βήμα σας', 'Next step': 'Επόμενο βήμα', 'Needs attention': 'Χρειάζεται προσοχή', 'Show me': 'Δείξε μου',
+  'Settlement': 'Οικισμός', 'Village': 'Χωριό', 'Town': 'Κωμόπολη', 'Large town': 'Μεγάλη κωμόπολη', 'City': 'Πόλη', 'Large city': 'Μεγάλη πόλη',
+  'What your city needs': 'Τι χρειάζεται η πόλη σας', 'Nothing pressing. Keep growing.': 'Τίποτα επείγον. Συνεχίστε να μεγαλώνετε.',
+  'Open Research': 'Άνοιγμα έρευνας', 'See the town hall': 'Δείτε το δημαρχείο', 'See what’s next': 'Δείτε τι ακολουθεί',
+  'Education': 'Εκπαίδευση', 'Commerce': 'Εμπόριο', 'High schools': 'Λύκεια', 'Universities': 'Πανεπιστήμια', 'Trade': 'Εμπόριο', 'Finance': 'Χρηματοοικονομικά', 'Diplomacy': 'Διπλωματία', 'The internet': 'Το διαδίκτυο',
 });
 // Shares and rankings (1.16)
 Object.assign(dict, {

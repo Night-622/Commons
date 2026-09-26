@@ -180,7 +180,7 @@ export class Renderer {
     g.fillRect(0, 0, this.w, this.h);
 
     const bd = this.bounds();
-    const plots = [...scene.plots.values()]
+    const plots = [...scene.plots.values(), ...(scene.wild || [])]
       .filter((p) => p.px * STRIDE < bd.x1 && (p.px + 1) * STRIDE > bd.x0 && p.py * STRIDE < bd.y1 && (p.py + 1) * STRIDE > bd.y0)
       .sort((a, b) => (a.px + a.py) - (b.px + b.py) || a.px - b.px);
 
@@ -216,7 +216,7 @@ export class Renderer {
     this.night(g, scene);
     this.lights(g, scene);
     this.weatherFx(g, scene);
-    if (this.cam.z < 13) for (const plot of plots) this.label(g, plot);
+    if (this.cam.z < 13) for (const plot of plots) if (!plot.wild) this.label(g, plot);
     this.pops(g, scene);
   }
 
@@ -256,6 +256,16 @@ export class Renderer {
       g.globalAlpha = 0.5;
       for (let k = 0; k < PLOT; k += 2) poly(g, [P(k, 0), P(k + 1, 0), P(k + 1, PLOT), P(k, PLOT)], this.seasonTop ? shade(this.seasonTop, -0.03) : th.top2);
       g.globalAlpha = 1;
+    }
+    // Ground texture: patches of lighter and darker grass, so land isn't one flat colour.
+    if (z >= 5) {
+      const ps = (((plot.px * 73856093) ^ (plot.py * 19349663)) & 0xffff) * 577, base = this.seasonTop || th.top;
+      for (let i = 0; i < PLOT * PLOT; i++) {
+        const r = hash(i + ps, 41);
+        if (r > 0.4 || (plot.terr && plot.terr.charCodeAt(i) !== 48)) continue;
+        const tx = i % PLOT, ty = (i / PLOT) | 0;
+        poly(g, [P(tx, ty), P(tx + 1, ty), P(tx + 1, ty + 1), P(tx, ty + 1)], shade(base, r < 0.2 ? -0.035 : 0.03));
+      }
     }
     if (live && this.scene.prefs.grid && plot.mine) {
       g.strokeStyle = th.grid; g.lineWidth = 1; g.beginPath();
@@ -358,13 +368,14 @@ export class Renderer {
     }
     // Pass 2: objects, back to front along diagonals
     const agents = live ? this.scene.agentsByPlot?.get(plot.id) : null;
+    const ps = (((plot.px * 73856093) ^ (plot.py * 19349663)) & 0xffff) * 577;   // so neighbouring plots don't repeat the same trees
     for (let s = 0; s <= 2 * (PLOT - 1); s++) {
       for (let tx = Math.max(0, s - PLOT + 1); tx <= Math.min(s, PLOT - 1); tx++) {
         const ty = s - tx, i = ty * PLOT + tx, t = grid[i];
         if (B[t]?.cat || t === T.HALL || t === T.RUBBLE) this.object(g, P, plot, t, i, tx, ty, z, live);
-        else if (t === T.EMPTY && terr && terr.charCodeAt(i) === 49 && hash(i, 34) < 0.22 && z >= 6) this.tree(g, P, tx + 0.35 + hash(i, 35) * 0.3, ty + 0.35 + hash(i, 36) * 0.3, 0.3 + hash(i, 37) * 0.2, th.wildTree, z);
-        else if (t === T.EMPTY && (!terr || terr.charCodeAt(i) !== 50) && land && !land[Math.floor(ty / CHUNK) * CHUNKS + Math.floor(tx / CHUNK)] && hash(i, 9) < 0.28 && z >= 6) {
-          this.tree(g, P, tx + 0.3 + hash(i, 3) * 0.4, ty + 0.3 + hash(i, 4) * 0.4, 0.34 + hash(i, 5) * 0.22, th.wildTree, z);
+        else if (t === T.EMPTY && terr && terr.charCodeAt(i) === 49 && hash(i + ps, 34) < 0.22 && z >= 6) this.tree(g, P, tx + 0.35 + hash(i + ps, 35) * 0.3, ty + 0.35 + hash(i + ps, 36) * 0.3, 0.3 + hash(i + ps, 37) * 0.2, th.wildTree, z);
+        else if (t === T.EMPTY && (!terr || terr.charCodeAt(i) !== 50) && land && !land[Math.floor(ty / CHUNK) * CHUNKS + Math.floor(tx / CHUNK)] && hash(i + ps, 9) < 0.28 && z >= 6) {
+          this.tree(g, P, tx + 0.3 + hash(i + ps, 3) * 0.4, ty + 0.3 + hash(i + ps, 4) * 0.4, 0.34 + hash(i + ps, 5) * 0.22, th.wildTree, z);
         }
         if (agents && agents.has(i)) for (const a of agents.get(i)) this.agent(g, P, a);
       }
@@ -1180,8 +1191,27 @@ export class Renderer {
   }
 
   // ---------- overlays ----------
+  // A yellow line round the land a city owns: parcel by parcel, so it needn't be a square.
   plotBorder(g, plot) {
+    if (plot.wild) return;
     const ox = plot.px * STRIDE, oy = plot.py * STRIDE;
+    if (plot.land && !plot.free) {
+      const own = (x, y) => x >= 0 && y >= 0 && x < CHUNKS && y < CHUNKS && plot.land[y * CHUNKS + x];
+      g.strokeStyle = plot.mine ? 'rgba(255,201,51,0.95)' : 'rgba(255,201,51,0.65)';
+      g.lineWidth = Math.max(1, Math.min(3, this.cam.z / (plot.mine ? 8 : 12)));
+      g.beginPath();
+      const seg = (a, b, c, d) => { const p = this.project(ox + a, oy + b), q = this.project(ox + c, oy + d); g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]); };
+      for (let y = 0; y < CHUNKS; y++) for (let x = 0; x < CHUNKS; x++) {
+        if (!own(x, y)) continue;
+        const X = x * CHUNK, Y = y * CHUNK;
+        if (!own(x, y - 1)) seg(X, Y, X + CHUNK, Y);
+        if (!own(x, y + 1)) seg(X, Y + CHUNK, X + CHUNK, Y + CHUNK);
+        if (!own(x - 1, y)) seg(X, Y, X, Y + CHUNK);
+        if (!own(x + 1, y)) seg(X + CHUNK, Y, X + CHUNK, Y + CHUNK);
+      }
+      g.stroke();
+      return;
+    }
     const pts = [[0, 0], [PLOT, 0], [PLOT, PLOT], [0, PLOT]].map(([x, y]) => this.project(ox + x, oy + y));
     g.strokeStyle = plot.mine ? 'rgba(255,201,51,0.95)' : 'rgba(255,201,51,0.6)';
     g.lineWidth = Math.max(1, Math.min(3, this.cam.z / (plot.mine ? 8 : 12)));

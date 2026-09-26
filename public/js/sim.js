@@ -2224,6 +2224,8 @@ function randomEvent(s, rng, fire) {
 // ---------- goals ----------
 const count = (tot, ...types) => types.reduce((a, t) => a + (tot.counts[t] || 0), 0);
 const GOAL_TESTS = {
+  friend1: (s) => (s.flags.friends || 0) >= 1, gift1: (s) => (s.counters.gifts || 0) >= 1, link1: (s) => (s.links || 0) + (s.railLinks || 0) >= 1,
+  deal1: (s) => (s.counters.deals || 0) >= 1, ally1: (s) => !!s.flags.ally,
   roads10: (s, t) => count(t, T.ROAD) >= 10,
   houses3: (s, t) => count(t, T.HOUSE, T.APARTMENT, T.VILLA) >= 3,
   work1: (s, t) => count(t, T.WORK, T.FACTORY) >= 1,
