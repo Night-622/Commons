@@ -485,4 +485,29 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(s.res.veg <= s.stats.res.cap && s.stats.res.sold > 0, 'surplus food sells');
   console.log('resources ok:', JSON.stringify(s.stats.res.prod), 'imported', s.stats.res.imported, 'variety', s.stats.res.variety);
 }
+// ---- labour contracts between cities
+{
+  seed = 55;
+  const lender = sim.newCity('Lender', rng), hirer = sim.newCity('Hirer', rng);
+  for (const s of [lender, hirer]) { s.money = 20000; s.land.fill(1); for (let x = 4; x <= 20; x++) put(s, x, c + 1, T.ROAD); }
+  for (const x of [4, 6, 8, 10]) put(lender, x, c + 2, T.HOUSE);
+  put(hirer, 6, c + 2, T.FACTORY);
+  for (const s of [lender, hirer]) { for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = []; }
+  for (let h = 0; h < 48; h++) sim.tick(lender, rng);
+  const idle = sim.idleWorkers(lender).length;
+  assert(idle >= 2, 'the lender has jobless adults: ' + idle);
+  assert(sim.reserve(lender, 'lab1', 'labour', 0, 2, 3).ok, 'offering two workers');
+  assert(!sim.reserve(lender, 'lab2', 'labour', 0, 999, 3).ok, 'not more than you have');
+  const factory = sim.idx(6, c + 2);
+  const before = sim.staffing(hirer, factory);
+  sim.hireCrew(hirer, { n: 2, e: 0, days: 3, from: 'Lender' });
+  sim.plan(hirer, rng);
+  assert(sim.staffing(hirer, factory) > before, 'contract workers staff the factory');
+  assert.equal(sim.sendCrew(lender, 2, 0, 3), 2);
+  assert.equal(sim.idleWorkers(lender).length, idle - 2, 'those two are away working');
+  for (let d = 0; d < 4; d++) for (let h = 0; h < 24; h++) { sim.tick(lender, rng); sim.tick(hirer, rng); }
+  assert.equal((hirer.contracts || []).length, 0, 'the contract ends');
+  assert(lender.people.every((p) => !p.oc), 'and the workers come home');
+  console.log('labour contracts ok');
+}
 console.log('all tests passed');

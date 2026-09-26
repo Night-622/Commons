@@ -271,6 +271,7 @@ async function enter(u, openId = null) {
   chatUnsub?.(); chatUnsub = null; giftsUnsub?.(); giftsUnsub = null; worldNews = [];
   projUnsub?.(); allyUnsub?.(); allyChatUnsub?.(); projUnsub = allyUnsub = allyChatUnsub = null; projects = []; alliances = []; allyChat = []; allyChatFor = null;
   marketUnsub?.(); myOffersUnsub?.(); dealsUnsub?.(); marketUnsub = myOffersUnsub = dealsUnsub = null; offers = []; myOffers = [];
+  threadsUnsub?.(); dmUnsub?.(); threadsUnsub = dmUnsub = null; threads = []; dmWith = null;
   clearTimeout(liveTimer); clearTimeout(saveTimer); clearTimeout(retryTimer);
   tut.stop();
   closeDrawer(); closeCatalog();
@@ -346,6 +347,7 @@ async function startGame(doc) {
   startGifts();
   startRegion();
   startMarket();
+  startDMs();
   loadProfile();
   startDesk();
   if (innerWidth < 860) { $('pulse').classList.add('closed'); $('pulse-toggle').setAttribute('aria-expanded', 'false'); }
@@ -572,6 +574,41 @@ function firstTime(id) {
   return true;
 }
 
+// ---------- private messages ----------
+let threads = [], threadsUnsub = null, dmWith = null, dmMessages = [], dmUnsub = null;
+const dmUnread = () => threads.filter((t) => t.unread).length;
+function startDMs() {
+  threadsUnsub?.();
+  let first = true;
+  threadsUnsub = fb.listenThreads(user.uid, (list) => {
+    const before = new Set(threads.filter((t) => t.unread).map((t) => t.uid + t.last));
+    threads = list;
+    for (const t of list) if (t.unread && !first && !before.has(t.uid + t.last) && !(drawer === 'dm' && dmWith?.uid === t.uid)) { notify(`${t.name}: ${t.last}`, 'info'); play('tap'); }
+    first = false;
+    if (dmWith && drawer === 'dm' && list.some((t) => t.uid === dmWith.uid && t.unread)) fb.markRead(user.uid, dmWith.uid).catch(() => {});
+    updateHud();
+    if (drawer === 'dm' || drawer === 'chat') refreshDrawer();
+  });
+}
+function openDM(uid, name) {
+  if (uid === user.uid) return;
+  dmWith = { uid, name: String(name || 'A mayor').slice(0, 24) };
+  dmUnsub?.();
+  dmMessages = [];
+  dmUnsub = fb.listenDM(user.uid, uid, (msgs) => { dmMessages = msgs; if (drawer === 'dm') { renderDrawer(); const l = $('dm-list'); if (l) l.scrollTop = l.scrollHeight; } });
+  if (threads.some((t) => t.uid === uid && t.unread)) fb.markRead(user.uid, uid).catch(() => {});
+  drawer = null; openPanel('dm');
+}
+function wireDM(box) {
+  box.querySelectorAll('[data-dm]').forEach((b) => { b.onclick = () => { const [uid, ...n] = b.dataset.dm.split('|'); openDM(uid, n.join('|')); }; });
+  box.querySelector('[data-dm-back]')?.addEventListener('click', () => { dmUnsub?.(); dmUnsub = null; dmWith = null; renderDrawer(); });
+  const f = box.querySelector('#dm-form');
+  if (f) f.onsubmit = (e) => { e.preventDefault(); const text = $('dm-text').value.trim().slice(0, 500); if (!text || !dmWith) return;
+    $('dm-text').value = '';
+    fb.sendDM(user, mayor.slice(0, 24), dmWith.uid, dmWith.name, text).catch((err) => { notify(fb.authMessage(err), 'warn'); $('dm-text').value = text; }); };
+  const l = $('dm-list'); if (l) l.scrollTop = l.scrollHeight;
+}
+
 // ---------- the market ----------
 let offers = [], myOffers = [], marketUnsub = null, myOffersUnsub = null, dealsUnsub = null, marketTab = 'offers', marketKind = 'sell';
 const RES_NAME = (k) => RES[k]?.name.toLowerCase() || k;
@@ -596,13 +633,17 @@ function startMarket() {
         sim.receive(state, { money: d.money });
         sim.addDebt(state, { offer: d.offer, to: d.from, toName: d.fromName, toPlot: myOffers.find((o) => o.id === d.offer)?.takenPlot || '', repay: e?.repay || d.money, due: state.day + (e?.days || 7) });
         notify(`${d.fromName} lent you ${money(d.money)}. It’s repaid automatically on day ${state.day + (e?.days || 7)}.`, 'good');
+      } else if (d.kind === 'labour') {
+        sim.receive(state, { money: d.money });
+        const n = sim.sendCrew(state, e?.qty || 0, e?.e || 0, myOffers.find((o) => o.id === d.offer)?.days || 5);
+        notify(`${d.fromName} hired ${n} of your workers for ${money(d.money)}.`, 'good');
       } else if (d.kind === 'repay') {
         sim.receive(state, { money: d.money });
         state.loansOut = (state.loansOut || []).filter((l) => l.offer !== d.offer);
         notify(`${d.fromName} repaid ${money(d.money)}.`, 'good');
       }
       play('coin');
-      if (d.kind === 'sell' || d.kind === 'buy') fb.clearOffer(world.id, d.offer).catch(() => {});   // done: off the board
+      if (d.kind === 'sell' || d.kind === 'buy' || d.kind === 'labour') fb.clearOffer(world.id, d.offer).catch(() => {});   // done: off the board
       fb.finishDeal(world.id, d.id).catch((err) => console.error(err));
       afterChange(); save();
     }
@@ -622,25 +663,29 @@ async function acceptOffer(o) {
   const deal = { kind: o.kind, fromName: state.name.slice(0, 40), toOwner: o.owner, toPlot: o.plot, money: 0, res: null, qty: 0 };
   if (o.kind === 'sell') { if (state.money < o.total) throw new Error(`Needs ${money(o.total)}.`); deal.money = o.total; }
   if (o.kind === 'buy') { if ((state.res?.[o.res] || 0) < o.qty) throw new Error(`You have ${Math.floor(state.res?.[o.res] || 0)} ${RES_NAME(o.res)} in store.`); deal.res = o.res; deal.qty = o.qty; }
-  if (o.kind === 'loan') { if (state.money < o.total) throw new Error(`Needs ${money(o.total)}.`); deal.money = o.total; }
+  if (o.kind === 'loan' || o.kind === 'labour') { if (state.money < o.total) throw new Error(`Needs ${money(o.total)}.`); deal.money = o.total; }
   await fb.takeOffer(world.id, o.id, user, plotId, state.name.slice(0, 40), deal);
   if (o.kind === 'sell') { state.money -= o.total; sim.receive(state, { res: o.res, qty: o.qty }); notify(`Bought ${o.qty} ${RES_NAME(o.res)} from ${o.city}.`, 'good'); }
   if (o.kind === 'buy') { state.res[o.res] -= o.qty; state.money += o.total; notify(`Sold ${o.qty} ${RES_NAME(o.res)} to ${o.city} for ${money(o.total)}.`, 'good'); }
+  if (o.kind === 'labour') { state.money -= o.total; sim.hireCrew(state, { n: o.qty, e: o.edu || 0, days: o.days || 1, from: o.city }); notify(`${o.qty} workers from ${o.city} start today, for ${o.days} days.`, 'good'); }
   if (o.kind === 'loan') { state.money -= o.total; (state.loansOut ||= []).push({ offer: o.id, to: o.owner, toName: o.city, repay: o.repay, due: state.day + (o.days || 7) }); notify(`Lent ${money(o.total)} to ${o.city}. They repay ${money(o.repay)}.`, 'good'); }
   play('coin'); afterChange(); await save();
 }
 async function postOffer(form) {
   const kind = form.kind, id = fb.newOfferId(world.id);
   const qty = kind === 'loan' ? Math.round(+form.amount) : Math.round(+form.qty), price = kind === 'loan' ? Math.round(+form.repay) : +form.price;
+  if (kind === 'labour' && !(+form.days >= 1 && +form.days <= MARKET.maxLoanDays)) throw new Error(`Between 1 and ${MARKET.maxLoanDays} days.`);
   if (kind === 'loan') {
     if (!(price >= qty && price <= qty * 2)) throw new Error('Repay between the amount and twice it.');
     if (!(+form.days >= 1 && +form.days <= MARKET.maxLoanDays)) throw new Error(`Repay within 1 to ${MARKET.maxLoanDays} days.`);
   }
-  const r = sim.reserve(state, id, kind, kind === 'loan' ? null : form.res, qty, price);
+  const r = sim.reserve(state, id, kind, kind === 'loan' ? null : kind === 'labour' ? +form.res : form.res, qty, price);
   if (!r.ok) throw new Error(r.reason + '.');
   if (kind === 'loan') state.escrow[state.escrow.length - 1].days = Math.round(+form.days);
   await save();
-  const offer = kind === 'loan'
+  const offer = kind === 'labour'
+    ? { kind, res: null, qty, price: Math.round(price * 100) / 100, total: Math.round(qty * price * Math.round(+form.days)), days: Math.round(+form.days), edu: +form.res || 0 }
+    : kind === 'loan'
     ? { kind, res: null, qty: 0, price: 0, total: qty, repay: price, days: Math.round(+form.days) }
     : { kind, res: form.res, qty, price: Math.round(price * 100) / 100, total: r.total };
   try { await fb.postOffer(world.id, id, { ...offer, owner: user.uid, ownerName: mayor.slice(0, 24), plot: plotId, city: state.name.slice(0, 40) }); }
@@ -2108,8 +2153,9 @@ function updateHud() {
   const unread = drawer === 'news' ? 0 : state.log.length - unseenFrom();
   $('news-dot').textContent = unread ? String(Math.min(9, unread)) : '';
   $('news-dot').classList.toggle('hidden', !unread);
-  $('chat-dot').textContent = chatUnread ? String(Math.min(9, chatUnread)) : '';
-  $('chat-dot').classList.toggle('hidden', !chatUnread);
+  const unreadAll = chatUnread + dmUnread();
+  $('chat-dot').textContent = unreadAll ? String(Math.min(9, unreadAll)) : '';
+  $('chat-dot').classList.toggle('hidden', !unreadAll);
 }
 
 // ---------- minimap ----------
@@ -2211,10 +2257,11 @@ function renderDrawer() {
   else if (drawer === 'people') html = panels.peoplePanel(state, plan, peopleFilter, peopleQuery, favs());
   else if (drawer === 'stats') html = panels.statsPanel({ state, totals: totalsNow || sim.totals(state), plan, census: sim.census(state) }, statsTab);
   else if (drawer === 'news') html = panels.newsPanel(state, unseenFrom(), { tab: newsTab, inbox: [...inbox].reverse(), plan, forecast: [1, 2, 3].map((k) => sim.weather(sim.worldDay() + k)) });
-  else if (drawer === 'chat') { const m = muted(); html = panels.chatPanel({ messages: chatMessages.filter((x) => !m.has(x.uid)).map((x) => ({ ...x, text: clean(x.text) })), me: user.uid, world, colourOf, error: chatError && fb.authMessage(chatError) }); }
+  else if (drawer === 'chat') { const m = muted(); html = panels.chatPanel({ messages: chatMessages.filter((x) => !m.has(x.uid)).map((x) => ({ ...x, text: clean(x.text) })), me: user.uid, world, colourOf, error: chatError && fb.authMessage(chatError), dmUnread: dmUnread() }); }
   else if (drawer === 'world') html = panels.worldPanel(worldCtx());
   else if (drawer === 'region') html = panels.regionPanel(regionCtx());
   else if (drawer === 'market') html = panels.marketPanel(marketCtx());
+  else if (drawer === 'dm') html = panels.dmPanel({ threads, withWho: dmWith, messages: dmMessages.map((m) => ({ ...m, text: clean(m.text) })), me: user.uid });
   box.innerHTML = html;
   box.classList.remove('hidden');
   box.dataset.mode = drawer;
@@ -2257,6 +2304,7 @@ function wireDrawer(box) {
   box.querySelectorAll('[data-stats-tab]').forEach((b) => { b.onclick = () => { statsTab = b.dataset.statsTab; renderDrawer(); }; });
   if (drawer === 'region') wireRegion(box);
   if (drawer === 'market') wireMarket(box);
+  if (drawer === 'dm') wireDM(box);
   box.querySelectorAll('[data-gift]').forEach((b) => { b.onclick = () => { const p = plots.get(b.dataset.gift); if (p) giveGift(p); }; });
   const gb = box.querySelector('[data-book]');
   if (gb && gb.dataset.book !== bookFor) loadBook(gb.dataset.book); else if (gb) wireBook();
@@ -2369,7 +2417,7 @@ function wireDrawer(box) {
 // ---------- inspector ----------
 function inspectorAction(what, arg) {
   const i = selected?.i;
-  if (watching && !['follow', 'home', 'friend'].includes(what)) { notify(watchNote(), 'act'); return; }
+  if (watching && !['follow', 'home', 'friend', 'dm'].includes(what)) { notify(watchNote(), 'act'); return; }
   if (what === 'tap') tap(i);
   else if (what === 'upgrade') upgradeAt(i);
   else if (what === 'protect') { const r = sim.setProtected(state, i, !sim.isProtected(state, i)); if (r.ok) { play('level'); notify(sim.isProtected(state, i) ? 'Protected. It will stand for good.' : 'Protection lifted.', 'act'); afterChange(); } else notify(r.reason, 'act'); }
@@ -2407,6 +2455,7 @@ function inspectorAction(what, arg) {
     $('cancel-go').onclick = () => { closeModal(); demolish(i, false); };
     return;
   }
+  else if (what === 'dm') { const p = plots.get(arg); if (p) openDM(p.owner, p.ownerName); return; }
   else if (what === 'friend') { const p = plots.get(arg); if (p) { addFriend(p.owner, p.ownerName); refreshDrawer(); } return; }
   else if (what === 'buyplot') {
     const h = selected, price = sim.plotPrice(state, myCities().length), name = ($('buy-name')?.value || '').trim().slice(0, 40) || 'New city';
@@ -2608,7 +2657,7 @@ function otherPlot(h) {
   return `<h2>${esc(p.name)}</h2>${badges.length ? `<p class="badges">${badges.map((b) => `<span class="badge b-${b.id}">${b.name}</span>`).join('')}</p>` : ''}<p class="soft">Mayor ${esc(p.ownerName)}. Running for ${p.day} day${p.day === 1 ? '' : 's'}${p.cityNo > 1 ? `, city number ${p.cityNo} on this plot` : ''}.</p>
     <p class="${idle ? 'warn' : 'good-t'} small">${idle ? `Last active ${ago(p.active)}. Paused until the mayor returns, so it isn't sharing facilities.` : 'Active now'}</p>
     <div class="likes" id="likes" data-plot="${p.id}"></div>
-    ${p.owner && p.owner !== user.uid && state.status === 'alive' ? `<div class="actions"><button class="btn" type="button" data-gift="${p.id}">${icon('i-coin')}Send a gift</button>${friends().some((f) => f.uid === p.owner) ? '' : `<button class="btn" type="button" data-do="friend" data-arg="${p.id}">${icon('i-people')}Add ${esc(p.ownerName)} as a friend</button>`}</div>` : ''}
+    ${p.owner && p.owner !== user.uid && state.status === 'alive' ? `<div class="actions"><button class="btn" type="button" data-gift="${p.id}">${icon('i-coin')}Send a gift</button>${friends().some((f) => f.uid === p.owner) ? '' : `<button class="btn" type="button" data-do="friend" data-arg="${p.id}">${icon('i-people')}Add ${esc(p.ownerName)} as a friend</button>`}<button class="btn" type="button" data-do="dm" data-arg="${p.id}">${icon('i-chat')}Message ${esc(p.ownerName)}</button></div>` : ''}
     ${t && B[t] ? `<p class="soft small">You tapped their ${B[t].name.toLowerCase()}.</p>` : ''}
     ${row('People', p.pop)}${row('Peak', p.peakPop)}${row('Days running', p.day)}${meter('Mood', p.happiness || 0)}
     ${n ? row('Road links with you', n.links || 'None yet') : ''}
@@ -2742,8 +2791,15 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 1.12';
+const VERSION = 'Commons 1.13';
 const CHANGELOG = [
+  ['1.13', [
+    'The Market (X): sell food and materials to other cities, ask to buy what you need, or ask for a loan. Offers are open to every mayor in the world.',
+    'What you offer is set aside until someone takes it or you withdraw it. Loans are repaid automatically on the day they’re due.',
+    'Labour contracts: offer your jobless residents to another city for a daily fee. They fill its empty jobs, count as employed at home, and come back when the contract ends.',
+    'Private messages: message a neighbour from their city panel, or a friend from Account, Friends. Only the two of you can read them.',
+    'Fixed: a gift, a family moving in or a trade could occasionally be counted twice.',
+  ]],
   ['1.12', [
     'Resources: water, power, four kinds of food (vegetables, fruit, dairy and meat) and building materials are now made, stored and used every day. See City stats, Resources.',
     'Food your farms don’t grow is bought in for a small price. The more kinds of food your city has, the happier people are.',
@@ -3095,6 +3151,7 @@ function showAccount(tab = acctTab) {
   openModal(`${closeX}<h2 id="modal-title">Account</h2>${acct.accountHtml({ user, mayor, profile, s: state, world, colour: profile.colour || acct.COLOURS[0], cities, maxCities: MAX_CITIES, friends: friendList, canCo: !coMode, maxCo: MAX_CO }, tab)}`, 'wide');
   modal.querySelectorAll('[data-open-city]').forEach((b) => { b.onclick = () => { closeModal(); switchCity(b.dataset.openCity); }; });
   modal.querySelectorAll('[data-co]').forEach((b) => { b.onclick = () => busy(b, async () => { await toggleCo(b.dataset.co); showAccount('friends'); }, $('acct-msg')); });
+  modal.querySelectorAll('[data-dm-friend]').forEach((b) => { b.onclick = () => { const [uid, ...n] = b.dataset.dmFriend.split('|'); closeModal(); openDM(uid, n.join('|')); }; });
   modal.querySelectorAll('[data-unfriend]').forEach((b) => { b.onclick = () => { profile.friends = friends().filter((f) => f.uid !== b.dataset.unfriend); profileDirty = true; save(); showAccount('friends'); }; });
   modal.querySelectorAll('[data-leave-co]').forEach((b) => { b.onclick = () => busy(b, async () => { await fb.leaveCo(b.dataset.leaveCo, user.uid); notify('You’re no longer a co-mayor there.', 'act'); if (b.dataset.leaveCo === plotId) enter(user); else showAccount('cities'); }, $('acct-msg')); });
   const msg = $('acct-msg');

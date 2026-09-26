@@ -184,6 +184,17 @@ export async function takeOffer(world, id, u, plotId, name, deal) {
 export async function sendDeal(world, u, deal) { set(`worlds/${world}/deals/${newId()}`, { ...deal, from: u.uid, createdAt: now() }); persist(); }
 export const listenDeals = (world, uid, cb) => listen(() => cb(under(`worlds/${world}/deals`).filter((d) => d.toOwner === uid)));
 export const finishDeal = async (world, id) => { del(`worlds/${world}/deals/${id}`); persist(); };
+export const dmPair = (a, b) => [a, b].sort().join('_');
+export async function sendDM(u, myName, other, otherName, text) {
+  const last = String(text).slice(0, 80);
+  set(`dms/${dmPair(u.uid, other)}/messages/${newId()}`, { uid: u.uid, name: myName, text, createdAt: now() });
+  set(`inbox/${other}/threads/${u.uid}`, { name: myName, last, at: now(), unread: true });
+  set(`inbox/${u.uid}/threads/${other}`, { name: otherName, last, at: now(), unread: false });
+  persist();
+}
+export const listenThreads = (uid, cb) => listen(() => cb(under(`inbox/${uid}/threads`).map((t) => ({ ...t, uid: t.id })).sort((a, b) => b.at.toMillis() - a.at.toMillis())));
+export const listenDM = (me, other, cb) => listen(() => cb(under(`dms/${dmPair(me, other)}/messages`).sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis())));
+export const markRead = async (uid, other) => { merge(`inbox/${uid}/threads/${other}`, { unread: false }); persist(); };
 export const usingLegacySaves = () => false;
 export async function savePlot(id, state, extra = {}) {
   await tick();

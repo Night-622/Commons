@@ -259,6 +259,27 @@ export function listenDeals(world, uid, cb) {
 }
 export const finishDeal = (world, id) => deleteDoc(doc(db, 'worlds', world, 'deals', id));
 
+// ---------- private messages ----------
+// dms/{pair}/messages: a conversation between two players (pair = both uids, sorted, joined with _).
+// inbox/{uid}/threads/{other}: one line per conversation, so you hear about new messages without listening to them all.
+export const dmPair = (a, b) => [a, b].sort().join('_');
+export async function sendDM(user, myName, other, otherName, text) {
+  const b = writeBatch(db), last = String(text).slice(0, 80);
+  b.set(doc(collection(db, 'dms', dmPair(user.uid, other), 'messages')), { uid: user.uid, name: myName, text, createdAt: serverTimestamp() });
+  b.set(doc(db, 'inbox', other, 'threads', user.uid), { name: myName, last, at: serverTimestamp(), unread: true });
+  b.set(doc(db, 'inbox', user.uid, 'threads', other), { name: otherName, last, at: serverTimestamp(), unread: false });
+  return b.commit();
+}
+export function listenThreads(uid, cb) {
+  return onSnapshot(query(collection(db, 'inbox', uid, 'threads'), orderBy('at', 'desc'), limit(30)),
+    (snap) => cb(snap.docs.map((d) => ({ uid: d.id, ...d.data() }))), (e) => console.error('Inbox', e));
+}
+export function listenDM(me, other, cb) {
+  return onSnapshot(query(collection(db, 'dms', dmPair(me, other), 'messages'), orderBy('createdAt', 'desc'), limit(50)),
+    (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() })).reverse()), (e) => console.error('Messages', e));
+}
+export const markRead = (uid, other) => updateDoc(doc(db, 'inbox', uid, 'threads', other), { unread: false });
+
 // ---------- co-mayors and the desk ----------
 // The owner sets who else can run a city (plots/{id}.co, up to 3 uids).
 export const setCoMayors = (plotId, uids) => updateDoc(doc(db, 'plots', plotId), { co: uids, updatedAt: serverTimestamp() });

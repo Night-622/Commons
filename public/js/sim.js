@@ -180,7 +180,8 @@ export function migrate(s, rng = Math.random) {
 // People are saved as short arrays to keep saves small; this is the field order.
 // New keys go at the end so older saves still unpack. lk: hired by the mayor (kept in that job); nf/nfu: let go from
 // building nf until day nfu; xp: years of work, which count as training.
-const PKEYS = ['i', 'f', 'l', 'a', 'h', 'e', 'sp', 'us', 'j', 'jt', 'sc', 'tu', 'hp', 'ill', 'sd', 'm', 'pt', 'pa', 'cs', 'fun', 'st', 'vt', 'gr', 'jy', 'b', 'oj', 'hol', 'hto', 'hcity', 'hi', 'lk', 'nf', 'nfu', 'xp'];
+// oc: working in another city on a labour contract until that day.
+const PKEYS = ['i', 'f', 'l', 'a', 'h', 'e', 'sp', 'us', 'j', 'jt', 'sc', 'tu', 'hp', 'ill', 'sd', 'm', 'pt', 'pa', 'cs', 'fun', 'st', 'vt', 'gr', 'jy', 'b', 'oj', 'hol', 'hto', 'hcity', 'hi', 'lk', 'nf', 'nfu', 'xp', 'oc'];
 const pack = (p) => PKEYS.map((k) => (k === 'm' ? Math.round(p.m * 1000) / 1000 : k === 'sp' || k === 'us' ? Math.round((p[k] || 0) * 10) / 10 : p[k] ?? null));
 const unpack = (a) => { const p = {}; PKEYS.forEach((k, n) => { p[k] = a[n]; }); for (const k of ['j', 'sc', 'tu', 'fun']) if (p[k] === null) p[k] = -1; return p; };
 export function serialize(s) {
@@ -306,11 +307,19 @@ function resourcesDay(s, uc) {
 // ---------- the market: escrow, deliveries and debts ----------
 // Posting an offer sets its goods (sell) or money (buy) aside until it's taken or cancelled.
 export function reserve(s, offer, kind, res, qty, price) {
-  if (!['sell', 'buy', 'loan'].includes(kind)) return { ok: false, reason: 'Unknown offer' };
+  if (!['sell', 'buy', 'loan', 'labour'].includes(kind)) return { ok: false, reason: 'Unknown offer' };
   if ((s.escrow || []).length >= MARKET.maxOpen) return { ok: false, reason: `You can have ${MARKET.maxOpen} offers open at once` };
   if (kind === 'loan') {
     if (!(qty >= 100 && qty <= MARKET.maxLoan)) return { ok: false, reason: `Ask for between $100 and $${MARKET.maxLoan.toLocaleString()}` };
     (s.escrow ||= []).push({ offer, kind, res: null, qty: 0, money: 0, amount: qty, repay: Math.round(price), days: 0 });
+    return { ok: true };
+  }
+  if (kind === 'labour') {
+    const e = Math.max(0, Math.min(3, res | 0));
+    if (!(Number.isInteger(qty) && qty >= 1 && qty <= 40)) return { ok: false, reason: 'Between 1 and 40 workers' };
+    if (idleWorkers(s, e).length < qty) return { ok: false, reason: `You have ${idleWorkers(s, e).length} jobless adults with that education` };
+    if (!(price > 0 && price <= 30)) return { ok: false, reason: 'A daily fee between $0.01 and $30 a worker' };
+    (s.escrow ||= []).push({ offer, kind, res: null, qty, money: 0, e });
     return { ok: true };
   }
   if (!TRADE_RES.includes(res)) return { ok: false, reason: 'That can’t be traded' };
@@ -341,6 +350,17 @@ export function receive(s, { money = 0, res = null, qty = 0 }) {
   if (money) s.money += money;
   if (res && TRADE_RES.includes(res) && qty > 0) { s.res ||= {}; s.res[res] = (s.res[res] || 0) + qty; }
 }
+// Labour contracts. Hiring: workers from another city fill your empty jobs until the contract ends.
+export function hireCrew(s, { n, e, days, from }) { (s.contracts ||= []).push({ n, e, until: s.day + days, from }); s._plan = null; }
+// Lending: that many of your jobless adults with the education go to work there; they come back when it ends.
+export function idleWorkers(s, e = 0) { return s.people.filter((p) => canWork(p) && p.j < 0 && p.e >= e && !p.hol); }
+export function sendCrew(s, n, e, days) {
+  const crew = idleWorkers(s, e).slice(0, n);
+  for (const p of crew) { p.oc = s.day + days; remember(s, p, 'Went to work in another city on a contract'); }
+  s._plan = null;
+  return crew.length;
+}
+
 // Loans between cities: the borrower's game repays on the due day (and keeps trying if it can't).
 export function addDebt(s, debt) { (s.debts ||= []).push({ ...debt, late: 0 }); }
 export function dueDebts(s) { return (s.debts || []).filter((d) => s.day >= d.due && s.money >= d.repay); }
@@ -647,11 +667,11 @@ export function staffing(s, i) {
   if (!d.jobs) return 1;
   const slots = jobSlots(s, i).reduce((a, b) => a + b, 0);
   if (!slots) return 0;
-  const n = s.people.filter((p) => p.j === i && !p.oj).length;
+  const n = s.people.filter((p) => p.j === i && !p.oj).length + (s._cfill?.get(i) || 0);
   return n ? clamp(0.4 + 0.6 * n / slots) : 0;
 }
 const isBuilder = (s, p) => p.j >= 0 && !p.oj && (s.grid[p.j] === T.HALL || s.grid[p.j] === T.YARD) && p.jt === 0;
-const canWork = (p) => p.a >= ADULT && p.a < RETIRE && p.sc < 0 && !p.st && p.ill < 3;
+const canWork = (p) => p.a >= ADULT && p.a < RETIRE && p.sc < 0 && !p.st && p.ill < 3 && !p.oc;
 
 // ---------- hiring and firing ----------
 const openSlot = (s, i, k) => jobSlots(s, i)[k] - s.people.filter((p) => p.j === i && p.jt === k && !p.oj).length;
@@ -882,6 +902,22 @@ export function plan(s, rng = Math.random) {
       if (p.j >= 0) filled.set(slotKey(p.j, p.jt), (filled.get(slotKey(p.j, p.jt)) || 1) - 1);
       p.j = best[0]; p.jt = best[1]; filled.set(slotKey(...best), (filled.get(slotKey(...best)) || 0) + 1);
       unstaffed.delete(best[0]);
+    }
+  }
+  // Workers on contract from other cities fill jobs nobody here has taken, if they have the education.
+  s._cfill = new Map();
+  const crews = (s.contracts || []).filter((k) => k.until > s.day).map((k) => ({ n: k.n, e: k.e }));
+  for (const i of jobBuildings) {
+    const slots = jobSlots(s, i), def = B[s.grid[i]];
+    for (let k = 0; k < slots.length; k++) {
+      let open = slots[k] - (filled.get(slotKey(i, k)) || 0);
+      for (const c of crews) {
+        if (open <= 0) break;
+        if (c.n <= 0 || c.e < def.jobs[k][1]) continue;
+        const take = Math.min(open, c.n);
+        c.n -= take; open -= take;
+        s._cfill.set(i, (s._cfill.get(i) || 0) + take);
+      }
     }
   }
 
@@ -1650,6 +1686,8 @@ function daily(s, plan, rng) {
 
   // Resources: what was made, what people and buildings used, what had to be imported, and what was left over.
   for (const d of s.debts || []) if (s.day > d.due) d.late = (d.late || 0) + 1;
+  for (const p of s.people) if (p.oc && s.day >= p.oc) { p.oc = 0; remember(s, p, 'Came back from a job in another city'); }
+  if (s.contracts) s.contracts = s.contracts.filter((k) => k.until > s.day);
   const rs = resourcesDay(s, uc);
   st.res = rs;
   if (rs.importCost) { st.upkeep += rs.importCost; st.upkeepBy = { ...st.upkeepBy, imports: rs.importCost }; }
@@ -1668,7 +1706,7 @@ function daily(s, plan, rng) {
     const t = s.grid[p.h];
     let m = 0.36;
     if (isHome(t) && active(s, p.h, uc)) m += 0.1 + (B[t].homeMood || 0) + (s.cond[p.h] < 40 && t !== T.HALL ? -0.08 : 0); else m -= 0.2;
-    if (p.a >= ADULT) m += p.j >= 0 ? 0.12 : p.sc >= 0 ? 0.1 : p.a >= RETIRE ? 0.1 : p.st ? 0.03 : -0.1;
+    if (p.a >= ADULT) m += p.j >= 0 || p.oc ? 0.12 : p.sc >= 0 ? 0.1 : p.a >= RETIRE ? 0.1 : p.st ? 0.03 : -0.1;
     else m += p.sc >= 0 || p.a < 5 ? 0.1 : -0.08;
     const mine = tripsBy.get(p.i) || [];
     const car = mine.filter((x) => x.mode === 'car');

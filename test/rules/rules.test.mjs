@@ -469,3 +469,31 @@ test('market: sell, buy and loan offers; deals only between the two sides', asyn
   await assertFails(a.fb.postOffer(w.id, a.fb.newOfferId(w.id), offer('loan', { total: 1000, repay: 5000 })));
   await assertFails(b.fb.postOffer(w.id, b.fb.newOfferId(w.id), offer('sell', { owner: b.uid })));   // for Ana's city
 });
+
+test('private messages: only the two people read them; an inbox line can only say who wrote', async () => {
+  const a = await player(), b = await player(), c = await player();
+  await a.fb.sendDM(a.user, 'Ana', b.uid, 'Ben', 'Fancy a trade?');
+  const threads = await first((cb) => b.fb.listenThreads(b.uid, cb));
+  assert.equal(threads[0].uid, a.uid); assert.equal(threads[0].unread, true);
+  const msgs = await first((cb) => b.fb.listenDM(b.uid, a.uid, cb));
+  assert.equal(msgs[0].text, 'Fancy a trade?');
+  await b.fb.markRead(b.uid, a.uid);
+  const pair = a.fb.dmPair(a.uid, b.uid);
+  await assertFails(getDocs(collection(c.db, 'dms', pair, 'messages')));
+  await assertFails(addDoc(collection(c.db, 'dms', pair, 'messages'), { uid: c.uid, name: 'Cy', text: 'hi', createdAt: serverTimestamp() }));
+  await assertFails(addDoc(collection(b.db, 'dms', pair, 'messages'), { uid: a.uid, name: 'Ana', text: 'fake', createdAt: serverTimestamp() }));
+  await assertFails(getDocs(collection(c.db, 'inbox', b.uid, 'threads')));
+  // Cy can't write someone else's line into Ben's inbox, or mark it read.
+  await assertFails(setDoc(doc(c.db, 'inbox', b.uid, 'threads', a.uid), { name: 'Ana', last: 'x', at: serverTimestamp(), unread: true }));
+  await assertSucceeds(setDoc(doc(c.db, 'inbox', b.uid, 'threads', c.uid), { name: 'Cy', last: 'hello', at: serverTimestamp(), unread: true }));
+  await assertFails(setDoc(doc(c.db, 'inbox', b.uid, 'threads', c.uid), { name: 'Cy', last: 'hello', at: serverTimestamp(), unread: false }));
+});
+
+test('market: labour contracts are a kind of offer', async () => {
+  const a = await player(), b = await player();
+  const w = await newWorld(a);
+  const pa = await a.fb.claimPlot(a.user, 'Ana', 'A', w.id), pb = await b.fb.claimPlot(b.user, 'Ben', 'B', w.id);
+  const id = a.fb.newOfferId(w.id);
+  await a.fb.postOffer(w.id, id, { kind: 'labour', res: null, qty: 3, price: 4, total: 60, days: 5, edu: 1, owner: a.uid, ownerName: 'Ana', plot: pa.id, city: 'A' });
+  await b.fb.takeOffer(w.id, id, b.user, pb.id, 'Ben', { kind: 'labour', fromName: 'B', toOwner: a.uid, toPlot: pa.id, money: 60, res: null, qty: 0 });
+});

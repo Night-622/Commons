@@ -12,6 +12,7 @@ export function marketPanel(ctx) {
   const offerLine = (o) => {
     if (o.kind === 'sell') return [`<b>${esc(o.city)}</b> sells ${o.qty} ${nm(o.res)} at ${each(o.price)} each`, `Buy for ${money(o.total)}`, s.money >= o.total];
     if (o.kind === 'buy') return [`<b>${esc(o.city)}</b> wants ${o.qty} ${nm(o.res)}, paying ${each(o.price)} each`, `Sell for ${money(o.total)}`, (stock[o.res] || 0) >= o.qty];
+    if (o.kind === 'labour') return [`<b>${esc(o.city)}</b> offers ${o.qty} worker${o.qty > 1 ? 's' : ''} (${EDU[o.edu || 0].toLowerCase()}) for ${o.days} days at ${each(o.price)} a day each`, `Hire for ${money(o.total)}`, s.money >= o.total];
     return [`<b>${esc(o.city)}</b> asks to borrow ${money(o.total)}, repaying ${money(o.repay)} within ${o.days} days`, `Lend ${money(o.total)}`, s.money >= o.total];
   };
   let body = '';
@@ -22,8 +23,13 @@ export function marketPanel(ctx) {
   } else if (tab === 'post') {
     const resOpts = TRADE_RES.map((k) => `<option value="${k}">${RES[k].name} (you have ${Math.floor(stock[k] || 0)})</option>`).join('');
     body = `<form id="mk-post" class="mk-form">
-      <label class="field"><span>I want to</span><select id="mk-kind" name="kind">${[['sell', 'Sell'], ['buy', 'Buy'], ['loan', 'Borrow money']].map(([v, l]) => `<option value="${v}" ${kind === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-      ${kind === 'loan' ? `<label class="field"><span>Amount</span><input name="amount" type="number" min="100" max="${MARKET.maxLoan}" step="50" value="1000" required></label>
+      <label class="field"><span>I want to</span><select id="mk-kind" name="kind">${[['sell', 'Sell'], ['buy', 'Buy'], ['loan', 'Borrow money'], ['labour', 'Offer workers']].map(([v, l]) => `<option value="${v}" ${kind === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      ${kind === 'labour' ? `<label class="field"><span>Workers</span><input name="qty" type="number" min="1" max="40" value="3" required></label>
+        <label class="field"><span>With at least</span><select name="res">${EDU.map((l, e) => `<option value="${e}">${l}</option>`).join('')}</select></label>
+        <label class="field"><span>Fee a day, each</span><input name="price" type="number" min="0.5" max="30" step="0.5" value="4" required></label>
+        <label class="field"><span>For (days)</span><input name="days" type="number" min="1" max="${MARKET.maxLoanDays}" value="5" required></label>
+        <p class="soft small">Jobless residents go to work in the other city and count as employed; they come home when it ends. You’re paid the whole fee up front.</p>`
+      : kind === 'loan' ? `<label class="field"><span>Amount</span><input name="amount" type="number" min="100" max="${MARKET.maxLoan}" step="50" value="1000" required></label>
         <label class="field"><span>Repay</span><input name="repay" type="number" min="100" step="10" value="1100" required></label>
         <label class="field"><span>Within (days)</span><input name="days" type="number" min="1" max="${MARKET.maxLoanDays}" value="7" required></label>
         <p class="soft small">Loans are on trust: your city repays automatically on the day, and keeps trying if the money isn’t there.</p>`
@@ -33,7 +39,7 @@ export function marketPanel(ctx) {
         <p class="soft small">${kind === 'sell' ? 'The goods are set aside until someone buys them or you withdraw the offer.' : 'The money is set aside until someone sells to you or you withdraw the offer.'}</p>`}
       <div class="actions"><button class="btn primary" type="submit">Post the offer</button></div></form>`;
   } else {
-    const own = (o) => (o.kind === 'sell' ? `Selling ${o.qty} ${nm(o.res)} at ${each(o.price)} each` : o.kind === 'buy' ? `Buying ${o.qty} ${nm(o.res)} at ${each(o.price)} each` : `Asking to borrow ${money(o.total)}, repaying ${money(o.repay)} within ${o.days} days`);
+    const own = (o) => (o.kind === 'labour' ? `Offering ${o.qty} worker${o.qty > 1 ? 's' : ''} (${EDU[o.edu || 0].toLowerCase()}) for ${o.days} days at ${each(o.price)} a day each` : o.kind === 'sell' ? `Selling ${o.qty} ${nm(o.res)} at ${each(o.price)} each` : o.kind === 'buy' ? `Buying ${o.qty} ${nm(o.res)} at ${each(o.price)} each` : `Asking to borrow ${money(o.total)}, repaying ${money(o.repay)} within ${o.days} days`);
     const line = (o) => `<li><span>${own(o)}</span><button class="btn small" type="button" data-cancel-offer="${o.id}">Withdraw</button></li>`;
     body = `<h3 class="sub">Your open offers</h3>${mine.length ? `<ul class="picklist">${mine.map(line).join('')}</ul>` : '<p class="soft small">None.</p>'}
       <h3 class="sub">You owe</h3>${debts.length ? `<ul class="picklist">${debts.map((d) => `<li><span>${money(d.repay)} to ${esc(d.toName)}<small class="${s.day > d.due ? 'warn' : 'soft'}">${s.day > d.due ? `Late by ${s.day - d.due} days` : `Due on day ${d.due}`}</small></span></li>`).join('')}</ul>` : '<p class="soft small">Nothing.</p>'}
@@ -314,10 +320,26 @@ export function newsPanel(state, unseenFrom, o = {}) {
 }
 
 // ---------- chat ----------
+// Private messages: your conversations, or one of them.
+export function dmPanel(ctx) {
+  const { threads, withWho, messages, me } = ctx;
+  const time = (m) => (m.createdAt?.toDate ? m.createdAt.toDate().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'now');
+  if (!withWho) return `${head('Messages')}<p class="soft small"><button class="linkbtn" type="button" data-panel-go="chat">Back to world chat</button></p>
+    ${threads.length ? `<ul class="picklist">${threads.map((t) => `<li><span><b translate="no">${esc(t.name)}</b>${t.unread ? ' <i class="dot num">new</i>' : ''}<small class="soft" translate="no">${esc(t.last)}</small></span>
+      <button class="btn small ${t.unread ? 'primary' : ''}" type="button" data-dm="${esc(t.uid)}|${esc(t.name)}">Open</button></li>`).join('')}</ul>`
+      : '<p class="soft">No messages yet. Message a friend from Account, Friends, or a neighbour from their city panel.</p>'}`;
+  return `${head(`<span translate="no">${esc(withWho.name)}</span>`)}<p class="soft small"><button class="linkbtn" type="button" data-dm-back>All messages</button></p>
+    <ul class="chat" id="dm-list" aria-live="polite">${messages.length ? messages.map((m) => `<li class="${m.uid === me ? 'mine' : ''}"><div><span class="who" translate="no"><b>${esc(m.name)}</b> <small>${time(m)}</small></span><p translate="no">${esc(m.text)}</p></div></li>`).join('')
+      : '<li class="empty">Say hello. Only the two of you can read this.</li>'}</ul>
+    <form id="dm-form" class="chat-form"><input id="dm-text" maxlength="500" autocomplete="off" placeholder="Message ${esc(withWho.name)}" aria-label="Private message">
+      <button class="btn primary" type="submit">Send</button></form>`;
+}
+
 export function chatPanel(ctx) {
   const { messages, me, world, colourOf } = ctx;
   const time = (m) => (m.createdAt?.toDate ? m.createdAt.toDate().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'now');
   return `${head('Chat', `<span class="soft small fill">${esc(world.name)}</span>`)}
+    <p class="small"><button class="btn small ${ctx.dmUnread ? 'primary' : ''}" type="button" data-panel-go="dm">${icon('i-chat')}Private messages${ctx.dmUnread ? ` (${ctx.dmUnread} new)` : ''}</button></p>
     ${ctx.error ? `<p class="warn small">Chat isn’t available: ${esc(ctx.error)}</p>` : ''}
     <ul class="chat" id="chat-list" aria-live="polite">${messages.length ? messages.map((m) => `
       <li class="${m.uid === me ? 'mine' : ''}"><span class="avatar-sm" style="--role:${colourOf(m.uid)}" aria-hidden="true">${esc((m.name || '?')[0].toUpperCase())}</span>

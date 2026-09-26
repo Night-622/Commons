@@ -411,3 +411,40 @@ test('market: one mayor sells vegetables, another buys them, and a loan request 
   expect(clean(errors)).toEqual([]);
   await ctx.close();
 });
+
+test('private messages: message a neighbour, who sees it and replies', async ({ browser }) => {
+  test.setTimeout(120_000);
+  const ctx = await browser.newContext();
+  const a = await ctx.newPage();
+  const errors = await newGame(a);
+  await a.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); db.user = null; localStorage.setItem('fakefb', JSON.stringify(db)); });
+  const b = await ctx.newPage();
+  errors.push(...await watch(b));
+  await b.addInitScript(() => { try { localStorage.setItem('commons-seen-help', '1'); } catch { /* ignore */ } });
+  await found(b, { mayor: 'Nia', city: 'Nextdoor' });
+  await closeModal(b);
+  const [dx, dy] = await a.evaluate(() => {
+    const ps = Object.entries(JSON.parse(localStorage.getItem('fakefb')).docs).filter(([k]) => k.startsWith('plots/')).map(([, v]) => v);
+    const m = ps.find((p) => p.name === 'Testhaven'), n = ps.find((p) => p.name === 'Nextdoor');
+    return [n.px - m.px, n.py - m.py];
+  });
+  await a.locator('#map').focus();
+  for (let k = 0; k < 14; k++) await a.keyboard.press(dx > 0 ? 'ArrowRight' : dx < 0 ? 'ArrowLeft' : dy > 0 ? 'ArrowDown' : 'ArrowUp');
+  await a.keyboard.press('Enter');
+  await a.locator('#drawer [data-do="dm"]').click();
+  await a.locator('#dm-text').fill('Want to trade vegetables?');
+  await a.locator('#dm-text').press('Enter');
+  await expect(a.locator('#dm-list')).toContainText('Want to trade vegetables?');
+  // Nia gets a notice and a dot, opens her messages and replies.
+  await expect(b.locator('#chat-dot')).toBeVisible({ timeout: 10_000 });
+  await b.locator('#rail [data-panel="chat"]').click();
+  await b.locator('#drawer [data-panel-go="dm"]').click();
+  await b.locator('#drawer [data-dm]').click();
+  await expect(b.locator('#dm-list')).toContainText('Want to trade vegetables?');
+  await b.locator('#dm-text').fill('Yes please');
+  await b.locator('#dm-text').press('Enter');
+  await expect(a.locator('#dm-list')).toContainText('Yes please', { timeout: 10_000 });
+  if (process.env.SHOTS) await a.screenshot({ path: `${process.env.SHOTS}/dm.png` });
+  expect(clean(errors)).toEqual([]);
+  await ctx.close();
+});

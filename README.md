@@ -21,6 +21,12 @@ Guests can turn their guest city into a full account later (Account menu). Linki
 - Saves are split: `plots/{id}` is a small public summary everyone listens to; `plotState/{id}` holds the full city and is only fetched for adjacent neighbours.
 - `node test/balance.mjs` runs a scripted city for 100 days.
 
+## New in 1.13: market, labour contracts, private messages
+- `worlds/{w}/offers` (kinds sell, buy, loan, labour) and `worlds/{w}/deals`. Posting reserves goods, money or workers in `s.escrow` (`sim.reserve`/`release`); `fb.takeOffer` marks an offer taken and writes the taker's deal in one transaction; the owner's game applies deals addressed to it (`toPlot`). Loans: the borrower gets a debt (`sim.addDebt`), repaid by `repayDebts` on the due day with a `repay` deal. Rules: `dealOk` only lets deals flow between an offer's two sides, within its amounts.
+- Labour contracts: `sim.hireCrew` adds `s.contracts`; in `plan()` contract crews fill empty job slots (`s._cfill`, counted by `staffing`). The lending city's jobless adults get `p.oc` (away until that day) via `sim.sendCrew`: they count as employed and aren't matched to local jobs.
+- `state.applied` remembers the last 80 gifts, moves and deals a city has applied, so a document that shows up twice (before its deletion lands, or after a reload) counts once.
+- Private messages: `dms/{pair}/messages` (pair = sorted uids joined with _) and `inbox/{uid}/threads/{other}` (one line per conversation; a sender may only stamp their own line in yours, as unread).
+
 ## New in 1.12: resources and the technology tree
 - `RES` in constants.js: water, power, veg, fruit, dairy, meat, materials. Buildings list what they make a day in `makes` (water tower 80, power station 120, solar and wind 60, urban farm 25 veg, orchard 25 fruit, dairy farm 25, ranch 20 meat, materials works 30); `sim.production` scales by staffing and level.
 - Once a day `resourcesDay` (inside `daily`): people use `USE` (1 water, 0.5 power, 1 food each; 1 power per staffed building), food comes from every kind in store and the rest is imported at the average `import` price (upkeep "imports"), anything over `storeCap` (`STORE_BASE` + warehouses) sells at `SURPLUS_SALE` of the import price (income "produce"). Stock lives in `s.res`; yesterday's figures in `s.stats.res`.

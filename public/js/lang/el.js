@@ -93,6 +93,9 @@ Object.assign(dict, {
   'Your open offers': 'Οι ανοιχτές προσφορές σας', 'You owe': 'Οφείλετε', 'Owed to you': 'Σας οφείλουν', 'Nothing.': 'Τίποτα.', 'None.': 'Καμία.',
   'Trade food and materials with other cities, and lend or borrow money.': 'Ανταλλάξτε τρόφιμα και υλικά με άλλες πόλεις, και δανείστε ή δανειστείτε χρήματα.',
   'Your offer is on the market.': 'Η προσφορά σας είναι στην αγορά.',
+  'Offer workers': 'Προσφέρω εργάτες', 'Workers': 'Εργάτες', 'With at least': 'Με τουλάχιστον', 'Fee a day, each': 'Αμοιβή ημερησίως, ανά άτομο', 'For (days)': 'Για (ημέρες)',
+  'Messages': 'Μηνύματα', 'Private messages': 'Προσωπικά μηνύματα', 'All messages': 'Όλα τα μηνύματα', 'Back to world chat': 'Πίσω στη γενική συζήτηση', 'Message': 'Μήνυμα',
+  'Say hello. Only the two of you can read this.': 'Πείτε ένα γεια. Μόνο εσείς οι δύο μπορείτε να το διαβάσετε.',
 });
 // Resources and the technology tree (1.12)
 Object.assign(dict, {
