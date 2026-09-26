@@ -275,7 +275,7 @@ test('world: neighbours touch, with borders', async ({ browser }) => {
   await b.waitForTimeout(800);
   if (process.env.SHOTS) await b.screenshot({ path: `${process.env.SHOTS}/world-borders.png` });
   const plots = await b.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('fakefb')).docs).filter((k) => k.startsWith('plots/')));
-  expect(plots).toEqual(expect.arrayContaining([expect.stringMatching(/^plots\/s3_/)]));
+  expect(plots).toEqual(expect.arrayContaining([expect.stringMatching(/^plots\/s4_/)]));
   expect(plots.length).toBe(2);
   expect(clean(errors)).toEqual([]);
   await ctx.close();

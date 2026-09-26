@@ -31,11 +31,11 @@ let prefs = loadPrefs();
 let user = null, plotId = null, me = null, state = null, mayor = '';
 // 1.11 opened a new, joined-up main world; players who were in the classic public world start there once.
 let world = { id: WORLD_ID, name: OPEN_WORLDS[WORLD_ID] }, worlds = [];
-// 1.18 and 1.2 each started every world afresh: everyone begins in the new open world once.
+// 1.18, 1.2 and 1.3 each started every world afresh: everyone begins in the new open world once.
 try {
   const saved = localStorage.getItem('commons-world');
-  if (saved && localStorage.getItem('commons-world-v4')) world = { id: saved, name: OPEN_WORLDS[saved] || 'World' };
-  localStorage.setItem('commons-world-v4', '1');
+  if (saved && localStorage.getItem('commons-world-v5')) world = { id: saved, name: OPEN_WORLDS[saved] || 'World' };
+  localStorage.setItem('commons-world-v5', '1');
 } catch { /* private mode */ }
 let plan = null, totalsNow = null;
 let zoneKind = 1;

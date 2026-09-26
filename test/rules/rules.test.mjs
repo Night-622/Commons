@@ -31,13 +31,13 @@ const newWorld = async (owner, name = 'Test world') => owner.fb.createWorld(owne
 // ---------- claiming plots ----------
 test('public world: first and second players claim plots in order', async () => {
   const a = await player(), b = await player();
-  const pa = await a.fb.claimPlot(a.user, 'Ana', 'Anaville', 's3');
-  const pb = await b.fb.claimPlot(b.user, 'Ben', 'Benton', 's3');
+  const pa = await a.fb.claimPlot(a.user, 'Ana', 'Anaville', 's4');
+  const pb = await b.fb.claimPlot(b.user, 'Ben', 'Benton', 's4');
   assert.equal(pa.index, 0); assert.equal(pb.index, 1);
   assert.equal(a.fb.usingLegacySaves(), false, 'split saves work, no fallback');
-  const again = await a.fb.findPlot(a.user, 's3');
+  const again = await a.fb.findPlot(a.user, 's4');
   assert.equal(again.id, pa.id); assert.ok(again.state.length > 100, 'full state comes from plotState');
-  await assert.rejects(a.fb.claimPlot(a.user, 'Ana', 'Second', 's3'), /already have a plot/);
+  await assert.rejects(a.fb.claimPlot(a.user, 'Ana', 'Second', 's4'), /already have a plot/);
 });
 
 test('private world: create, invite code, join, list, rename', async () => {
@@ -48,7 +48,7 @@ test('private world: create, invite code, join, list, rename', async () => {
   const pa = await a.fb.claimPlot(a.user, 'Ana', 'A', w.id);
   const pb = await b.fb.claimPlot(b.user, 'Ben', 'B', w.id);
   assert.deepEqual([pa.index, pb.index], [0, 1]);
-  assert.deepEqual((await b.fb.myWorlds(b.user)).map((x) => x.id), ['s3', w.id]);
+  assert.deepEqual((await b.fb.myWorlds(b.user)).map((x) => x.id), ['s4', w.id]);
   await a.fb.renameWorld(w.id, 'Best friends');
   await assertFails(b.fb.renameWorld(w.id, 'Hijacked'));
   await assertFails(updateDoc(doc(a.db, 'worlds', w.id), { name: '' }));
@@ -355,49 +355,49 @@ test('limits: gifts only from your own plot, fallen records only for your own pl
 test('main world: founding works like the classic world and skips slots already taken', async () => {
   const { spiral } = await import('../../public/js/spiral.js');
   const a = await player(), b = await player(), c = await player();
-  const pa = await a.fb.claimPlot(a.user, 'Ana', 'A', 's3');
-  const pb = await b.fb.claimPlot(b.user, 'Ben', 'B', 's3');
-  assert.deepEqual([pa.world, pb.world], ['s3', 's3']);
+  const pa = await a.fb.claimPlot(a.user, 'Ana', 'A', 's4');
+  const pb = await b.fb.claimPlot(b.user, 'Ben', 'B', 's4');
+  assert.deepEqual([pa.world, pb.world], ['s4', 's4']);
   // Someone already holds the next slot (as if bought next to their city).
   const { x, y } = spiral(pb.index + 1);
-  await admin((db) => setDoc(doc(db, 'plots', `s3_${x}_${y}`), { owner: 'someone', world: 's3', px: x, py: y }));
-  const pc = await c.fb.claimPlot(c.user, 'Cy', 'C', 's3');
+  await admin((db) => setDoc(doc(db, 'plots', `s4_${x}_${y}`), { owner: 'someone', world: 's4', px: x, py: y }));
+  const pc = await c.fb.claimPlot(c.user, 'Cy', 'C', 's4');
   assert.equal(pc.index, pb.index + 2);
-  assert.equal((await a.fb.myWorlds(a.user))[0].id, 's3');
+  assert.equal((await a.fb.myWorlds(a.user))[0].id, 's4');
   // The counter can't be pushed far ahead or backwards.
-  await assertFails(updateDoc(doc(a.db, 'worlds', 's3'), { nextIndex: 500 }));
-  await assertFails(updateDoc(doc(a.db, 'worlds', 's3'), { nextIndex: 0 }));
+  await assertFails(updateDoc(doc(a.db, 'worlds', 's4'), { nextIndex: 500 }));
+  await assertFails(updateDoc(doc(a.db, 'worlds', 's4'), { nextIndex: 0 }));
 });
 
 test('councils: buy the plot next to your city, switch home, and nothing else', async () => {
   const a = await player(), b = await player();
-  const pa = await a.fb.claimPlot(a.user, 'Ana', 'A', 's3');
+  const pa = await a.fb.claimPlot(a.user, 'Ana', 'A', 's4');
   // Right next door: allowed. The council's list grows and home can move there.
   // Other tests share the main world, so use whichever side is still free.
   const freeSide = async (p) => {
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       let taken;
-      await admin(async (db) => { taken = (await getDoc(doc(db, 'plots', `s3_${p.px + dx}_${p.py + dy}`))).exists(); });
+      await admin(async (db) => { taken = (await getDoc(doc(db, 'plots', `s4_${p.px + dx}_${p.py + dy}`))).exists(); });
       if (!taken) return [p.px + dx, p.py + dy];
     }
     throw new Error('no free side');
   };
   const side = await freeSide(pa);
-  const east = await a.fb.buyPlot(a.user, 'Ana', pa.id, side[0], side[1], 'A East', 's3');
+  const east = await a.fb.buyPlot(a.user, 'Ana', pa.id, side[0], side[1], 'A East', 's4');
   assert.equal(east.owner, a.uid);
-  const link = (await getDoc(doc(a.db, 'memberships', `${a.uid}_s3`))).data();
+  const link = (await getDoc(doc(a.db, 'memberships', `${a.uid}_s4`))).data();
   assert.deepEqual(link.plotIds, [pa.id, east.id]);
-  await a.fb.setHome(a.user, 's3', east.id);
-  assert.equal((await a.fb.findPlot(a.user, 's3')).id, east.id);
-  await a.fb.setHome(a.user, 's3', pa.id);
+  await a.fb.setHome(a.user, 's4', east.id);
+  assert.equal((await a.fb.findPlot(a.user, 's4')).id, east.id);
+  await a.fb.setHome(a.user, 's4', pa.id);
   // Not touching any of your cities, or "next to" someone else's city: refused.
-  await assert.rejects(a.fb.buyPlot(a.user, 'Ana', pa.id, pa.px + 40, pa.py + 40, 'Far', 's3'), /permission/i);
-  const pb = await b.fb.claimPlot(b.user, 'Ben', 'B', 's3');
+  await assert.rejects(a.fb.buyPlot(a.user, 'Ana', pa.id, pa.px + 40, pa.py + 40, 'Far', 's4'), /permission/i);
+  const pb = await b.fb.claimPlot(b.user, 'Ben', 'B', 's4');
   const bSide = await freeSide(pb);
-  await assert.rejects(a.fb.buyPlot(a.user, 'Ana', pb.id, bSide[0], bSide[1], 'Sneaky', 's3'), /permission/i);
+  await assert.rejects(a.fb.buyPlot(a.user, 'Ana', pb.id, bSide[0], bSide[1], 'Sneaky', 's4'), /permission/i);
   // A player can't slip a city into someone else's council, or point home at a plot they don't own.
-  await assertFails(updateDoc(doc(b.db, 'memberships', `${a.uid}_s3`), { plotIds: [pa.id, east.id, pb.id] }));
-  await assertFails(a.fb.setHome(a.user, 's3', pb.id));
+  await assertFails(updateDoc(doc(b.db, 'memberships', `${a.uid}_s4`), { plotIds: [pa.id, east.id, pb.id] }));
+  await assertFails(a.fb.setHome(a.user, 's4', pb.id));
   // Saving the new city works like any other.
   const st = sim.migrate(JSON.parse(east.state)); st.money += 100;
   await a.fb.savePlot(east.id, st);
@@ -514,9 +514,9 @@ test('city shares: only the owner lists; trades only move the counter within bou
   await a.fb.delistStock(w.id, pa.id);
 });
 
-test('fresh start: the new open world s3 can be founded; odd world ids stay private-only', async () => {
+test('fresh start: the new open world s4 can be founded; odd world ids stay private-only', async () => {
   const a = await player();
-  const p = await a.fb.claimPlot(a.user, 'Ana', 'A', 's3');
-  assert.equal(p.world, 's3');
+  const p = await a.fb.claimPlot(a.user, 'Ana', 'A', 's4');
+  assert.equal(p.world, 's4');
   await assertFails(setDoc(doc(a.db, 'worlds', 'sx'), { nextIndex: 1 }));   // not an open world id
 });
