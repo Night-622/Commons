@@ -6,7 +6,7 @@ import {
   LINK_MOOD, MAX_LINKS, HISTORY_DAYS, LOG_SIZE, EVENT_CHANCE, CHUNK, CHUNKS, START_CHUNKS, LAND_PRICE, LAND_STEP,
   MOVE_FEE, ADULT, RETIRE, WAGE, isHome, walkable, BUS_SEATS, COMMUTE_JOBS, TICK_MS, isRoad, isRail, POLICY, WANT_REWARD,
   GOODS_PER_FACTORY, SEASONS, SEASON_DAYS, YEAR_DAYS, UTILITY_POP, DECISIONS, ELECTION_EVERY, ZONES, ZONE_COST,
-  MAT_PER_COST, MAT_BUY, HARVEST, TRADE_RES, MARKET, RES, FOOD, USE, STORE_BASE, SURPLUS_SALE, MATERIALS_BOOST, MATERIALS_PER_WORK, PLOT_BUY_PARCELS, PLOT_BUY_STEP, PLOT_BUY_MIN, BUILD_SPEED, RECRUIT_COST, FIRED_DAYS, ADULT_STUDY_YEARS, TRAINING_YEARS, EDU, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
+  MAT_PER_COST, MAT_BUY, HARVEST, COMPANIES, SHARE_FEE, TRADE_RES, MARKET, RES, FOOD, USE, STORE_BASE, SURPLUS_SALE, MATERIALS_BOOST, MATERIALS_PER_WORK, PLOT_BUY_PARCELS, PLOT_BUY_STEP, PLOT_BUY_MIN, BUILD_SPEED, RECRUIT_COST, FIRED_DAYS, ADULT_STUDY_YEARS, TRAINING_YEARS, EDU, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
 } from './constants.js';
 
 const N = PLOT * PLOT;
@@ -317,6 +317,40 @@ function resourcesDay(s, uc) {
   }
   return { prod, need, short, imported, importCost, sold: Math.round(sold), variety, cap };
 }
+// ---------- the stock exchange ----------
+// A share price is smooth noise over the world's days: slow waves, medium ones and a daily wobble. Anyone
+// working it out for the same company and day gets the same price.
+const wave = (seed, x) => { const a = Math.floor(x), f = x - a, u = f * f * (3 - 2 * f); return h32(a, seed) * (1 - u) + h32(a + 1, seed) * u; };
+export function sharePrice(id, day) {
+  const c = COMPANIES.find((x) => x.id === id);
+  if (!c) return 0;
+  const seed = [...id].reduce((a, ch) => a * 31 + ch.charCodeAt(0), 7);
+  const n = wave(seed, day / 12) * 0.55 + wave(seed + 1, day / 4) * 0.3 + wave(seed + 2, day) * 0.15 - 0.5;
+  return Math.max(1, Math.round(c.base * Math.exp(c.vol * 2 * n) * 100) / 100);
+}
+export function buyShares(s, id, n, day) {
+  const p = sharePrice(id, day), cost = Math.round(p * n * (1 + SHARE_FEE) * 100) / 100;
+  if (!p || !(n >= 1)) return { ok: false, reason: 'No such company' };
+  if (s.money < cost) return { ok: false, reason: `Needs $${Math.ceil(cost)}` };
+  s.money -= cost;
+  const h = ((s.shares ||= {})[id] ||= { n: 0, paid: 0 });
+  h.n += n; h.paid += cost;
+  return { ok: true, cost, price: p };
+}
+export function sellShares(s, id, n, day) {
+  const h = s.shares?.[id];
+  if (!h || h.n < n || !(n >= 1)) return { ok: false, reason: 'You don’t have that many' };
+  const p = sharePrice(id, day), got = Math.round(p * n * (1 - SHARE_FEE) * 100) / 100;
+  h.paid = h.paid * (1 - n / h.n);
+  h.n -= n;
+  if (!h.n) delete s.shares[id];
+  s.money += got;
+  return { ok: true, got, price: p };
+}
+export function portfolio(s, day) {
+  return Object.entries(s.shares || {}).reduce((a, [id, h]) => a + h.n * sharePrice(id, day), 0);
+}
+
 // ---------- the market: escrow, deliveries and debts ----------
 // Posting an offer sets its goods (sell) or money (buy) aside until it's taken or cancelled.
 export function reserve(s, offer, kind, res, qty, price) {
@@ -1711,6 +1745,12 @@ function daily(s, plan, rng) {
   for (const d of s.debts || []) if (s.day > d.due) d.late = (d.late || 0) + 1;
   for (const p of s.people) if (p.oc && s.day >= p.oc) { p.oc = 0; remember(s, p, 'Came back from a job in another city'); }
   if (s.contracts) s.contracts = s.contracts.filter((k) => k.until > s.day);
+  // Dividends from shares, at today's prices.
+  if (s.shares) {
+    const wd = cityDay(s);
+    const div = Math.round(Object.entries(s.shares).reduce((a, [id, h]) => a + h.n * sharePrice(id, wd) * (COMPANIES.find((c) => c.id === id)?.yield || 0), 0));
+    if (div) { st.income += div; st.byClass = { ...st.byClass, dividends: div }; }
+  }
   const rs = resourcesDay(s, uc);
   st.res = rs;
   if (rs.importCost) { st.upkeep += rs.importCost; st.upkeepBy = { ...st.upkeepBy, imports: rs.importCost }; }

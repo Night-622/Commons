@@ -3,7 +3,7 @@ import {
   T, B, PLOT, TICK_MS, MAX_OFFLINE_DAYS, HOURS_PER_DAY, SAVE_EVERY_MS, RUBBLE_CLEAR_COST, MAX_LEVEL, LEVEL, UPGRADABLE,
   REBUILD_MONEY, MOVE_KEEP, TUTORIAL_REWARD, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome, DECISIONS, ZONES, ZONE_COST,
   LOAN_DAYS, HISTORIC_DAYS, BADGES, REGIONAL, REGIONAL_SHARE, ALLIANCE_TRADE, DAILY, DAILY_REWARD, WEEKLY, WEEKLY_REWARD, GIFT_LIMITS, REACTIONS,
-  RES, FOOD, USE, HARVEST, MARKET, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
+  RES, FOOD, USE, HARVEST, MARKET, COMPANIES, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
 } from './constants.js';
 import { Renderer, STRIDE, thumbnail, modelHeight } from './render.js';
 import { loadPrefs, savePrefs, applyPrefs, resolvedTheme, palette, PALETTES } from './prefs.js';
@@ -385,7 +385,7 @@ function toPlot(d) {
     id: d.id, px: d.px, py: d.py, st: old?.version === meta.version ? old.st : null, name: d.name, ownerName: d.ownerName, status: d.status,
     pop: d.pop || 0, peakPop: d.peakPop || 0, day: d.day || 0, happiness: d.happiness || 0, cityNo: d.cityNo || 1,
     grid: m.grid, cond: m.cond, lv: m.lv, land: m.land, uc: m.uc, terr: m.terr || terrCache(d.id, d.px, d.py), queueMap: new Map(), version: meta.version, mine: meta.mine,
-    owner: d.owner, out: d.out || {}, offer: d.offer, active: meta.version, co: d.co || [],
+    owner: d.owner, out: d.out || {}, offer: d.offer, active: meta.version, co: d.co || [], growth: d.growth || 0, season: d.season || '',
     flag: d.flag, badges: d.badges || [], green: d.green ?? 1, riders: d.riders || 0, tourists: d.tourists || 0, money: d.money || 0,
   };
 }
@@ -709,10 +709,16 @@ async function postOffer(form) {
   play('coin'); notify('Your offer is on the market.', 'act'); afterChange(); marketTab = 'yours';
 }
 function marketCtx() {
-  return { offers: offers.filter((o) => o.owner !== user.uid), mine: myOffers.filter((o) => o.status === 'open'), s: state, tab: marketTab, kind: marketKind,
+  return { day: sim.worldDay(), offers: offers.filter((o) => o.owner !== user.uid), mine: myOffers.filter((o) => o.status === 'open'), s: state, tab: marketTab, kind: marketKind,
     debts: state.debts || [], loansOut: state.loansOut || [], money: state.money, stock: sim.resourceStock(state) };
 }
 function wireMarket(box) {
+  const trade = (b, fn, verb) => { const [id, n] = b.dataset[fn === sim.buyShares ? 'buyShares' : 'sellShares'].split('|');
+    const r = fn(state, id, +n, sim.worldDay());
+    if (!r.ok) { notify(r.reason + '.', 'act'); play('error'); return; }
+    play('coin'); notify(`${verb} ${n} ${COMPANIES.find((c) => c.id === id).name} shares for ${money(r.cost ?? r.got)}.`, 'act'); afterChange(); save(); };
+  box.querySelectorAll('[data-buy-shares]').forEach((b) => { b.onclick = () => trade(b, sim.buyShares, 'Bought'); });
+  box.querySelectorAll('[data-sell-shares]').forEach((b) => { b.onclick = () => trade(b, sim.sellShares, 'Sold'); });
   box.querySelectorAll('[data-mtab]').forEach((b) => { b.onclick = () => { marketTab = b.dataset.mtab; renderDrawer(); }; });
   box.querySelector('#mk-kind')?.addEventListener('change', (e) => { marketKind = e.target.value; renderDrawer(); });
   box.querySelectorAll('[data-take]').forEach((b) => { b.onclick = () => busy(b, async () => { const o = offers.find((x) => x.id === b.dataset.take); if (o) await acceptOffer(o); }, $('mk-msg')); });
@@ -762,17 +768,24 @@ function watchAllyChat() {
   allyChatUnsub?.(); allyChatUnsub = null; allyChat = []; allyChatFor = a?.id || null;
   if (a) allyChatUnsub = fb.listenAllianceChat(world.id, a.id, (msgs) => { allyChat = msgs; if (drawer === 'region') refreshDrawer(); });
 }
+let rankBy = 'growth';
 function regionCtx() {
-  const a = myAlliance(), mine = (p) => p.members?.[user.uid] || 0;
+  const a = myAlliance(), mine = (p) => p.members?.[user.uid] || 0, month = new Date().toISOString().slice(0, 7);
+  // Growth this month: each member city's people now, less at the start of the month.
+  const growthOf = (uid) => [...plots.values()].filter((p) => p.owner === uid && p.status === 'alive' && (p.mine ? state.flags?.season?.m : p.season) === month)
+    .reduce((s2, p) => s2 + (p.mine ? state.people.length - (state.flags?.season?.pop ?? state.people.length) : p.growth || 0), 0);
   const popOf = (uid) => [...plots.values()].filter((p) => p.owner === uid && p.status === 'alive').reduce((s2, p) => s2 + (p.mine ? state.people.length : p.pop || 0), 0);
   return {
     projects: projects.map((p) => ({ ...p, mine: mine(p), benefits: p.done && mine(p) >= p.goal * REGIONAL_SHARE, share: Math.ceil(p.goal * REGIONAL_SHARE) })),
-    alliances: alliances.map((x) => ({ ...x, pop: (x.members || []).reduce((s2, m) => s2 + popOf(m), 0) })).sort((x, y) => y.pop - x.pop),
+    alliances: alliances.map((x) => ({ ...x, pop: (x.members || []).reduce((s2, m) => s2 + popOf(m), 0), growth: (x.members || []).reduce((s2, m) => s2 + growthOf(m), 0) }))
+      .sort((x, y) => y[rankBy] - x[rankBy] || y.pop - x.pop),
+    rankBy,
     mine: a, chat: allyChat.map((m) => ({ ...m, text: clean(m.text) })), me: user.uid, money: state.money, regional: state._regional || {},
     nameOf: (uid) => [...plots.values()].find((p) => p.owner === uid)?.ownerName || 'A mayor',
   };
 }
 function wireRegion(box) {
+  box.querySelectorAll('[data-rank]').forEach((b) => { b.onclick = () => { rankBy = b.dataset.rank; renderDrawer(); }; });
   box.querySelectorAll('[data-pay]').forEach((b) => { b.onclick = () => busy(b, async () => {
     const [id, amt] = b.dataset.pay.split('|'), want = Math.min(+amt, Math.floor(state.money));
     if (want < 10) throw new Error('Not enough money.');
@@ -2874,8 +2887,12 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 1.15';
+const VERSION = 'Commons 1.16';
 const CHANGELOG = [
+  ['1.16', [
+    'The stock exchange: Market, Shares. Five companies whose prices move every day, the same for every player. Buy low, sell high, and collect a dividend every day from most of them.',
+    'Alliance rankings in the Region panel: see which alliance is growing fastest this month (it wears the crown), or which is biggest.',
+  ]],
   ['1.15', [
     'Your resources are always on show in the city card at the top left: water, power, food and building materials. Tap them for the full picture.',
     'Harvests: farms, orchards, power stations and every other producer build up a harvest while they work. Tap a building with a bubble over it to collect it.',

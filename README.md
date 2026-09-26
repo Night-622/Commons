@@ -21,6 +21,10 @@ Guests can turn their guest city into a full account later (Account menu). Linki
 - Saves are split: `plots/{id}` is a small public summary everyone listens to; `plotState/{id}` holds the full city and is only fetched for adjacent neighbours.
 - `node test/balance.mjs` runs a scripted city for 100 days.
 
+## New in 1.16: stock exchange and alliance rankings
+- `COMPANIES` in constants.js; `sim.sharePrice(id, day)` is smooth value noise over the world day (slow, medium and daily waves scaled by `vol`), so every player sees the same price without storing it anywhere. `sim.buyShares`/`sellShares` (with `SHARE_FEE`) keep holdings in `s.shares`; `daily()` pays `yield` x price as "dividends" income.
+- Region panel ranks alliances by members' growth this month (from each plot's `growth`/`season` summary) or population; the leader gets a crown.
+
 ## New in 1.15: resources on show, harvests, materials in prices, and the free 3D camera
 - `public/js/view3d.js` draws the city with three.js (pinned 0.186.1, served from `public/vendor/three-0.186.1/` through an import map in index.html; MIT licence alongside). It's imported the first time the Free view opens (`toggleFree` in main.js), so nobody else downloads it (about 420 KB compressed).
 - `View3D.sync(scene)` rebuilds a plot's meshes only when its version changes: an instanced ground mesh per plot (terrain, roads, owned land), a mesh per building (with special shapes for water towers, wind turbines, factories, power stations and towers), trees, yellow borders. Each frame it moves the trip agents (one instanced mesh), updates harvest markers, lighting and night windows.

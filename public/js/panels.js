@@ -1,14 +1,14 @@
 // HTML for the side drawer and the build catalogue. Pure functions: main.js supplies data and wires up buttons.
-import { REGIONAL, ALLIANCE_TRADE, REACTIONS, T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY, BONDS, INSURANCE, TECH, ERAS, TRAITS, CARBON_TAX, LOANS, LOAN_DAYS, CONGESTION_FEE, BADGES, RES, FOOD, TECH_BRANCHES, STORE_BASE, TRADE_RES, MARKET, USE } from './constants.js';
+import { REGIONAL, ALLIANCE_TRADE, REACTIONS, T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY, BONDS, INSURANCE, TECH, ERAS, TRAITS, CARBON_TAX, LOANS, LOAN_DAYS, CONGESTION_FEE, BADGES, RES, FOOD, TECH_BRANCHES, STORE_BASE, TRADE_RES, MARKET, USE, COMPANIES, SHARE_FEE } from './constants.js';
 import { t as tr } from './i18n.js';
-import { creditRating, greenShare, traitOf, hasTech, canResearch, eraOf, resourceStock, matCost } from './sim.js';
+import { creditRating, greenShare, traitOf, hasTech, canResearch, eraOf, resourceStock, matCost, sharePrice, portfolio } from './sim.js';
 import { ROLES, roleOf, jobText, family, healthText, moodReasons, thought, personName } from './people.js';
 
 // The market: open offers from other cities, a form to post your own, and what you owe or are owed.
 export function marketPanel(ctx) {
   const { offers, mine, s, tab, kind, debts, loansOut, stock } = ctx;
   const nm = (k) => RES[k]?.name.toLowerCase() || k, each = (p) => `$${(+p).toFixed(2)}`;
-  const tabs = [['offers', `Offers ${offers.length ? offers.length : ''}`], ['post', 'Post'], ['yours', 'Yours']];
+  const tabs = [['offers', `Offers ${offers.length ? offers.length : ''}`], ['post', 'Post'], ['yours', 'Yours'], ['shares', 'Shares']];
   const offerLine = (o) => {
     if (o.kind === 'sell') return [`<b>${esc(o.city)}</b> sells ${o.qty} ${nm(o.res)} at ${each(o.price)} each`, `Buy for ${money(o.total)}`, s.money >= o.total];
     if (o.kind === 'buy') return [`<b>${esc(o.city)}</b> wants ${o.qty} ${nm(o.res)}, paying ${each(o.price)} each`, `Sell for ${money(o.total)}`, (stock[o.res] || 0) >= o.qty];
@@ -16,7 +16,17 @@ export function marketPanel(ctx) {
     return [`<b>${esc(o.city)}</b> asks to borrow ${money(o.total)}, repaying ${money(o.repay)} within ${o.days} days`, `Lend ${money(o.total)}`, s.money >= o.total];
   };
   let body = '';
-  if (tab === 'offers') {
+  if (tab === 'shares') {
+    const day = ctx.day, held = s.shares || {}, value = portfolio(s, day);
+    const spark = (id) => { const ps = Array.from({ length: 15 }, (_, k) => sharePrice(id, day - 14 + k)), lo = Math.min(...ps), hi = Math.max(...ps);
+      return `<svg class="spark" viewBox="0 0 70 20" aria-hidden="true"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="${ps.map((p, k) => `${k * 5},${18 - ((p - lo) / Math.max(0.01, hi - lo)) * 16}`).join(' ')}"/></svg>`; };
+    body = `<p class="soft small">Buy shares with your city’s money. Prices move every day, the same for everyone; most companies pay a dividend each day. Brokers take ${Math.round(SHARE_FEE * 100)}% of every trade.</p>
+      <div class="grid2"><div class="kv"><span>Your shares are worth</span><b class="num">${money(value)}</b></div><div class="kv"><span>You paid</span><b class="num">${money(Object.values(held).reduce((a, h) => a + h.paid, 0))}</b></div></div>
+      <ul class="picklist shares">${COMPANIES.map((c) => { const p = sharePrice(c.id, day), y = sharePrice(c.id, day - 1), ch = (p - y) / y, h = held[c.id];
+        return `<li><span><b>${c.name}</b> <b class="num">$${p.toFixed(2)}</b> <small class="${ch >= 0 ? 'good-t' : 'warn'}">${ch >= 0 ? '▲' : '▼'} ${Math.abs(ch * 100).toFixed(1)}%</small>
+            <small class="soft">${c.text}${c.yield ? ` Dividend ${(c.yield * 100).toFixed(1)}% a day.` : ''}${h ? ` You own ${h.n}, worth ${money(h.n * p)}.` : ''}</small></span>
+          <span class="inline">${spark(c.id)}<button class="btn small" type="button" data-buy-shares="${c.id}|10" ${s.money >= p * 10 * (1 + SHARE_FEE) ? '' : 'disabled'}>Buy 10</button>${h ? `<button class="btn small" type="button" data-sell-shares="${c.id}|${h.n}">Sell all</button>` : ''}</span></li>`; }).join('')}</ul>`;
+  } else if (tab === 'offers') {
     body = offers.length ? `<ul class="picklist market">${offers.map((o) => { const [text, act, ok] = offerLine(o);
       return `<li><span>${text}<small class="soft">Mayor ${esc(o.ownerName)}</small></span><button class="btn small ${ok ? 'primary' : ''}" type="button" data-take="${o.id}" ${ok ? '' : 'disabled'}>${act}</button></li>`; }).join('')}</ul>`
       : '<p class="soft">No offers yet. Post one: sell what you have too much of, ask for what you need, or ask for a loan.</p>';
@@ -45,7 +55,7 @@ export function marketPanel(ctx) {
       <h3 class="sub">You owe</h3>${debts.length ? `<ul class="picklist">${debts.map((d) => `<li><span>${money(d.repay)} to ${esc(d.toName)}<small class="${s.day > d.due ? 'warn' : 'soft'}">${s.day > d.due ? `Late by ${s.day - d.due} days` : `Due on day ${d.due}`}</small></span></li>`).join('')}</ul>` : '<p class="soft small">Nothing.</p>'}
       <h3 class="sub">Owed to you</h3>${loansOut.length ? `<ul class="picklist">${loansOut.map((l) => `<li><span>${money(l.repay)} from ${esc(l.toName)}<small class="soft">By day ${l.due}</small></span></li>`).join('')}</ul>` : '<p class="soft small">Nothing.</p>'}`;
   }
-  return `${head('Market')}<p class="soft small">Trade food and materials with other cities, and lend or borrow money.</p>
+  return `${head('Market')}<p class="soft small">Trade food and materials with other cities, lend or borrow money, and buy shares.</p>
     <div class="seg tabs" role="tablist">${tabs.map(([k, l]) => `<button type="button" role="tab" aria-selected="${tab === k}" data-mtab="${k}">${l}</button>`).join('')}</div>
     ${body}<p id="mk-msg" class="formmsg" role="alert"></p>`;
 }
@@ -441,7 +451,9 @@ export function regionPanel(ctx) {
       <form id="ally-chat-form" class="chat-form"><input id="ally-text" maxlength="280" autocomplete="off" placeholder="Message your alliance" aria-label="Alliance message"><button class="btn primary" type="submit">Send</button></form>
       <div class="actions"><button class="btn danger" type="button" id="ally-leave">${mine.members.length <= 1 ? 'Close the alliance' : 'Leave the alliance'}</button></div>`
     : `<form id="ally-form" class="miniform"><label class="field"><span>Found an alliance</span><span class="inline"><input id="ally-name" maxlength="30" placeholder="Northern Towns"><input id="ally-tag" maxlength="4" placeholder="TAG" style="max-width:6em" autocapitalize="characters"><button class="btn" type="submit">Found</button></span></label></form>`}
-    ${alliances.length ? `<h3 class="sub">${icon('i-trophy')}Alliances by population</h3><ol class="nlist">${alliances.map((x) => `<li><span class="pmain"><b>[${esc(x.tag)}] ${esc(x.name)}</b><small>${x.members.length} member${x.members.length === 1 ? '' : 's'}, ${x.pop.toLocaleString()} people</small></span>
+    ${alliances.length ? `<h3 class="sub">${icon('i-trophy')}Alliance rankings</h3>
+      <div class="seg tabs" role="tablist">${[['growth', 'Growth this month'], ['pop', 'Population']].map(([k, l]) => `<button type="button" role="tab" aria-selected="${ctx.rankBy === k}" data-rank="${k}">${l}</button>`).join('')}</div>
+      <ol class="nlist ranks">${alliances.map((x, k) => `<li class="${mine && x.id === mine.id ? 'me' : ''}"><span class="pmain"><b>${k === 0 && x[ctx.rankBy] > 0 ? '👑 ' : ''}[${esc(x.tag)}] ${esc(x.name)}</b><small>${x.members.length} member${x.members.length === 1 ? '' : 's'}, ${x.pop.toLocaleString()} people, ${x.growth >= 0 ? '+' : ''}${x.growth} this month</small></span>
       ${!mine && x.members.length < 12 ? `<button class="btn" type="button" data-join="${x.id}">Join</button>` : ''}</li>`).join('')}</ol>` : ''}`;
 }
 

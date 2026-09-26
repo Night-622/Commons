@@ -505,3 +505,17 @@ test('free camera with a built-up town', async ({ page }) => {
   if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/free3d-town.png` });
   expect(clean(errors)).toEqual([]);
 });
+
+test('stock exchange: buy and sell shares', async ({ page }) => {
+  const errors = await newGame(page);
+  await page.locator('#rail [data-panel="market"]').click();
+  await page.locator('#drawer [data-mtab="shares"]').click();
+  await expect(page.locator('#drawer .shares li')).toHaveCount(5);
+  await page.locator('#drawer [data-buy-shares^="rail"]').click();
+  await expect(page.locator('#toasts')).toContainText('Bought 10 Commons Rail shares');
+  await expect(page.locator('#drawer')).toContainText('You own 10');
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/shares.png` });
+  await page.locator('#drawer [data-sell-shares^="rail"]').click();
+  await expect(page.locator('#toasts')).toContainText('Sold 10 Commons Rail shares');
+  expect(clean(errors)).toEqual([]);
+});

@@ -846,6 +846,11 @@ html:not([lang="en"]) .card b { font-size: .95em; }
 @media (max-width: 1180px) { .resbar .rchip { padding: 4px 5px; } }
 @media (max-width: 860px) { .resbar { margin-top: 4px; } .rchip { font-size: .8em; padding: 1px 4px; } }
 
+/* Shares and alliance rankings */
+.spark { width: 70px; height: 20px; color: var(--soft); flex: none; }
+.picklist.shares li { align-items: flex-start; }
+.nlist.ranks li.me { background: color-mix(in srgb, var(--accent) 22%, transparent); border-radius: 8px; }
+
 /* Market */
 .mk-form .field { margin-top: 8px; }
 .picklist.market li span small { margin-top: 2px; }
@@ -867,7 +872,7 @@ details.staff ul, .picklist { list-style: none; padding: 0; margin: 8px 0 0; dis
 details.staff li, .picklist li { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 details.staff li small, .picklist li small { display: block; }
 .picklist { max-height: 50vh; overflow-y: auto; }
-.btn.small { padding: 4px 10px; font-size: .85em; min-height: 0; }
+.btn.small { padding: 4px 10px; font-size: .85em; min-height: 0; white-space: nowrap; }
 /* The mood panel scrolls rather than growing up under the panel buttons on short screens (zoom scales the limit too). */
 @media (min-width: 861px) {
   .pulse { max-height: calc(100vh - 235px); overflow-y: auto; }

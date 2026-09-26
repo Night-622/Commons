@@ -85,6 +85,12 @@ const dict = {
 };
 
 const SEASON = { Spring: 'Άνοιξη', Summer: 'Καλοκαίρι', Autumn: 'Φθινόπωρο', Winter: 'Χειμώνας' };
+// Shares and rankings (1.16)
+Object.assign(dict, {
+  'Shares': 'Μετοχές', 'Your shares are worth': 'Οι μετοχές σας αξίζουν', 'You paid': 'Πληρώσατε', 'Buy 10': 'Αγορά 10', 'Sell all': 'Πώληση όλων',
+  'Alliance rankings': 'Κατάταξη συμμαχιών', 'Growth this month': 'Ανάπτυξη αυτόν τον μήνα', 'Population': 'Πληθυσμός',
+  'Trade food and materials with other cities, lend or borrow money, and buy shares.': 'Ανταλλάξτε τρόφιμα και υλικά με άλλες πόλεις, δανείστε ή δανειστείτε χρήματα, και αγοράστε μετοχές.',
+});
 // The free 3D camera (1.15)
 Object.assign(dict, {
   'Free': 'Ελεύθερη', 'Loading the 3D view…': 'Φόρτωση της τρισδιάστατης προβολής…', 'Free 3D camera': 'Ελεύθερη τρισδιάστατη κάμερα',

@@ -241,6 +241,16 @@ export const RES = {
 export const FOOD = ['veg', 'fruit', 'dairy', 'meat'];
 // The market: offers to sell or buy resources, and loan requests, open to every mayor in the world.
 export const TRADE_RES = ['veg', 'fruit', 'dairy', 'meat', 'materials'];
+// The stock exchange: companies whose share prices move with the world's calendar, the same for every player.
+// vol: how much the price swings; yield: the share of the price paid out as a dividend each day.
+export const COMPANIES = [
+  { id: 'rail', name: 'Commons Rail', base: 60, vol: 0.25, yield: 0.004, text: 'Steady. Trains run whatever the weather.' },
+  { id: 'power', name: 'Frontier Power', base: 40, vol: 0.35, yield: 0.006, text: 'A utility: good dividends, gentle swings.' },
+  { id: 'harvest', name: 'Harvest & Co', base: 25, vol: 0.45, yield: 0.004, text: 'Farms and orchards. Rises and falls with the seasons.' },
+  { id: 'bricks', name: 'Brick & Timber', base: 30, vol: 0.5, yield: 0.003, text: 'Builders’ supplies. Booms and busts.' },
+  { id: 'tech', name: 'Skyline Tech', base: 15, vol: 0.9, yield: 0, text: 'A start-up: no dividend, wild swings.' },
+];
+export const SHARE_FEE = 0.01;   // brokers take 1% of every trade
 export const MARKET = { maxQty: 5000, maxPrice: 50, maxLoan: 20000, maxLoanDays: 30, maxOpen: 6 };
 export const USE = { water: 1, power: 0.5, food: 1, powerPerBuilding: 1 };   // a day, per person (and per staffed building for power)
 export const STORE_BASE = 200;          // of each resource, before warehouses

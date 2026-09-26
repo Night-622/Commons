@@ -536,4 +536,23 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(!sim.harvestReady(s, farm), 'and starts again');
   console.log('materials prices and harvests ok: harvest gave', r.got.veg, 'veg');
 }
+// ---- the stock exchange
+{
+  const p1 = sim.sharePrice('rail', 100), p2 = sim.sharePrice('rail', 100);
+  assert.equal(p1, p2, 'everyone sees the same price on the same day');
+  const days = Array.from({ length: 60 }, (_, d) => sim.sharePrice('tech', d));
+  assert(Math.max(...days) > Math.min(...days) * 1.3, 'tech swings');
+  assert(days.every((p) => p >= 1), 'prices stay positive');
+  const s = sim.newCity('Broker', rng); s.money = 10000;
+  const b = sim.buyShares(s, 'power', 20, 5);
+  assert(b.ok && s.shares.power.n === 20 && s.money < 10000, 'buying');
+  assert(!sim.buyShares(s, 'power', 1e6, 5).ok, 'not with money you haven’t got');
+  const before = s.money;
+  for (let h = 0; h < 24; h++) sim.tick(s, rng);
+  assert(s.stats.byClass.dividends > 0, 'dividends are paid');
+  const r = sim.sellShares(s, 'power', 20, 6);
+  assert(r.ok && !s.shares.power, 'selling all of them');
+  assert(!sim.sellShares(s, 'power', 1, 6).ok);
+  console.log('stock exchange ok: power', b.price, '->', r.price, 'money', Math.round(before), '->', Math.round(s.money));
+}
 console.log('all tests passed');
