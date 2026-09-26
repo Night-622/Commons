@@ -60,3 +60,7 @@ main"):
          needed for the new resources or products themselves - offers
          aren't checked against a fixed list of resource keys - so just
          the usual push, and see "Fresh starts" above for the world reset.
+   1.3   A clear always-on-screen objective banner, no more emoji in the
+         UI (an SVG icon sheet instead), building shadows/depth, a jammed-
+         road glow, and an idle nudge. Another fresh start (WORLD_ID is
+         now s4). No new deploy steps.

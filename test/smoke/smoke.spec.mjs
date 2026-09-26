@@ -470,7 +470,7 @@ test('resources bar, materials in prices, and what buildings make', async ({ pag
   await page.keyboard.press('b');
   for (const k of ['ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter']) await page.keyboard.press(k);
   await page.locator('#cat-q').fill('farm');
-  await expect(page.locator('#catalog .card').first()).toContainText('🧱');
+  await expect(page.locator('#catalog .card').first().locator('use[href="#i-materials"]')).toHaveCount(1);
   await expect(page.locator('#catalog .card').first()).toContainText('makes');
   if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/resbar.png` });
   await page.keyboard.press('Escape');

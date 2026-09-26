@@ -16,10 +16,17 @@ Guests can turn their guest city into a full account later (Account menu). Linki
 
 ## More
 - Level crossings (draw rail over a road), congestion-aware driving, seasons and weather on a shared world clock.
-- Policies (tax, service funding, free transit), resident requests with rewards, factory goods sold to neighbours.
+- Policies (tax, service funding, free transit), resident requests with rewards, factory products sold in a Store or traded on the Market (see "New in 1.2" below).
 - Life stories and favourites for residents, catalogue search, snapshot undo for the last minute, photo mode, likes, chat mute and report, browser alerts, installable app.
 - Saves are split: `plots/{id}` is a small public summary everyone listens to; `plotState/{id}` holds the full city and is only fetched for adjacent neighbours.
 - `node test/balance.mjs` runs a scripted city for 100 days.
+
+## New in 1.3: a clear objective, no emoji, depth and feedback
+- A new `#objective` banner in the top bar (`updateHud()` in main.js) always shows the same `step` value the `#pulse` hint uses — one source of truth, two places it's shown, so a new mayor can't miss it. Turns to a `--bad`-tinted "urgent" style via `.objective.urgent`.
+- Every decorative emoji in the UI is gone: the resource bar and the 🧱/👑 spots in panels.js now use the existing SVG icon sheet (`index.html`'s `<symbol>` defs, `panels.js`'s `icon()`), with five new icons (`i-water`, `i-power`, `i-materials`, `i-food`, `i-products`). The emoji reaction picker (`REACTIONS` in constants.js) is a deliberate feature, not decoration, and was left alone.
+- `render.js`: a ground-contact shadow now draws under every building (previously gated to high zoom and skipped for cached tiles); `box()`'s wall/roof shading contrast is deepened globally; jammed roads pulse with a glow (`jamColour` plus a `shadowBlur` on the tile fill, same technique as the selected-building outline).
+- `addPop` now fires for a mood-band improvement ("Happier!"), and a new idle-nudge (`maybeNudge` in main.js, its own 60s timer separate from the co-mayor desk's) toasts the current `nextStep()` suggestion if you go a minute without touching anything, on a few-minutes cooldown, suppressed during the guided tour.
+- Another fresh start: `WORLD_ID` is `s4`.
 
 ## New in 1.2: a real economy, a fresh start
 - `RES` in constants.js is now nine keys: water and power (unchanged), `wood` and `metal` (the old single `materials`, now made separately by the renamed Sawmill and the new Quarry), `vegetables` (renamed from `veg`), `fruit`, `dairy`, `meat` and `eggs` (Poultry farm, needs the `poultry` tech). `FOOD` is just the internal list `resourcesDay` pools eating across; the UI shows each food (and wood and metal) on its own, not a combined total.

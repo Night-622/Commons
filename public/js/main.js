@@ -37,7 +37,7 @@ try {
   if (saved && localStorage.getItem('commons-world-v5')) world = { id: saved, name: OPEN_WORLDS[saved] || 'World' };
   localStorage.setItem('commons-world-v5', '1');
 } catch { /* private mode */ }
-let plan = null, totalsNow = null;
+let plan = null, totalsNow = null, lastStep = null;
 let zoneKind = 1;
 let mode = 'select', brush = null, moveFrom = -1, catalog = null, catCat = 'all', catQ = '', catAfford = false;
 let overlay = null, hover = null, cursor = null, selected = null;
@@ -653,7 +653,7 @@ function renderResbar() {
   const bar = $('resbar');
   if (!bar || !state) return;
   const st = sim.resourceStock(state), r = state.stats?.res, ps = state.stats?.products, n = (v) => Math.floor(v || 0).toLocaleString();
-  const chip = (emoji, label, v, bad, title) => `<span class="rchip ${bad ? 'bad' : ''}" title="${esc(title)}"><span aria-hidden="true">${emoji}</span><b class="num">${v}</b><span class="sr">${label}</span></span>`;
+  const chip = (iconId, label, v, bad, title) => `<span class="rchip ${bad ? 'bad' : ''}" title="${esc(title)}">${icon(iconId)}<b class="num">${v}</b><span class="sr">${label}</span></span>`;
   const materials = (st.wood || 0) + (st.metal || 0);
   const materialsTitle = `Building materials: ${['wood', 'metal'].map((k) => `${n(st[k])} ${RES[k].name.toLowerCase()} (${n(r?.prod[k])} made a day)`).join(', ')}`;
   const food = FOOD.reduce((a, k) => a + st[k], 0);
@@ -661,11 +661,11 @@ function renderResbar() {
   const hasProducts = PRODUCT_IDS.some((k) => st[k] > 0 || ps?.made?.[k] > 0);
   const products = PRODUCT_IDS.reduce((a, k) => a + (st[k] || 0), 0);
   const productsTitle = `Products: ${PRODUCT_IDS.map((k) => `${n(st[k])} ${PRODUCTS[k].name.toLowerCase()}`).join(', ')}`;
-  bar.innerHTML = chip('💧', 'water', n(st.water), r?.short.water > 0 && r?.prod.water > 0, `Water: ${n(st.water)} in store, ${n(r?.prod.water)} made and ${n(r?.need.water)} used a day`)
-    + chip('⚡', 'power', n(st.power), r?.short.power > 0 && r?.prod.power > 0, `Power: ${n(st.power)} in store, ${n(r?.prod.power)} made and ${n(r?.need.power)} used a day`)
-    + chip('🧱', 'materials', n(materials), false, materialsTitle)
-    + chip('🍎', 'food', n(food), false, foodTitle)
-    + (hasProducts ? chip('📦', 'products', n(products), false, productsTitle) : '');
+  bar.innerHTML = chip('i-water', 'water', n(st.water), r?.short.water > 0 && r?.prod.water > 0, `Water: ${n(st.water)} in store, ${n(r?.prod.water)} made and ${n(r?.need.water)} used a day`)
+    + chip('i-power', 'power', n(st.power), r?.short.power > 0 && r?.prod.power > 0, `Power: ${n(st.power)} in store, ${n(r?.prod.power)} made and ${n(r?.need.power)} used a day`)
+    + chip('i-materials', 'materials', n(materials), false, materialsTitle)
+    + chip('i-food', 'food', n(food), false, foodTitle)
+    + (hasProducts ? chip('i-products', 'products', n(products), false, productsTitle) : '');
 }
 $('resbar').onclick = () => { statsTab = 'resources'; drawer = null; openPanel('stats'); };
 
@@ -1216,6 +1216,12 @@ function onNewDay(st) {
   if (!tut.active()) firstTimeTips(st);   // don't pile one-off tips on top of the guided tour
   const hall = sim.xy(sim.HALL_INDEX);
   if (st.income > 0) { addPop(hall.x, hall.y, 1.8, `+${money(st.income)}`, '#ffd24a'); play('coin'); }
+  // Floating feedback when mood visibly improves: only when it crosses into a better mood band (as moodWord()
+  // uses), so a lucky day or two of tiny fluctuation doesn't spam the pop-up. No matching "sadder" pop: losing
+  // a band is already obvious from the ring colour and word, and the needs bars show exactly what's wrong.
+  const moodNow = state.history.at(-1)?.mood, moodPrev = state.history.at(-2)?.mood;
+  const moodBand = (m) => (m >= 80 ? 3 : m >= 60 ? 2 : m >= 40 ? 1 : 0);
+  if (moodNow != null && moodPrev != null && moodBand(moodNow) > moodBand(moodPrev)) addPop(hall.x, hall.y, 2, 'Happier!', '#ffd24a');
   if (st.event) notify(st.event, 'info');
   if (st.disaster) { notify(st.disaster, 'warn'); callout(st.disaster); }
   if (st.milestone) { const hall = sim.xy(sim.HALL_INDEX); addPop(hall.x, hall.y, 2.6, `${st.milestone} people!`, '#ffd24a'); play('goal'); notify(`${state.name} reached ${st.milestone} residents!`, 'good'); callout(`${state.name} reached ${st.milestone} residents.`); }
@@ -1334,6 +1340,7 @@ function startLoops() {
     else if (drawer && drawer !== 'world' && drawer !== 'chat' && state.hour !== lastHour) refreshDrawer();
     if (state.hour !== lastHour) repayDebts();
     lastHour = state.hour;
+    maybeNudge();
     if (Date.now() - lastSave > SAVE_EVERY_MS && !saveFails) save();
   }, 500);
 }
@@ -1369,6 +1376,20 @@ tabChan?.addEventListener('message', (e) => {
 // frees up when its holder has been idle for DESK_IDLE_MS or their game stops checking in for DESK_STALE_MS.
 let coMode = false, desk = null, deskUnsub = null, deskTimer = null, watching = false, watchUnsub = null, lastInput = Date.now(), deskFirst = true;
 for (const ev of ['pointerdown', 'keydown', 'wheel']) addEventListener(ev, () => { lastInput = Date.now(); }, { passive: true });
+
+// ---------- idle nudge ----------
+// After a minute with no input, gently toast the current "next step" so nobody's stuck wondering what to do.
+// Its own idle clock: DESK_IDLE_MS above is 2 minutes and hands off the desk, a different job at a different pace.
+const NUDGE_IDLE_MS = 60 * 1000, NUDGE_COOLDOWN_MS = 4 * 60 * 1000;
+let lastNudgeInput = Date.now(), lastNudge = 0;
+for (const ev of ['pointerdown', 'keydown', 'wheel']) addEventListener(ev, () => { lastNudgeInput = Date.now(); }, { passive: true });
+function maybeNudge() {
+  if (!state || state.status !== 'alive' || tut.active() || modal.open || catalog || drawer) return;
+  if (Date.now() - lastNudgeInput < NUDGE_IDLE_MS || Date.now() - lastNudge < NUDGE_COOLDOWN_MS) return;
+  if (!lastStep || !lastStep.text) return;
+  lastNudge = Date.now();
+  notify(lastStep.text, 'act');
+}
 const shared = () => coMode || (me?.co?.length || 0) > 0;
 const deskAt = (d) => d?.at?.toMillis?.() ?? 0;
 const deskFree = (d) => !d || d.uid === user?.uid || d.idle || Date.now() - deskAt(d) > DESK_STALE_MS;
@@ -2291,9 +2312,17 @@ function updateHud() {
   const tips = state.status === 'ruins' ? [] : [...sim.advice(state, plan), ...localTips()].sort((a, b) => b.score - a.score).slice(0, 3);
   const tip = tips[0];
   const step = state.status === 'ruins' ? null : nextStep(tips);
+  lastStep = step;   // cached so the idle nudge (below) can reuse it rather than recomputing advice
   $('hint').innerHTML = state.status === 'ruins' ? 'This city has fallen. Rebuild on the ruins to start again.'
     : `<span class="step-label">${step.urgent ? 'Needs attention' : 'Next step'}</span>${esc(step.text)}${step.go ? ` <button type="button" class="linkbtn" id="tip-go">Show me</button>` : ''}`;
   $('tip-go')?.addEventListener('click', () => step.go());
+  // Same step/tips values as above, echoed in a banner at the top of the screen so the objective is always visible.
+  const obj = $('objective');
+  obj.classList.toggle('urgent', state.status === 'ruins' || !!step?.urgent);
+  obj.title = state.status === 'ruins' ? '' : step.text;
+  obj.innerHTML = state.status === 'ruins' ? `<span class="obj-icon">${icon('i-alert')}</span><span class="obj-body"><b class="obj-text">This city has fallen. Rebuild on the ruins to start again.</b></span>`
+    : `<span class="obj-icon">${icon(step.urgent ? 'i-alert' : 'i-flag')}</span><span class="obj-body"><small class="obj-label">${step.urgent ? 'Needs attention' : 'Next step'}</small><b class="obj-text">${esc(step.text)}</b></span>${step.go ? `<button type="button" class="btn small" id="obj-go">Show me</button>` : ''}`;
+  $('obj-go')?.addEventListener('click', () => step.go());
   const alert = $('alert');
   const msg = state.status === 'ruins' ? 'City fallen' : state.unpaidDays ? `Upkeep unpaid for ${state.unpaidDays}d` : c.sick > pop * 0.15 && pop > 10 ? `${c.sick} people sick` : state.cases > 3 ? `${state.cases} court cases waiting` : '';
   alert.textContent = msg;
@@ -3010,8 +3039,15 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 1.2';
+const VERSION = 'Commons 1.3';
 const CHANGELOG = [
+  ['1.3', [
+    'A clear objective, always on screen: a banner at the top now shows your next step at a glance, with a Show me button, so a new mayor always knows what to do.',
+    'No more emoji: the resource bar and every other icon are now the same line-icon style as the rest of the interface.',
+    'Buildings finally cast a shadow and read with more depth; jammed roads now glow to make traffic problems obvious, and flowing roads look a little brighter.',
+    'Floating feedback when your mood visibly improves, and a gentle toast suggestion if you go a minute without doing anything.',
+    'A fresh start: every world begins again, same as before.',
+  ]],
   ['1.2', [
     'A real economy: the single "materials" resource splits into wood and metal, and "food" is no longer its own resource — vegetables, fruit, dairy, meat and the new eggs are each their own stock and trade good. A Quarry mines metal and a Poultry farm keeps eggs; the old Materials works is now the Sawmill (wood).',
     'Factories now do something: research a recipe (Furniture, Tools or Baked goods), assign it, and the factory turns real resources into a real product, limited by what you actually have in store. A new Store sells your products to your own residents; you can also trade them with other mayors on the Market.',

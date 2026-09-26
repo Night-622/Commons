@@ -512,7 +512,7 @@ export function regionPanel(ctx) {
     : `<form id="ally-form" class="miniform"><label class="field"><span>Found an alliance</span><span class="inline"><input id="ally-name" maxlength="30" placeholder="Northern Towns"><input id="ally-tag" maxlength="4" placeholder="TAG" style="max-width:6em" autocapitalize="characters"><button class="btn" type="submit">Found</button></span></label></form>`}
     ${alliances.length ? `<h3 class="sub">${icon('i-trophy')}Alliance rankings</h3>
       <div class="seg tabs" role="tablist">${[['growth', 'Growth this month'], ['pop', 'Population']].map(([k, l]) => `<button type="button" role="tab" aria-selected="${ctx.rankBy === k}" data-rank="${k}">${l}</button>`).join('')}</div>
-      <ol class="nlist ranks">${alliances.map((x, k) => `<li class="${mine && x.id === mine.id ? 'me' : ''}"><span class="pmain"><b>${k === 0 && x[ctx.rankBy] > 0 ? '👑 ' : ''}[${esc(x.tag)}] ${esc(x.name)}</b><small>${x.members.length} member${x.members.length === 1 ? '' : 's'}, ${x.pop.toLocaleString()} people, ${x.growth >= 0 ? '+' : ''}${x.growth} this month</small></span>
+      <ol class="nlist ranks">${alliances.map((x, k) => `<li class="${mine && x.id === mine.id ? 'me' : ''}"><span class="pmain"><b>${k === 0 && x[ctx.rankBy] > 0 ? icon('i-trophy') : ''}[${esc(x.tag)}] ${esc(x.name)}</b><small>${x.members.length} member${x.members.length === 1 ? '' : 's'}, ${x.pop.toLocaleString()} people, ${x.growth >= 0 ? '+' : ''}${x.growth} this month</small></span>
       ${!mine && x.members.length < 12 ? `<button class="btn" type="button" data-join="${x.id}">Join</button>` : ''}</li>`).join('')}</ol>` : ''}`;
 }
 
@@ -541,7 +541,7 @@ export function catalogHtml(ctx) {
   const needle = q.trim().toLowerCase();
   const list = BUILDINGS.filter((t) => (cat === 'all' || B[t].cat === cat) && (!needle || `${B[t].name} ${tr(B[t].name)} ${B[t].blurb} ${gives(t)}`.toLowerCase().includes(needle)) && (!afford || avail(t).ok));
   const x = tile % 24 + 1, y = Math.floor(tile / 24) + 1;
-  return `<div class="cat-head"><div><h2 id="catalog-title">Build on tile ${x}, ${y}</h2><small class="soft">You have <b>${money(s.money)}</b> and <b>${Math.floor((s.res?.wood || 0) + (s.res?.metal || 0))} 🧱</b>; each load of your own takes $2 off the price. Staffed buildings need people with the right education.</small></div>
+  return `<div class="cat-head"><div><h2 id="catalog-title">Build on tile ${x}, ${y}</h2><small class="soft">You have <b>${money(s.money)}</b> and <b>${Math.floor((s.res?.wood || 0) + (s.res?.metal || 0))} ${icon('i-materials')}</b>; each load of your own takes $2 off the price. Staffed buildings need people with the right education.</small></div>
       <button class="iconbtn" type="button" data-cat-close aria-label="Close">${icon('i-close')}</button></div>
     <div class="cat-tools"><label class="search">${icon('i-search')}<input type="search" id="cat-q" placeholder="Search buildings" value="${esc(q)}" aria-label="Search buildings"></label>
       <label class="tgl compact"><input type="checkbox" id="cat-afford" ${afford ? 'checked' : ''}><span class="sw" aria-hidden="true"></span><span>Only what I can build now</span></label></div>
@@ -551,7 +551,7 @@ export function catalogHtml(ctx) {
       return `<button type="button" class="card ${a.ok ? '' : a.locked ? 'locked' : 'short'}" data-build="${t}" ${a.locked ? 'aria-disabled="true"' : ''}
         aria-label="${B[t].name}, $${B[t].cost} and ${matCost(t)} materials. ${esc(B[t].blurb)} ${a.ok ? '' : esc(a.reason)}">
         <canvas class="thumb" data-type="${t}" aria-hidden="true"></canvas>
-        <span class="cname">${B[t].name}</span><span class="ccost num">$${B[t].cost} <small title="Building materials">+${matCost(t)} 🧱</small></span>
+        <span class="cname">${B[t].name}</span><span class="ccost num">$${B[t].cost} <small title="Building materials">+${matCost(t)} ${icon('i-materials')}</small></span>
         <span class="cgives">${esc(gives(t))}</span>
         ${a.ok ? '' : `<span class="cwhy">${a.locked ? icon('i-lock') : ''}${esc(a.reason)}</span>`}
       </button>`;
