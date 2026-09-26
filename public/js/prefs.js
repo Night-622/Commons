@@ -47,6 +47,7 @@ export const DEFAULTS = {
   musicVolume: 0.4,
   hand: 'off',            // off | right | left: thumb-friendly layout on phones
   keys: {},
+  style: 'auto',          // auto (the newest you've unlocked) or a style id from STYLES
   uiSize: 'normal',       // small | normal | large: scales every panel, not just the text
   menus: 'across',        // across (panel buttons in a row, tools along the bottom) | down (both in columns at the sides)
   uiMin: false,           // interface hidden to see the whole map (U)

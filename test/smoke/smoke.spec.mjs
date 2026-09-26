@@ -546,3 +546,25 @@ test('town hall: a new mayor sees the next step, the hall’s needs, and why thi
   await expect(page.locator('#drawer')).toContainText('Education');
   expect(clean(errors)).toEqual([]);
 });
+
+test('styles: start as Frontier, unlock more as the hall grows, switch between them', async ({ page }) => {
+  const errors = await newGame(page);
+  await expect(page.locator('html')).toHaveAttribute('data-style', 'frontier');
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/style-frontier.png` });
+  await page.locator('#btn-settings').click();
+  await page.locator('#modal [data-tab="interface"]').click();
+  await expect(page.locator('#modal .stylecard.locked')).toHaveCount(3);
+  await closeModal(page);
+  await unlockAll(page);
+  await expect(page.locator('html')).toHaveAttribute('data-style', 'skyline');
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/style-skyline.png` });
+  for (const id of ['modern', 'township']) {
+    await page.locator('#btn-settings').click();
+    await page.locator('#modal [data-tab="interface"]').click();
+    await page.locator(`#modal .stylecard[data-val='"${id}"']`).click();
+    await closeModal(page);
+    await expect(page.locator('html')).toHaveAttribute('data-style', id);
+    if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/style-${id}.png` });
+  }
+  expect(clean(errors)).toEqual([]);
+});

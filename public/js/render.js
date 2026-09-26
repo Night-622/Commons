@@ -165,7 +165,7 @@ export class Renderer {
   // ---------- frame ----------
   draw(scene) {
     const g = this.ctx;
-    this.th = THEMES[scene.theme] || THEMES.light;
+    this.th = { ...(THEMES[scene.theme] || THEMES.light), ...(scene.mapStyle || {}) };   // the style's ground, roads and walls
     this.pal = scene.palette;
     this.scene = scene;
     this._lights = [];
@@ -222,7 +222,7 @@ export class Renderer {
 
   // ---------- 3D ----------
   cachedIso(g, plot, ox, oy) {
-    const key = `${plot.version}|${this.scene.theme}|${this.scene.paletteKey}`;
+    const key = `${plot.version}|${this.scene.theme}|${this.scene.paletteKey}|${this.scene.styleId || ''}`;
     let c = this.cache.get(plot.id);
     if (!c || c.key !== key) {
       const m = 4, cw = 2 * PLOT * CACHE_Z + 2 * m, ch = PLOT * CACHE_Z + 4 * CACHE_Z + 2 * m;

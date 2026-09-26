@@ -173,6 +173,23 @@ export const HALL_LEVELS = [
   { name: 'Large city', pop: 250, goals: [['uni', 'Open a university'], ['cities2', 'Found a second city'], ['link', 'Link a road or railway with a neighbour (or make 5 trades)'], ['tech6', 'Research 6 technologies']], res: { materials: 450, veg: 200, dairy: 100 }, land: 36, rp: 8, store: 600 },
   { name: 'Metropolis', pop: 500, goals: [['monument', 'Build a monument'], ['happy70', 'Keep mood at 70% or more'], ['alliance', 'Be in an alliance']], res: { materials: 900, veg: 300, meat: 150 }, land: 36, rp: 12, store: 900 },
 ];
+// Styles: the look of the interface and the city. A new one unlocks as the town hall grows (hall: level index);
+// players can switch between any they've unlocked. cols: building colours; map: ground, roads and walls.
+export const STYLES = [
+  { id: 'frontier', name: 'Frontier', hall: 0, note: 'Parchment, timber and clay roofs: a new settlement.',
+    cols: { house: '#c8553d', work: '#8a6a4b', shop: '#d9a441', school: '#6b8f3a', park: '#5e8c3a', hall: '#7a4e2d' },
+    map: { bg: '#d9cfa8', bg2: '#cfc39a', top: '#b7cf7c', top2: '#afc873', side: '#9a8558', side2: '#86714a', soil: '#8a6a44', soil2: '#765a3a', wall: '#efdfbd', stone: '#e3d2ac',
+      road: '#9a8566', mark: '#efe3c5', pave: '#d9c9a3', glass: '#e7d8a8', water: '#4f9fc7', shore: '#e6d3a1', wildTree: '#4d7f3a', hill: '#a6c26f', hill2: '#9fbb68' } },
+  { id: 'township', name: 'Township', hall: 2, note: 'Brick, slate and painted wood: a proper town.',
+    cols: { house: '#b5523b', work: '#4f6d8a', shop: '#c9803a', school: '#d6a73e', park: '#4f9a52', hall: '#5a4a8a' },
+    map: { wall: '#f4ecdf', stone: '#e6ddcc', road: '#6d6a66', pave: '#d6d0c4' } },
+  { id: 'modern', name: 'Modern', hall: 4, note: 'Glass, white walls and clean lines: a city.',
+    cols: { house: '#8e8e93', work: '#5e9cd3', shop: '#ff9f0a', school: '#ffd60a', park: '#34c759', hall: '#5856d6' },
+    map: { bg: '#e8eef0', bg2: '#dfe6e9', top: '#b8dca4', top2: '#b1d69c', side: '#a4b3ad', side2: '#94a39d', wall: '#ffffff', stone: '#f2f2f4', road: '#6e6e73', mark: '#ffffff', pave: '#e5e5ea', glass: '#c7e3ff', water: '#64b5f6', shore: '#e9e4d8' } },
+  { id: 'skyline', name: 'Skyline', hall: 6, dark: true, note: 'Glass towers at dusk: a metropolis.',
+    cols: { house: '#636366', work: '#0a84ff', shop: '#ff9f0a', school: '#ffd60a', park: '#30d158', hall: '#bf5af2' },
+    map: { bg: '#10151c', bg2: '#0b0f14', road: '#2c2c2e', glass: '#64d2ff', wall: '#d1d1d6', water: '#1f4b6e' } },
+];
 // What opens each feature: a technology, or a town hall level (index into HALL_LEVELS).
 export const FEATURE_NEEDS = { market: { tech: 'trade' }, shares: { tech: 'finance' }, region: { tech: 'diplomacy' }, co: { hall: 3 }, council: { hall: 4 } };
 export const QUAKE_CHANCE = 0.006;     // per day

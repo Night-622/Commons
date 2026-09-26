@@ -98,6 +98,11 @@ Object.assign(dict, {
   'Open Research': 'Άνοιγμα έρευνας', 'See the town hall': 'Δείτε το δημαρχείο', 'See what’s next': 'Δείτε τι ακολουθεί',
   'Education': 'Εκπαίδευση', 'Commerce': 'Εμπόριο', 'High schools': 'Λύκεια', 'Universities': 'Πανεπιστήμια', 'Trade': 'Εμπόριο', 'Finance': 'Χρηματοοικονομικά', 'Diplomacy': 'Διπλωματία', 'The internet': 'Το διαδίκτυο',
 });
+// Styles (1.18)
+Object.assign(dict, {
+  'Style': 'Στυλ', 'Newest': 'Νεότερο', 'The newest style you’ve unlocked': 'Το νεότερο στυλ που έχετε ξεκλειδώσει', 'Frontier': 'Σύνορα', 'Township': 'Κωμόπολη',
+  'Modern': 'Σύγχρονο', 'Skyline': 'Ορίζοντας', 'Tap anything to see it.': 'Πατήστε οτιδήποτε για να το δείτε.',
+});
 // Shares and rankings (1.16)
 Object.assign(dict, {
   'Shares': 'Μετοχές', 'Your shares are worth': 'Οι μετοχές σας αξίζουν', 'You paid': 'Πληρώσατε', 'Buy 10': 'Αγορά 10', 'Sell all': 'Πώληση όλων',

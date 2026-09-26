@@ -3,7 +3,7 @@ import {
   T, B, PLOT, TICK_MS, MAX_OFFLINE_DAYS, HOURS_PER_DAY, SAVE_EVERY_MS, RUBBLE_CLEAR_COST, MAX_LEVEL, LEVEL, UPGRADABLE,
   REBUILD_MONEY, MOVE_KEEP, TUTORIAL_REWARD, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome, DECISIONS, ZONES, ZONE_COST,
   LOAN_DAYS, HISTORIC_DAYS, BADGES, REGIONAL, REGIONAL_SHARE, ALLIANCE_TRADE, DAILY, DAILY_REWARD, WEEKLY, WEEKLY_REWARD, GIFT_LIMITS, REACTIONS,
-  RES, FOOD, USE, HARVEST, MARKET, STOCK, HALL_LEVELS, TECH, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
+  RES, FOOD, USE, HARVEST, MARKET, STOCK, HALL_LEVELS, TECH, STYLES, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
 } from './constants.js';
 import { Renderer, STRIDE, thumbnail, modelHeight } from './render.js';
 import { loadPrefs, savePrefs, applyPrefs, resolvedTheme, palette, PALETTES } from './prefs.js';
@@ -93,12 +93,19 @@ function applyAll() {
   applyPrefs(prefs);
   setLang(prefs.lang);
   renderer.view = '3d';   // the flat 2D view was retired in 1.18
+  document.documentElement.dataset.style = currentStyle().id;
   setSound(prefs.sound, prefs.volume, prefs.ambientVolume, prefs.haptics);
   $('minibox').classList.toggle('hidden', !prefs.minimap);
   drawThumbs();
   drawHeroes();
   drawMinimap();
   dirty = true;
+}
+// Styles unlock as the town hall grows; 'auto' uses the newest one you have.
+function stylesOwned() { return STYLES.filter((st) => st.hall <= (state?.hall || 0)); }
+function currentStyle() {
+  const owned = stylesOwned();
+  return owned.find((st) => st.id === prefs.style) || owned[owned.length - 1] || STYLES[0];
 }
 function setPref(k, v) { prefs[k] = v; savePrefs(prefs); applyAll(); }
 try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => prefs.theme === 'auto' && applyAll()); } catch { /* old browsers */ }
@@ -359,7 +366,8 @@ async function startGame(doc) {
   startDMs();
   loadProfile();
   startDesk();
-  if (innerWidth < 860) { $('pulse').classList.add('closed'); $('pulse-toggle').setAttribute('aria-expanded', 'false'); }
+  // The mood panel starts folded (the ring and the next step); tap it for every need.
+  $('pulse').classList.add('closed'); $('pulse-toggle').setAttribute('aria-expanded', 'false');
   canvas.focus({ preventScroll: true });
   if (notifyLater) { notify(notifyLater, 'warn'); notifyLater = ''; }
   if (newTerrain) { scheduleSave(3000); if (state.terr.includes('2') || state.terr.includes('1')) notify('Your land now has terrain: rivers and coast you can bridge, and hills with views. Nothing you built has moved.', 'act'); }
@@ -1521,7 +1529,7 @@ function renderModebar() {
     html = moveFrom >= 0
       ? `<p class="mhint">Moving the <b>${B[state.grid[moveFrom]].name.toLowerCase()}</b>. Tap an empty tile you own. Costs <b class="num">$${Math.round(B[state.grid[moveFrom]].cost * MOVE_FEE)}</b>.</p><button class="btn" type="button" id="move-cancel">Cancel</button>`
       : '<p class="mhint">Tap one of your buildings to pick it up. Residents, staff and pupils move with it.</p>';
-  } else html = '<p class="mhint">Tap anything for details and options, including people on the move. Tap a building site to help build.</p>';
+  } else html = '<p class="mhint">Tap anything to see it.</p>';
   bar.innerHTML = html;
   bar.querySelectorAll('[data-brush]').forEach((b) => { b.onclick = () => { quickType = null; setBrush(b.dataset.brush); }; });
   bar.querySelectorAll('[data-quick]').forEach((b) => { b.onclick = () => { const t = +b.dataset.quick; quickType = quickType === t ? null : t; brush = null; renderModebar(); }; });
@@ -2018,7 +2026,7 @@ function frame(now) {
       renderer.draw({
         plots, wild: wildPlots(), free: freePlots(), ready: readyTiles(), hover: hv, cursor, selected, overlay, traffic: plan, worldTrains, info: infoTiles(), agentsByPlot, pops, prefs, bridges, pulseTile: pulseTile || pulseTileMove,
         showLand: mode === 'build', landPrice: state ? sim.landPrice(state) : 0, season: sim.season(sim.worldDay()), weather: sim.weather(sim.worldDay()),
-        theme: resolvedTheme(prefs), palette: palette(prefs), paletteKey: prefs.colours, shapes: prefs.shapes, nightAmt: nightAmt(),
+        ...styleScene(), shapes: prefs.shapes, nightAmt: nightAmt(),
       });
       dirty = false;
     }
@@ -2770,6 +2778,11 @@ function wildPlots() {
   }
   return out;
 }
+// What the renderer needs from the style: its colours (unless a colour-blind palette is on) and its ground.
+function styleScene() {
+  const st = currentStyle(), theme = st.dark ? 'dark' : resolvedTheme(prefs);
+  return { theme, styleId: st.id, palette: prefs.colours === 'standard' ? st.cols : palette(prefs), paletteKey: prefs.colours, mapStyle: theme === 'dark' && !st.dark ? null : st.map };
+}
 function readyTiles() {
   if (!state?.ready || !me) return [];
   return Object.entries(state.ready).filter(([i, h]) => h >= HARVEST.min && state.grid[i]).map(([i, h]) => ({ px: me.px, py: me.py, ...sim.xy(+i), full: h >= HARVEST.max }));
@@ -2942,8 +2955,16 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 1.17';
+const VERSION = 'Commons 1.18';
 const CHANGELOG = [
+  ['1.18', [
+    'A fresh start: every world begins again, with room for everyone to build from the first settlers.',
+    'Styles that grow with your town hall: start as Frontier (parchment, timber and clay roofs), then unlock Township, Modern and Skyline. Switch between the ones you’ve unlocked in Settings, Interface.',
+    'Each style changes the city too: its buildings, roads, walls and ground.',
+    'A calmer screen: frosted-glass panels in the modern styles, the mood panel folded to the ring and your next step, and shorter hints.',
+    'Better names: many more first names and surnames, and city names that sound like real places.',
+    'The 2D view has been retired: the city is always shown in 3D.',
+  ]],
   ['1.17', [
     'Your town hall is your city’s size: Settlement, Village, Town, Large town, City, Large city, Metropolis. It grows by itself once you have the people, the objectives and the resources, and each level lets you buy more land, store more and research faster.',
     'A Next step line under your mood always says what to do, with a Show me button. Goals shows what the next level needs and what your city needs right now.',
@@ -3235,7 +3256,11 @@ function showSettings() {
       ${tgl('mapContrast', 'High-contrast map', 'Dark outlines on every building so shapes stand out')}
       ${tgl('patterns', 'Stripes on info views', 'Traffic, mood, services, noise and land value show stripes as well as colour: more stripes, stronger')}
       ${tgl('shapes', 'Shape badges on buildings', 'Circle homes, square work, triangle shops, diamond education, star leisure, hexagon services')}`,
-    interface: `<div class="srow"><span>Language</span>${seg('lang', languages)}</div>
+    interface: `<div class="srow"><span>Style</span><div class="styles" role="radiogroup" aria-label="Style">${[['auto', 'Newest', 'The newest style you’ve unlocked', null], ...STYLES.map((st) => [st.id, st.name, st.note, st])].map(([id, name, note, st]) => {
+        const owned = !st || st.hall <= (state?.hall || 0), on = prefs.style === id || (id === 'auto' && !stylesOwned().some((x) => x.id === prefs.style));
+        return `<button type="button" role="radio" class="stylecard ${owned ? '' : 'locked'}" data-pref="style" data-val='${JSON.stringify(id)}' aria-checked="${on}" ${owned ? '' : 'disabled'}>
+          ${st ? `<span class="swatches">${Object.values(st.cols).slice(0, 5).map((c) => `<i style="background:${c}"></i>`).join('')}</span>` : ''}<b>${name}</b><small>${owned ? note : `Unlocks when your town hall is a ${HALL_LEVELS[st.hall].name.toLowerCase()}`}</small></button>`; }).join('')}</div></div>
+      <div class="srow"><span>Language</span>${seg('lang', languages)}</div>
       <div class="srow"><span>Interface size</span>${seg('uiSize', [['small', 'Small'], ['normal', 'Normal'], ['large', 'Large']])}</div>
       <div class="srow"><span>Menus</span>${seg('menus', [['across', 'Across'], ['down', 'Down the sides']])}</div>
       <p class="soft small">Menus, buttons and panels are translated; news items and tips are still in English for now.</p>
@@ -3380,11 +3405,12 @@ async function switchCity(id) {
 // The town hall grew: what the city can do now, and what's next.
 function showHallUp(lv) {
   const i = HALL_LEVELS.indexOf(lv), next = HALL_LEVELS[i + 1], prev = HALL_LEVELS[i - 1];
-  play('level'); afterChange(); save();
+  play('level'); afterChange(); save(); applyAll();
   const opens = [['co', 'Co-mayors: in Account, Friends, press Co to let a friend help run your city.'], ['council', 'More cities: select free land next to your city to buy it and found another.']]
     .filter(([f]) => sim.unlocked(state, f) && !sim.unlocked({ ...state, hall: i - 1 }, f)).map(([, t]) => `<li>${esc(t)}</li>`).join('');
   openModal(`${closeX}<h2 id="modal-title">${esc(state.name)} is now a ${esc(lv.name.toLowerCase())}</h2>
     <p>The town hall has grown. Your city can now:</p>
+    ${STYLES.filter((st) => st.hall === i).map((st) => `<p class="good-t">New style unlocked: <b>${esc(st.name)}</b>. ${esc(st.note)} Switch in Settings, Interface.</p>`).join('')}
     <ul><li>buy up to ${lv.land} parcels of land (was ${prev.land})</li><li>store ${lv.store - prev.store} more of every resource</li><li>earn ${lv.rp} research points a day</li><li>employ more builders and clerks at the hall</li>${opens}</ul>
     ${next ? `<p class="soft">Next: a <b>${esc(next.name.toLowerCase())}</b> at ${next.pop} people. Goals shows what it needs.</p>` : '<p>It’s a metropolis: the biggest there is.</p>'}
     <div class="mfoot"><button class="btn" data-close>Keep playing</button><button class="btn primary" id="see-path">See what’s next</button></div>`);

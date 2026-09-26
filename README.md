@@ -21,6 +21,12 @@ Guests can turn their guest city into a full account later (Account menu). Linki
 - Saves are split: `plots/{id}` is a small public summary everyone listens to; `plotState/{id}` holds the full city and is only fetched for adjacent neighbours.
 - `node test/balance.mjs` runs a scripted city for 100 days.
 
+## New in 1.18: styles, a fresh start, better names
+- `STYLES` in constants.js: Frontier (hall level 0), Township (2), Modern (4), Skyline (6). Each has building colours (`cols`) and ground/road/wall colours (`map`) that the renderer merges over its light or dark theme (`styleScene` in main.js), and CSS variables (`:root[data-style=...]`: plates, ink, accent, font, a frosted `--blur`). `prefs.style` is `auto` (newest owned) or an id; locked ones can't be chosen. Colour-blind palettes still take priority for buildings.
+- A fresh start: `WORLD_ID` is `s2`; `OPEN_WORLDS` lists only it, and private worlds made before `RESET_AT` aren't listed. Older worlds stay in Firestore (delete them in the console if you like). The rules accept any open world id matching `public|main|sN`, so the next fresh start is just a new id.
+- Names: more first names and surnames (appended; people store them by position) and `cityName()` for founding.
+- The 2D view is gone (`renderer.view` is always '3d'); the mood panel starts folded.
+
 ## New in 1.17: town hall levels, technology, the exchange, city shares
 - Town hall levels (`HALL_LEVELS`): a city's size. `sim.hallState` / `sim.checkHall` (with the goals check): the hall upgrades itself when the city has the people, has met the level's objectives (tests in `PATH_TESTS`, kept in `s.hallDone`) and has the resources in store, which the upgrade uses. Each level sets the land cap (`canBuyLand`), extra storage (`storeCap`), research a day, and the hall's size on the map (`s.lv[HALL_INDEX]`). `s.hall` is the level; cities from before start where their size earns and keep the technologies behind features they used.
 - Features open by technology or hall level (`FEATURE_NEEDS`, `sim.unlocked`): Trade (Market), Finance (city shares), Diplomacy (Region), High schools and Universities (buildings); co-mayors and more cities by hall level. `lockHtml` says exactly what opens each.
