@@ -21,6 +21,13 @@ Guests can turn their guest city into a full account later (Account menu). Linki
 - Saves are split: `plots/{id}` is a small public summary everyone listens to; `plotState/{id}` holds the full city and is only fetched for adjacent neighbours.
 - `node test/balance.mjs` runs a scripted city for 100 days.
 
+## New in 1.10: slower days, staff, layout
+- Time: `TICK_MS` is 75 s, so a day is 30 minutes; night runs `DUSK` 22:00 to `DAWN` 06:00 (10 of the 30 minutes). Builders work `BUILD_SPEED` (30x) per hour and progress between hours through `sim.work(s, fractionOfHour)`, called from the game loop; `tick()` does the rest of the hour. `s.wk` tracks how much of the hour's building is done. `MAX_OFFLINE_DAYS` is 48.
+- Staff: `sim.hire`, `sim.fire`, `sim.recruit` (`RECRUIT_COST` by the job's education), `sim.candidates`. Hired people have `lk` set and the daily job shuffle leaves them alone; people let go get `nf`/`nfu` and aren't matched to that building for `FIRED_DAYS`.
+- Learning: library evening classes work at every level (`ADULT_STUDY_YEARS`), and `TRAINING_YEARS` of work count as a level up to high school (`xp`).
+- Person keys `lk`, `nf`, `nfu`, `xp` are appended to `PKEYS`; older saves unpack with them empty.
+- Layout prefs `uiSize` (CSS zoom on the panels), `menus` (`across` | `down`) and `uiMin` (U hides the interface); every drawer gets a maximise button.
+
 ## New in 1.9: young towns
 - Utilities arrive in stages: power and water from 25 people (`UTILITY_POP`), rubbish from 45 (`WASTE_POP`), sewage from 70 (`SEWAGE_POP`). Before, three of them landed at 25 and the fourth at 40, and about a third of scripted towns stalled or collapsed.
 - The advisor's leisure tip scores `3 + 3 × shortfall` instead of a flat 3, so parks get built early.

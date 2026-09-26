@@ -2486,8 +2486,16 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 1.9';
+const VERSION = 'Commons 1.10';
 const CHANGELOG = [
+  ['1.10', [
+    'Slower days: a day now lasts 30 minutes, with 20 minutes of daylight and 10 of night. Builders still work fast, so a house goes up in about half a minute.',
+    'Your city keeps living for up to 48 days (24 hours) while you’re away.',
+    'Hire and fire: open a building to hire a resident into an open job, let staff go, or recruit a qualified worker from outside.',
+    'Learning without school: adults can move up a level at a time in a library’s evening classes, and years on the job count as training. Now any town can staff its first high school and university.',
+    'Interface size (small, normal or large) and menu layout (across, or down the sides) in Settings, Interface.',
+    'Hide the whole interface with U or the new top-bar button, and make any panel bigger with its new button.',
+  ]],
   ['1.9', [
     'Young towns get room to breathe: rubbish now needs handling from 45 people (was 25) and sewage from 70 (was 40), so the utility bills don’t all arrive at once.',
     'The advisor ranks leisure higher when many people have nothing to do in the evenings. A park is cheap and lifts everyone’s mood.',
