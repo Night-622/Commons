@@ -2877,16 +2877,13 @@ function showHelp() {
 const VERSION = 'Commons 1.15';
 const CHANGELOG = [
   ['1.15', [
-    'A free 3D camera: press Free by the 3D and 2D buttons (or 3) to see your city in real 3D. Drag to turn, right-drag to move, scroll or pinch to zoom.',
-    'Everything works in the free view: tap a building to select it (it glows), tap land to build, collect harvests, and watch cars and walkers go by. The sun follows the clock, and windows light up at night.',
-    'Selecting a building in the normal view now outlines the building itself, not just its tile.',
-    'Your resources now sit in the city card at the top left, so the top bar has room to breathe.',
-  ]],
-  ['1.14', [
-    'Your resources are always on show at the top: water, power, food and building materials. Tap them for the full picture.',
+    'Your resources are always on show in the city card at the top left: water, power, food and building materials. Tap them for the full picture.',
     'Harvests: farms, orchards, power stations and every other producer build up a harvest while they work. Tap a building with a bubble over it to collect it.',
     'Building takes materials: every building lists its materials alongside its price. Materials of your own take $2 a load off.',
     'The build catalogue and building panels now say what each building makes and uses a day, and residents show what they need each day.',
+    'A free 3D camera: press Free by the 3D and 2D buttons (or 3) to see your city in real 3D. Drag to turn, right-drag to move, scroll or pinch to zoom.',
+    'Everything works in the free view: tap a building to select it (it glows), tap land to build, collect harvests, and watch cars and walkers go by. The sun follows the clock, and windows light up at night.',
+    'Selecting a building in the normal view now outlines the building itself, not just its tile.',
   ]],
   ['1.13', [
     'The Market (X): sell food and materials to other cities, ask to buy what you need, or ask for a loan. Offers are open to every mayor in the world.',

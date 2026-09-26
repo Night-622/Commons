@@ -21,13 +21,12 @@ Guests can turn their guest city into a full account later (Account menu). Linki
 - Saves are split: `plots/{id}` is a small public summary everyone listens to; `plotState/{id}` holds the full city and is only fetched for adjacent neighbours.
 - `node test/balance.mjs` runs a scripted city for 100 days.
 
-## New in 1.15: the free 3D camera
+## New in 1.15: resources on show, harvests, materials in prices, and the free 3D camera
 - `public/js/view3d.js` draws the city with three.js (pinned 0.186.1, served from `public/vendor/three-0.186.1/` through an import map in index.html; MIT licence alongside). It's imported the first time the Free view opens (`toggleFree` in main.js), so nobody else downloads it (about 420 KB compressed).
 - `View3D.sync(scene)` rebuilds a plot's meshes only when its version changes: an instanced ground mesh per plot (terrain, roads, owned land), a mesh per building (with special shapes for water towers, wind turbines, factories, power stations and towers), trees, yellow borders. Each frame it moves the trip agents (one instanced mesh), updates harvest markers, lighting and night windows.
 - Picking ray-casts buildings and ground and hands back a tile to the usual `click()`, so selection, building and harvesting all work there. The selection glows and gets an outline.
 - The canvas renderer also outlines the selected building in the normal 3D view.
 
-## New in 1.14: resources on show, harvests, materials in prices
 - Top-bar resources (`renderResbar`): water, power, food and materials in store, red when water or power runs short. Tap for City stats, Resources.
 - Harvests: every hour a staffed producer adds to `s.ready[i]` (up to `HARVEST.max` hours). From `HARVEST.min` hours a bubble shows and tapping collects `sim.harvest`: `bonus` x what it made in that time, on top of normal output. The balance bot collects daily, like a player.
 - Materials: `sim.matCost` (a load per $25 of price) and `sim.buildPrice`: the list price includes buying them in; each load from your store takes `MAT_BUY` off (never below half). `place` records `paid`/`mat` on the queue item so undo refunds exactly.
