@@ -833,6 +833,17 @@ html:not([lang="en"]) .card b { font-size: .95em; }
 .restable thead th { color: var(--soft); font-weight: 700; font-size: .85em; }
 .tech.tree li.child { margin-left: 18px; border-left: 2px solid var(--line); padding-left: 10px; }
 
+/* The resources bar in the top bar */
+.resbar { display: flex; align-items: center; gap: 2px; padding: 6px 8px; cursor: pointer; }
+.rchip { display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 999px; font-size: .95em; }
+.rchip b { font-weight: 800; }
+.rchip.bad { background: color-mix(in srgb, var(--bad) 18%, transparent); color: var(--bad); }
+.resbar:hover .rchip { background: var(--plate-2); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.ccost small { font-weight: 600; color: var(--soft); }
+@media (max-width: 1180px) { .resbar .rchip { padding: 4px 5px; } }
+@media (max-width: 860px) { .resbar { display: none; } }
+
 /* Market */
 .mk-form .field { margin-top: 8px; }
 .picklist.market li span small { margin-top: 2px; }

@@ -1221,6 +1221,16 @@ export class Renderer {
       }
     }
     if (cursor) this.tileOutline(g, cursor.px, cursor.py, cursor.tx, cursor.ty, '#ffc933', null, true);
+    // Harvest bubbles over producing buildings that are ready to collect.
+    if (this.cam.z >= 6) for (const r of scene.ready || []) {
+      const [x, y] = this.project(r.px * STRIDE + r.x + 0.5, r.py * STRIDE + r.y + 0.5, 1.6);
+      const rad = Math.max(5, this.cam.z * 0.2), bob = Math.sin(performance.now() / 400 + r.x) * rad * 0.15;
+      g.beginPath(); g.arc(x, y + bob, rad, 0, Math.PI * 2);
+      g.fillStyle = r.full ? '#ffc933' : 'rgba(255,255,255,0.92)'; g.fill();
+      g.lineWidth = 2; g.strokeStyle = '#2f9e5a'; g.stroke();
+      g.fillStyle = '#2f9e5a'; g.beginPath(); g.moveTo(x - rad * 0.4, y + bob); g.lineTo(x - rad * 0.1, y + bob + rad * 0.35); g.lineTo(x + rad * 0.45, y + bob - rad * 0.35);
+      g.lineWidth = Math.max(1.5, rad * 0.22); g.strokeStyle = '#2f9e5a'; g.stroke();
+    }
   }
 
   label(g, plot) {

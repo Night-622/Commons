@@ -510,4 +510,30 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(lender.people.every((p) => !p.oc), 'and the workers come home');
   console.log('labour contracts ok');
 }
+// ---- building materials in prices, and harvests
+{
+  seed = 61;
+  const s = sim.newCity('Tapper', rng); s.money = 5000; s.land.fill(1);
+  for (let x = 4; x <= 12; x++) put(s, x, c + 1, T.ROAD);
+  const plain = sim.buildPrice(s, sim.idx(5, c + 2), T.FARM);
+  assert.equal(plain.money, B[T.FARM].cost, 'with no materials in store you pay the list price');
+  s.res = { materials: 3 };
+  const cheaper = sim.buildPrice(s, sim.idx(5, c + 2), T.FARM);
+  assert.equal(cheaper.money, B[T.FARM].cost - 3 * 2, 'each load of your own takes $2 off');
+  const m0 = s.money;
+  put(s, 5, c + 2, T.FARM);
+  assert.equal(s.money, m0 - cheaper.money);
+  assert.equal(s.res.materials, 0, 'the materials are used');
+  for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = [];
+  const farm = sim.idx(5, c + 2);
+  const hand = s.people.find((p) => p.a >= 18 && p.a < 65 && !(p.j === sim.HALL_INDEX && p.jt === 0));
+  if (hand) { hand.j = -1; sim.hire(s, hand.i, farm, 0); }   // a settler takes the farm job
+  for (let h = 0; h < 6; h++) sim.tick(s, rng);
+  assert(sim.staffing(s, farm) > 0, 'the farm has staff');
+  assert(sim.harvestReady(s, farm), 'after a few hours the farm has a harvest');
+  const v = s.res.veg || 0, r = sim.harvest(s, farm);
+  assert(r.ok && r.got.veg > 0 && s.res.veg === v + r.got.veg, 'collecting adds to the store');
+  assert(!sim.harvestReady(s, farm), 'and starts again');
+  console.log('materials prices and harvests ok: harvest gave', r.got.veg, 'veg');
+}
 console.log('all tests passed');

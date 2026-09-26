@@ -6,7 +6,7 @@ import {
   LINK_MOOD, MAX_LINKS, HISTORY_DAYS, LOG_SIZE, EVENT_CHANCE, CHUNK, CHUNKS, START_CHUNKS, LAND_PRICE, LAND_STEP,
   MOVE_FEE, ADULT, RETIRE, WAGE, isHome, walkable, BUS_SEATS, COMMUTE_JOBS, TICK_MS, isRoad, isRail, POLICY, WANT_REWARD,
   GOODS_PER_FACTORY, SEASONS, SEASON_DAYS, YEAR_DAYS, UTILITY_POP, DECISIONS, ELECTION_EVERY, ZONES, ZONE_COST,
-  TRADE_RES, MARKET, RES, FOOD, USE, STORE_BASE, SURPLUS_SALE, MATERIALS_BOOST, MATERIALS_PER_WORK, PLOT_BUY_PARCELS, PLOT_BUY_STEP, PLOT_BUY_MIN, BUILD_SPEED, RECRUIT_COST, FIRED_DAYS, ADULT_STUDY_YEARS, TRAINING_YEARS, EDU, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
+  MAT_PER_COST, MAT_BUY, HARVEST, TRADE_RES, MARKET, RES, FOOD, USE, STORE_BASE, SURPLUS_SALE, MATERIALS_BOOST, MATERIALS_PER_WORK, PLOT_BUY_PARCELS, PLOT_BUY_STEP, PLOT_BUY_MIN, BUILD_SPEED, RECRUIT_COST, FIRED_DAYS, ADULT_STUDY_YEARS, TRAINING_YEARS, EDU, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
 } from './constants.js';
 
 const N = PLOT * PLOT;
@@ -266,6 +266,19 @@ export function storeCap(s, uc = underConstruction(s)) {
   for (let i = 0; i < N; i++) { const d = B[s.grid[i]]; if (d?.store && active(s, i, uc) && staffing(s, i) > 0) cap += scale(s, i, d.store); }
   return cap;
 }
+// Tapping a producing building collects its harvest bonus.
+export const harvestReady = (s, i) => (s.ready?.[i] || 0) >= HARVEST.min && !!B[s.grid[i]]?.makes && active(s, i);
+export function harvest(s, i) {
+  if (!harvestReady(s, i)) return { ok: false, reason: 'Nothing to collect yet' };
+  const d = B[s.grid[i]], hours = s.ready[i], k = staffing(s, i) * LEVEL.capacity[level(s, i)] * HARVEST.bonus * hours / HOURS_PER_DAY;
+  const got = {};
+  s.res ||= {};
+  for (const [r, n] of Object.entries(d.makes)) { got[r] = Math.max(1, Math.round(n * k)); s.res[r] = (s.res[r] || 0) + got[r]; }
+  s.ready[i] = 0;
+  s.counters.harvests = (s.counters.harvests || 0) + 1;
+  return { ok: true, got };
+}
+
 // What the city's buildings make in a day.
 export function production(s, uc = underConstruction(s)) {
   const out = Object.fromEntries(Object.keys(RES).map((k) => [k, 0]));
@@ -477,6 +490,14 @@ export function tileCost(s, i, type) {
   if (ter === 2) return Math.round(base * TERRAIN.bridge);
   if (ter === 1) return Math.round(base * TERRAIN.hill);
   return base;
+}
+
+// Materials a building needs, and what it costs: the price includes buying them in, less MAT_BUY for each load from your store.
+export const matCost = (type) => (B[type]?.cost ? Math.max(1, Math.round(B[type].cost * MAT_PER_COST)) : 0);
+export function buildPrice(s, i, type) {
+  const mat = matCost(type), use = Math.min(Math.floor(s.res?.materials || 0), mat), bought = mat - use;
+  const base = type === T.XING ? B[type].cost : tileCost(s, i, type);
+  return { money: Math.max(Math.round(base / 2), base - use * MAT_BUY), mat, use, bought, base };
 }
 
 // Land value, 0..1 per tile. Parks, services, transit and clean air raise it; noise lowers it.
@@ -1254,7 +1275,7 @@ export function canPlace(s, i, type) {
   if (B[type].flat && ter === 1) return { ok: false, reason: `A ${B[type].name.toLowerCase()} needs flat land, not a hill.` };
   const a = availability(s, type);
   if (!a.ok) return { ok: false, reason: a.reason + '.' };
-  const cost = tileCost(s, i, type);
+  const cost = buildPrice(s, i, type).money;
   if (s.money < cost) return { ok: false, reason: `${ter === 2 ? 'A bridge here' : ter === 1 ? 'Building on a hill' : 'It'} costs $${cost}.` };
   return { ok: true };
 }
@@ -1263,25 +1284,27 @@ export function place(s, i, type) {
   const check = canPlace(s, i, type);
   if (!check.ok) return check;
   if (crossing(s, i, type)) type = T.XING;
-  const cost = type === T.XING ? B[type].cost : tileCost(s, i, type);
+  const price = buildPrice(s, i, type), cost = price.money;
   s.money -= cost;
+  if (price.use) s.res.materials -= price.use;
   if (s.zone) s.zone[i] = 0;   // your own buildings are public: you pay their upkeep
   s.grid[i] = type;
   s.cond[i] = 0;
   s.lv[i] = 1;
-  s.queue.push({ i, left: B[type].work, tap: 0 });
+  s.queue.push({ i, left: B[type].work, tap: 0, paid: cost, mat: price.use });
   s.counters.built++;
   s._plan = null;
-  return { ok: true, cost };
+  return { ok: true, cost, mat: price.mat };
 }
 
 export function undoPlace(s, i) {
   const k = s.queue.findIndex((q) => q.i === i && !q.up);
   const t = s.grid[i];
   if (k === -1 || s.queue[k].left < B[t].work) return { ok: false, reason: 'Builders have already started on that.' };
-  s.queue.splice(k, 1);
-  const back = t === T.XING ? B[t].cost : tileCost(s, i, t);
+  const [q] = s.queue.splice(k, 1);
+  const back = q.paid ?? (t === T.XING ? B[t].cost : tileCost(s, i, t));
   s.money += back;
+  if (q.mat) { s.res ||= {}; s.res.materials = (s.res.materials || 0) + q.mat; }
   s.grid[i] = T.EMPTY;
   s.cond[i] = 0;
   s.counters.built = Math.max(0, s.counters.built - 1);
@@ -2094,6 +2117,12 @@ export function tick(s, rng = Math.random) {
   if (s.status !== 'alive') return { plan: null, collapsed: null };
   construct(s, Math.max(0, 1 - (s.wk || 0)));
   s.wk = 0;
+  // Producing buildings build up a harvest to collect by tapping.
+  const ready = (s.ready ||= {});
+  for (let i = 0; i < N; i++) {
+    if (!B[s.grid[i]]?.makes || !active(s, i) || !(staffing(s, i) > 0)) { if (ready[i]) delete ready[i]; continue; }
+    ready[i] = Math.min(HARVEST.max, (ready[i] || 0) + 1);
+  }
   const p = s._plan && s._plan.day === s.day ? s._plan : plan(s, rng);
   // An empty town counts as hopeful as a new one, so it can fill up again if it still has homes and money.
   const avg = s.people.length ? s.people.reduce((a, x) => a + x.m, 0) / s.people.length : 0.65;
@@ -2185,6 +2214,7 @@ export function advice(s, plan) {
     if (rsd.short.water > 0 && rsd.prod.water > 0) add(6.5, `Water is running short: ${rsd.short.water} kilolitres a day. Build another water tower.`, T.WATER);
     if (rsd.short.power > 0 && rsd.prod.power > 0) add(6, `Power is running short: ${rsd.short.power} megawatt-hours a day. Build a power station, solar farm or wind turbine.`, s.money >= B[T.POWER].cost ? T.POWER : T.WIND);
   }
+  if (s.people.length >= 15 && !tot.counts[T.MATERIALS] && s.queue.length) add(3.5, 'Buying building materials costs extra. A materials works makes them, and builders work faster with materials in store.', T.MATERIALS);
   if (rsd?.importCost >= 8 && s.people.length >= 30) add(2.5, `Imported food costs ${'$'}${rsd.importCost} a day. Farms grow it here, and more kinds of food make people happier.`, T.FARM);
   if (n.leisure < 0.6) add(3 + 3 * (0.6 - n.leisure), 'People have nothing to do in the evenings.', T.PARK);
   if (n.commute < 0.8) add(3.5, 'Roads are jammed. Add routes or footpaths, or a bus service.', tot.counts[T.DEPOT] ? T.STOP : T.DEPOT);

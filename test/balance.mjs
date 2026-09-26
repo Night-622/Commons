@@ -39,6 +39,8 @@ function run(startSeed, verbose) {
     for (let h = 0; h < 24; h++) { sim.tick(s, rng); clock += TICK_MS; s.lastTick = clock; }
     if (s.status !== 'alive') { fellOn = day; break; }
     for (const i of roads) if (sim.owns(s, i) && s.grid[i] === T.EMPTY && s.money > 60) sim.place(s, i, T.ROAD);
+    // Like a player, collect any harvests that are ready (the game shows a bubble over them).
+    for (let i = 0; i < PLOT * PLOT; i++) if (sim.harvestReady(s, i)) sim.harvest(s, i);
     const p = s._plan || sim.plan(s, rng);
     const tips = sim.advice(s, p).filter((a) => a.type != null);
     // A sensible mayor saves up for the most urgent thing rather than spending on the rest.

@@ -448,3 +448,19 @@ test('private messages: message a neighbour, who sees it and replies', async ({ 
   expect(clean(errors)).toEqual([]);
   await ctx.close();
 });
+
+test('resources bar, materials in prices, and what buildings make', async ({ page }) => {
+  const errors = await newGame(page);
+  await expect(page.locator('#resbar .rchip')).toHaveCount(4);
+  await page.locator('#map').focus();
+  await page.keyboard.press('b');
+  for (const k of ['ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter']) await page.keyboard.press(k);
+  await page.locator('#cat-q').fill('farm');
+  await expect(page.locator('#catalog .card').first()).toContainText('🧱');
+  await expect(page.locator('#catalog .card').first()).toContainText('makes');
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/resbar.png` });
+  await page.keyboard.press('Escape');
+  await page.locator('#resbar').click();
+  await expect(page.locator('#drawer [role="tab"][aria-selected="true"]')).toContainText('Resources');
+  expect(clean(errors)).toEqual([]);
+});

@@ -3,7 +3,7 @@ import {
   T, B, PLOT, TICK_MS, MAX_OFFLINE_DAYS, HOURS_PER_DAY, SAVE_EVERY_MS, RUBBLE_CLEAR_COST, MAX_LEVEL, LEVEL, UPGRADABLE,
   REBUILD_MONEY, MOVE_KEEP, TUTORIAL_REWARD, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome, DECISIONS, ZONES, ZONE_COST,
   LOAN_DAYS, HISTORIC_DAYS, BADGES, REGIONAL, REGIONAL_SHARE, ALLIANCE_TRADE, DAILY, DAILY_REWARD, WEEKLY, WEEKLY_REWARD, GIFT_LIMITS, REACTIONS,
-  RES, MARKET, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
+  RES, FOOD, USE, HARVEST, MARKET, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
 } from './constants.js';
 import { Renderer, STRIDE, thumbnail, modelHeight } from './render.js';
 import { loadPrefs, savePrefs, applyPrefs, resolvedTheme, palette, PALETTES } from './prefs.js';
@@ -573,6 +573,20 @@ function firstTime(id) {
   state.applied = [...(state.applied || []), id].slice(-80);
   return true;
 }
+
+// ---------- resources in the top bar ----------
+function renderResbar() {
+  const bar = $('resbar');
+  if (!bar || !state) return;
+  const st = sim.resourceStock(state), r = state.stats?.res, n = (v) => Math.floor(v || 0).toLocaleString();
+  const food = FOOD.reduce((a, k) => a + st[k], 0);
+  const chip = (emoji, label, v, bad, title) => `<span class="rchip ${bad ? 'bad' : ''}" title="${esc(title)}"><span aria-hidden="true">${emoji}</span><b class="num">${v}</b><span class="sr">${label}</span></span>`;
+  bar.innerHTML = chip('💧', 'water', n(st.water), r?.short.water > 0 && r?.prod.water > 0, `Water: ${n(st.water)} in store, ${n(r?.prod.water)} made and ${n(r?.need.water)} used a day`)
+    + chip('⚡', 'power', n(st.power), r?.short.power > 0 && r?.prod.power > 0, `Power: ${n(st.power)} in store, ${n(r?.prod.power)} made and ${n(r?.need.power)} used a day`)
+    + chip('🍎', 'food', n(food), false, `Food: ${FOOD.map((k) => `${n(st[k])} ${RES[k].name.toLowerCase()}`).join(', ')}${r?.imported ? `. ${n(r.imported)} bought in yesterday` : ''}`)
+    + chip('🧱', 'materials', n(st.materials), false, `Building materials: ${n(st.materials)} in store, ${n(r?.prod.materials)} made a day`);
+}
+$('resbar').onclick = () => { statsTab = 'resources'; drawer = null; openPanel('stats'); };
 
 // ---------- private messages ----------
 let threads = [], threadsUnsub = null, dmWith = null, dmMessages = [], dmUnsub = null;
@@ -1490,7 +1504,7 @@ function doMove(to) {
 
 // Anything costing over half your money (and at least $500) asks first.
 function confirmCost(t, go) {
-  const cost = B[t].cost;
+  const cost = sim.buildPrice(state, catalog?.tile ?? -1, t).money;
   if (cost < 500 || cost < state.money * 0.5) { go(); return; }
   openModal(`${closeX}<h2 id="modal-title">Spend ${money(cost)} on a ${esc(B[t].name.toLowerCase())}?</h2>
     <p>That’s ${pct(cost / Math.max(1, state.money))} of your money. Upkeep is ${money(Math.ceil(B[t].upkeep))} a day once it opens.</p>
@@ -1550,8 +1564,20 @@ function click(h, sx, sy) {
     else doMove(h.i);
   } else {
     if (state.queue.some((q) => q.i === h.i)) tap(h.i);
+    else if (sim.harvestReady(state, h.i)) collect(h.i);
     select(h);
   }
+}
+// Collect a building's harvest: a bonus on top of what it makes anyway.
+function collect(i) {
+  const r = sim.harvest(state, i);
+  if (!r.ok) return;
+  const { x, y } = sim.xy(i);
+  const text = Object.entries(r.got).map(([k, n]) => `+${n} ${RES[k].name.toLowerCase()}`).join(', ');
+  addPop(x, y, 1.2, text, '#2f9e5a');
+  play('coin');
+  announce(`Collected ${text}.`);
+  afterChange();
 }
 
 function undo() {
@@ -1891,7 +1917,7 @@ function frame(now) {
     const wx = sim.weather(sim.worldDay());
     if (dirty || worldTrains.length || agentsByPlot.size || pops.length || pulseTile || pulseTileMove || wx === 'rain' || wx === 'snow') {
       renderer.draw({
-        plots, free: freePlots(), hover: hv, cursor, selected, overlay, traffic: plan, worldTrains, info: infoTiles(), agentsByPlot, pops, prefs, bridges, pulseTile: pulseTile || pulseTileMove,
+        plots, free: freePlots(), ready: readyTiles(), hover: hv, cursor, selected, overlay, traffic: plan, worldTrains, info: infoTiles(), agentsByPlot, pops, prefs, bridges, pulseTile: pulseTile || pulseTileMove,
         showLand: mode === 'build', landPrice: state ? sim.landPrice(state) : 0, season: sim.season(sim.worldDay()), weather: sim.weather(sim.worldDay()),
         theme: resolvedTheme(prefs), palette: palette(prefs), paletteKey: prefs.colours, shapes: prefs.shapes, nightAmt: nightAmt(),
       });
@@ -2153,6 +2179,7 @@ function updateHud() {
   const unread = drawer === 'news' ? 0 : state.log.length - unseenFrom();
   $('news-dot').textContent = unread ? String(Math.min(9, unread)) : '';
   $('news-dot').classList.toggle('hidden', !unread);
+  renderResbar();
   const unreadAll = chatUnread + dmUnread();
   $('chat-dot').textContent = unreadAll ? String(Math.min(9, unreadAll)) : '';
   $('chat-dot').classList.toggle('hidden', !unreadAll);
@@ -2472,6 +2499,7 @@ function inspectorAction(what, arg) {
     }, $('buy-msg'));
     return;
   }
+  else if (what === 'harvest') { collect(i); refreshDrawer(); return; }
   else if (what === 'recruit') {
     const r = sim.recruit(state, i, +arg);
     if (!r.ok) { notify(r.reason + '.', 'act'); play('error'); return; }
@@ -2572,6 +2600,16 @@ function ownTile(i) {
   if (d.care) body += row('Patients today', `${[...(plan?.careFor.values() || [])].filter((c) => c === i).length} of ${Math.floor(sim.capacity(state, i, 'care') * sim.staffing(state, i))}`);
   if (d.visits) body += row('Visitors tonight', `${people.filter((p) => p.fun === i).length} of ${Math.floor(sim.capacity(state, i, 'visits') * sim.staffing(state, i))}`);
   if (d.serves) body += row('Households fed', [...(plan?.shopFor.values() || [])].filter((s) => s === i).length);
+  if (d.makes) {
+    const k = sim.staffing(state, i) * LEVEL.capacity[lv];
+    body += row('Makes a day', Object.entries(d.makes).map(([r, n]) => `${Math.round(n * k)} ${RES[r].name.toLowerCase()}`).join(', ') || 'Nothing until it has staff');
+    const hrs = state.ready?.[i] || 0;
+    body += `<div class="kv"><span>Harvest</span>${bar('Harvest', hrs / HARVEST.max, 'small')}</div>`;
+    body += sim.harvestReady(state, i) ? `<div class="actions"><button class="btn primary" type="button" data-do="harvest">Collect the harvest</button></div>`
+      : `<p class="soft small">${hrs ? `Ready to collect in ${HARVEST.min - hrs} hour${HARVEST.min - hrs === 1 ? '' : 's'}.` : 'Builds up a harvest while it works. Tap it to collect.'}</p>`;
+  }
+  if (d.store) body += row('Stores', `${d.store} more of each resource`);
+  if (d.jobs && d.cat && sim.staffing(state, i) > 0) body += row('Uses a day', `${USE.powerPerBuilding} power`);
   if (d.waste || d.sewage) { const w = plan?.waste; body += row(d.waste ? 'Rubbish handled, whole city' : 'Sewage handled, whole city', `${d.waste ? w?.wasteCap ?? 0 : w?.sewageCap ?? 0} of ${state.people.length} people`); }
   if (t === T.VET) body += row('Pets looked after', plan?.vetFor?.size || 0);
   if (t === T.METRO) { body += row('Metro riders today', `${plan?.riders?.metro || 0} of ${plan?.metroCap || 0}`); if ((plan?.metros?.length || 0) < 2) body += '<p class="warn">Trains run once two metro stations have staff.</p>'; }
@@ -2624,6 +2662,10 @@ function ownTile(i) {
 // Your council's cities in this world.
 const myCities = () => [...plots.values()].filter((p) => p.owner === user?.uid);
 // Unclaimed plots touching one of your cities: drawn with a dashed border so you can see what you could buy.
+function readyTiles() {
+  if (!state?.ready || !me) return [];
+  return Object.entries(state.ready).filter(([i, h]) => h >= HARVEST.min && state.grid[i]).map(([i, h]) => ({ px: me.px, py: me.py, ...sim.xy(+i), full: h >= HARVEST.max }));
+}
 function freePlots() {
   if (!state || state.status !== 'alive') return [];
   const out = new Map();
@@ -2791,8 +2833,14 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 1.13';
+const VERSION = 'Commons 1.14';
 const CHANGELOG = [
+  ['1.14', [
+    'Your resources are always on show at the top: water, power, food and building materials. Tap them for the full picture.',
+    'Harvests: farms, orchards, power stations and every other producer build up a harvest while they work. Tap a building with a bubble over it to collect it.',
+    'Building takes materials: every building lists its materials alongside its price. Materials of your own take $2 a load off.',
+    'The build catalogue and building panels now say what each building makes and uses a day, and residents show what they need each day.',
+  ]],
   ['1.13', [
     'The Market (X): sell food and materials to other cities, ask to buy what you need, or ask for a loan. Offers are open to every mayor in the world.',
     'What you offer is set aside until someone takes it or you withdraw it. Loans are repaid automatically on the day they’re due.',

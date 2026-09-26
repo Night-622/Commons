@@ -1,7 +1,7 @@
 // HTML for the side drawer and the build catalogue. Pure functions: main.js supplies data and wires up buttons.
-import { REGIONAL, ALLIANCE_TRADE, REACTIONS, T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY, BONDS, INSURANCE, TECH, ERAS, TRAITS, CARBON_TAX, LOANS, LOAN_DAYS, CONGESTION_FEE, BADGES, RES, FOOD, TECH_BRANCHES, STORE_BASE, TRADE_RES, MARKET } from './constants.js';
+import { REGIONAL, ALLIANCE_TRADE, REACTIONS, T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY, BONDS, INSURANCE, TECH, ERAS, TRAITS, CARBON_TAX, LOANS, LOAN_DAYS, CONGESTION_FEE, BADGES, RES, FOOD, TECH_BRANCHES, STORE_BASE, TRADE_RES, MARKET, USE } from './constants.js';
 import { t as tr } from './i18n.js';
-import { creditRating, greenShare, traitOf, hasTech, canResearch, eraOf, resourceStock } from './sim.js';
+import { creditRating, greenShare, traitOf, hasTech, canResearch, eraOf, resourceStock, matCost } from './sim.js';
 import { ROLES, roleOf, jobText, family, healthText, moodReasons, thought, personName } from './people.js';
 
 // The market: open offers from other cities, a form to post your own, and what you owe or are owed.
@@ -132,6 +132,8 @@ export function personCard(s, plan, p, now, fav = false) {
     ${(() => { const t = TRAITS.find((x) => x.id === traitOf(p)); return `<div class="kv"><span>Character${t.note ? `<small>${t.note}</small>` : ''}</span><b>${t.name}</b></div>`; })()}
     ${plan?.pets?.has(p.h) ? `<div class="kv"><span>Pet</span><b>${['A dog', 'A cat', 'A rabbit', 'A parrot', 'Two goldfish'][p.h % 5]}${plan.vetFor?.has(p.h) ? ', with a vet nearby' : ''}</b></div>` : ''}
     <div class="kv"><span>Day to day</span><b class="right">${esc(jobText(s, p))}</b></div>
+    <div class="kv"><span>Needs each day<small>Eats what the city has in store, or what it buys in</small></span><b class="right">${USE.food} food, ${USE.water} water, ${USE.power} power</b></div>
+    ${p.oc ? `<div class="kv"><span>Contract</span><b>Working in another city until day ${p.oc}</b></div>` : ''}
     ${p.cs ? '<div class="kv"><span>Court</span><b>Waiting for a hearing</b></div>' : ''}
     ${reasons.length ? `<h3 class="sub">What’s on their mind</h3><ul class="reasons">${reasons.map(([v, t]) => `<li class="${v > 0 ? 'up' : 'down'}"><span aria-hidden="true">${v > 0 ? '+' : '−'}</span>${esc(t)}</li>`).join('')}</ul>` : ''}
     ${fam.partner || fam.parents.length || fam.kids.length || fam.household.length ? `<h3 class="sub">Family and home</h3><div class="relations">
@@ -457,6 +459,8 @@ export function gives(t) {
   if (d.cases) bits.push(`${d.cases} cases a day`);
   if (d.catchment) bits.push(`serves homes within ${d.catchment} tiles`);
   if (d.graves) bits.push(`${d.graves} graves`);
+  if (d.makes) bits.push(`makes ${Object.entries(d.makes).map(([r, n]) => `${n} ${RES[r].name.toLowerCase()}`).join(' and ')} a day`);
+  if (d.store) bits.push(`stores ${d.store} more of each resource`);
   return bits.join('. ');
 }
 export function catalogHtml(ctx) {
@@ -464,7 +468,7 @@ export function catalogHtml(ctx) {
   const needle = q.trim().toLowerCase();
   const list = BUILDINGS.filter((t) => (cat === 'all' || B[t].cat === cat) && (!needle || `${B[t].name} ${tr(B[t].name)} ${B[t].blurb} ${gives(t)}`.toLowerCase().includes(needle)) && (!afford || avail(t).ok));
   const x = tile % 24 + 1, y = Math.floor(tile / 24) + 1;
-  return `<div class="cat-head"><div><h2 id="catalog-title">Build on tile ${x}, ${y}</h2><small class="soft">You have <b>${money(s.money)}</b>. Staffed buildings need people with the right education.</small></div>
+  return `<div class="cat-head"><div><h2 id="catalog-title">Build on tile ${x}, ${y}</h2><small class="soft">You have <b>${money(s.money)}</b> and <b>${Math.floor(s.res?.materials || 0)} 🧱</b>; each load of your own takes $2 off the price. Staffed buildings need people with the right education.</small></div>
       <button class="iconbtn" type="button" data-cat-close aria-label="Close">${icon('i-close')}</button></div>
     <div class="cat-tools"><label class="search">${icon('i-search')}<input type="search" id="cat-q" placeholder="Search buildings" value="${esc(q)}" aria-label="Search buildings"></label>
       <label class="tgl compact"><input type="checkbox" id="cat-afford" ${afford ? 'checked' : ''}><span class="sw" aria-hidden="true"></span><span>Only what I can build now</span></label></div>
@@ -472,9 +476,9 @@ export function catalogHtml(ctx) {
     <div class="cat-grid">${list.map((t) => {
       const a = avail(t);
       return `<button type="button" class="card ${a.ok ? '' : a.locked ? 'locked' : 'short'}" data-build="${t}" ${a.locked ? 'aria-disabled="true"' : ''}
-        aria-label="${B[t].name}, $${B[t].cost}. ${esc(B[t].blurb)} ${a.ok ? '' : esc(a.reason)}">
+        aria-label="${B[t].name}, $${B[t].cost} and ${matCost(t)} materials. ${esc(B[t].blurb)} ${a.ok ? '' : esc(a.reason)}">
         <canvas class="thumb" data-type="${t}" aria-hidden="true"></canvas>
-        <span class="cname">${B[t].name}</span><span class="ccost num">$${B[t].cost}</span>
+        <span class="cname">${B[t].name}</span><span class="ccost num">$${B[t].cost} <small title="Building materials">+${matCost(t)} 🧱</small></span>
         <span class="cgives">${esc(gives(t))}</span>
         ${a.ok ? '' : `<span class="cwhy">${a.locked ? icon('i-lock') : ''}${esc(a.reason)}</span>`}
       </button>`;

@@ -21,6 +21,12 @@ Guests can turn their guest city into a full account later (Account menu). Linki
 - Saves are split: `plots/{id}` is a small public summary everyone listens to; `plotState/{id}` holds the full city and is only fetched for adjacent neighbours.
 - `node test/balance.mjs` runs a scripted city for 100 days.
 
+## New in 1.14: resources on show, harvests, materials in prices
+- Top-bar resources (`renderResbar`): water, power, food and materials in store, red when water or power runs short. Tap for City stats, Resources.
+- Harvests: every hour a staffed producer adds to `s.ready[i]` (up to `HARVEST.max` hours). From `HARVEST.min` hours a bubble shows and tapping collects `sim.harvest`: `bonus` x what it made in that time, on top of normal output. The balance bot collects daily, like a player.
+- Materials: `sim.matCost` (a load per $25 of price) and `sim.buildPrice`: the list price includes buying them in; each load from your store takes `MAT_BUY` off (never below half). `place` records `paid`/`mat` on the queue item so undo refunds exactly.
+- The catalogue shows materials and daily output (`gives`), the building panel shows output, harvest and power use, and people show their daily needs.
+
 ## New in 1.13: market, labour contracts, private messages
 - `worlds/{w}/offers` (kinds sell, buy, loan, labour) and `worlds/{w}/deals`. Posting reserves goods, money or workers in `s.escrow` (`sim.reserve`/`release`); `fb.takeOffer` marks an offer taken and writes the taker's deal in one transaction; the owner's game applies deals addressed to it (`toPlot`). Loans: the borrower gets a debt (`sim.addDebt`), repaid by `repayDebts` on the due day with a `repay` deal. Rules: `dealOk` only lets deals flow between an offer's two sides, within its amounts.
 - Labour contracts: `sim.hireCrew` adds `s.contracts`; in `plan()` contract crews fill empty job slots (`s._cfill`, counted by `staffing`). The lending city's jobless adults get `p.oc` (away until that day) via `sim.sendCrew`: they count as employed and aren't matched to local jobs.

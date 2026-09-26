@@ -245,6 +245,12 @@ export const MARKET = { maxQty: 5000, maxPrice: 50, maxLoan: 20000, maxLoanDays:
 export const USE = { water: 1, power: 0.5, food: 1, powerPerBuilding: 1 };   // a day, per person (and per staffed building for power)
 export const STORE_BASE = 200;          // of each resource, before warehouses
 export const SURPLUS_SALE = 0.5;        // surplus sells for this share of the import price
+// Building takes materials: a load per $25 of price. The price includes buying them in; every load you have in
+// store is used first and takes MAT_BUY off the price.
+export const MAT_PER_COST = 1 / 25, MAT_BUY = 2;
+// Harvests: a producing building builds up extra for up to `max` hours; tap it (from `min` hours) to collect
+// `bonus` of what it made in that time, on top of its normal output.
+export const HARVEST = { min: 3, max: 12, bonus: 1 };
 export const MATERIALS_BOOST = 1.5, MATERIALS_PER_WORK = 0.2;   // builders with materials in stock, and what a unit of work uses
 // Eras: a city's size gives it a title and a one-off grant, and speeds research.
 export const ERAS = [

@@ -85,6 +85,12 @@ const dict = {
 };
 
 const SEASON = { Spring: 'Άνοιξη', Summer: 'Καλοκαίρι', Autumn: 'Φθινόπωρο', Winter: 'Χειμώνας' };
+// Resources on show and harvests (1.14)
+Object.assign(dict, {
+  'Makes a day': 'Παράγει ημερησίως', 'Harvest': 'Σοδειά', 'Collect the harvest': 'Μαζέψτε τη σοδειά', 'Uses a day': 'Καταναλώνει ημερησίως', 'Stores': 'Αποθηκεύει',
+  'Needs each day': 'Χρειάζεται ημερησίως', 'Contract': 'Σύμβαση', 'Nothing until it has staff': 'Τίποτα μέχρι να έχει προσωπικό',
+  'Builds up a harvest while it works. Tap it to collect.': 'Μαζεύει σοδειά όσο δουλεύει. Πατήστε το για να τη μαζέψετε.',
+});
 // The market (1.13)
 Object.assign(dict, {
   'Market': 'Αγορά', 'Offers': 'Προσφορές', 'Post': 'Δημοσίευση', 'Yours': 'Δικές σας', 'Withdraw': 'Απόσυρση', 'I want to': 'Θέλω να',
