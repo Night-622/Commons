@@ -88,3 +88,13 @@ main"):
          green, not just losses in red, and a staffed Harbour now
          boosts trade like its description always said. Another fresh
          start (WORLD_ID is now s6). No new deploy steps.
+   2.0   Sawmills, quarries, farms and the rest now need a target picked
+         before they make anything (wait, then collect); a new
+         Greenhouse grows from a bought seed. Buildings can be leased to
+         local residents (no upkeep, less tax back) or rented to another
+         mayor for a fixed term paid up front. Goals now explains itself
+         on click, with live progress counts, and a "Fill jobs" button
+         hires the unemployed automatically. THIS UPDATE CHANGES
+         firestore.rules (a new 'rent' Market offer kind) - deploy the
+         rules first, as above, before pushing. Another fresh start
+         (WORLD_ID is now s7).

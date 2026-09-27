@@ -34,8 +34,8 @@ let world = { id: WORLD_ID, name: OPEN_WORLDS[WORLD_ID] }, worlds = [];
 // 1.18, 1.2, 1.3 and 1.8 each started every world afresh: everyone begins in the new open world once.
 try {
   const saved = localStorage.getItem('commons-world');
-  if (saved && localStorage.getItem('commons-world-v7')) world = { id: saved, name: OPEN_WORLDS[saved] || 'World' };
-  localStorage.setItem('commons-world-v7', '1');
+  if (saved && localStorage.getItem('commons-world-v8')) world = { id: saved, name: OPEN_WORLDS[saved] || 'World' };
+  localStorage.setItem('commons-world-v8', '1');
 } catch { /* private mode */ }
 let plan = null, totalsNow = null, lastStep = null;
 let zoneKind = 1;
@@ -3173,8 +3173,16 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 1.9';
+const VERSION = 'Commons 2.0';
 const CHANGELOG = [
+  ['2.0', [
+    'Sawmills, quarries, farms and the rest now make nothing on their own: pick what to cut, dig or grow, wait, and collect it. The Quarry can dig metal or stone, or prospect for iron, gold or diamonds; the Sawmill cuts pine, oak or cedar; the Farm grows carrots, tomatoes or potatoes. A new Greenhouse grows herbs, peppers or strawberries from a bought seed. Any wood or vegetable still counts as wood or vegetables for building costs and town hall requirements, whichever kind you have.',
+    'Goals explains itself: click any goal or town hall step for a plain-English "how", and the ones that are naturally a count (roads laid, homes built, population, days survived) show live progress like "3 of 10".',
+    'A "Fill jobs" button, per building and citywide, hires only people currently without work into open jobs - best-qualified fit first, and only where they can actually get there.',
+    'A work or leisure building can be leased to local residents instead of run directly: no more upkeep, and it repairs itself even when the city is broke, but only a share of its workers’ tax comes back to you instead of the lot.',
+    'A producing building can also be rented out to another mayor: they pay the whole term up front on the Market, and their own city gets a fixed daily amount of whatever was promised for as long as it runs.',
+    'A fresh start: every world begins again.',
+  ]],
   ['1.9', [
     'The guided tour is gone. In its place, Goals is a proper how-to guide: it explains what to do, and every step now has a "Show me" button that jumps straight to the right tool.',
     'A new city starts with a plain-English welcome explaining the goal, instead of a tour/skip choice.',

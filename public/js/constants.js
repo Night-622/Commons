@@ -1,9 +1,9 @@
 // All tunable numbers live here so balancing never means hunting through logic.
 
-// The shared world everyone starts in. 1.9 started every world afresh again (lower starting money, no tutorial):
-// the open world is 's6', and private worlds made before RESET_AT are no longer listed. Earlier worlds are still
-// in the database, just not shown.
-export const WORLD_ID = 's6';
+// The shared world everyone starts in. 2.0 started every world afresh again (production is now pick-and-collect,
+// buildings can be leased or rented out): the open world is 's7', and private worlds made before RESET_AT are no
+// longer listed. Earlier worlds are still in the database, just not shown.
+export const WORLD_ID = 's7';
 // Start of today in UTC, not the user's local calendar date (the world clock, day/night and this cutoff all run
 // on UTC - a local "tomorrow" can still be UTC "today", so bumping this by a calendar day too early would hide
 // worlds made only hours ago). Check the actual UTC date before changing this on a reset.
@@ -15,7 +15,7 @@ export const CLASSIC_WORLD = 'public';
 // The desk frees up when its holder has been idle this long, or their game stops checking in.
 export const MAX_CO = 3, DESK_IDLE_MS = 120000, DESK_STALE_MS = 60000, DESK_BEAT_MS = 20000;
 export const PLOT_BUY_PARCELS = 4, PLOT_BUY_STEP = 1.6, PLOT_BUY_MIN = 1000, MAX_CITIES = 9;
-export const OPEN_WORLDS = { s6: 'The world' };
+export const OPEN_WORLDS = { s7: 'The world' };
 export const PLOT = 24;          // tiles per side of a plot
 export const GAP = 0;            // tiles between neighbouring plots on the master map: none, so the world is one piece
 export const CHUNK = 4;          // land is bought in 4×4 parcels
