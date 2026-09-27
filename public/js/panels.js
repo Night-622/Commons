@@ -6,13 +6,14 @@ import { ROLES, roleOf, jobText, family, healthText, moodReasons, thought, perso
 
 // The market: open offers from other cities, a form to post your own, and what you owe or are owed.
 export function marketPanel(ctx) {
-  const { offers, mine, s, tab, kind, debts, loansOut, stock, postRes } = ctx;
+  const { offers, mine, s, tab, kind, debts, loansOut, stock, postRes, leasesIn = [], leasesOut = [] } = ctx;
   const nm = (k) => RES[k]?.name.toLowerCase() || PRODUCTS[k]?.name.toLowerCase() || k, each = (p) => `$${(+p).toFixed(2)}`;
   const tabs = [['exchange', 'Exchange'], ['shares', 'Cities'], ['offers', `Offers ${offers.length ? offers.length : ''}`], ['post', 'Post'], ['yours', 'Yours']];
   const offerLine = (o) => {
     if (o.kind === 'sell') return [`<b>${esc(o.city)}</b> sells ${o.qty} ${nm(o.res)} at ${each(o.price)} each`, `Buy for ${money(o.total)}`, s.money >= o.total];
     if (o.kind === 'buy') return [`<b>${esc(o.city)}</b> wants ${o.qty} ${nm(o.res)}, paying ${each(o.price)} each`, `Sell for ${money(o.total)}`, (stock[o.res] || 0) >= o.qty];
     if (o.kind === 'labour') return [`<b>${esc(o.city)}</b> offers ${o.qty} worker${o.qty > 1 ? 's' : ''} (${EDU[o.edu || 0].toLowerCase()}) for ${o.days} days at ${each(o.price)} a day each`, `Hire for ${money(o.total)}`, s.money >= o.total];
+    if (o.kind === 'rent') return [`<b>${esc(o.city)}</b> rents out its ${B[o.btype]?.name.toLowerCase() || 'building'}: about ${o.nominal} ${nm(o.res)} a day for ${o.days} days`, `Pay ${money(o.total)} now`, s.money >= o.total];
     return [`<b>${esc(o.city)}</b> asks to borrow ${money(o.total)}, repaying ${money(o.repay)} within ${o.days} days`, `Lend ${money(o.total)}`, s.money >= o.total];
   };
   let body = '';
@@ -64,11 +65,13 @@ export function marketPanel(ctx) {
         <p class="soft small">${kind === 'sell' ? 'The goods are set aside until someone buys them or you withdraw the offer.' : 'The money is set aside until someone sells to you or you withdraw the offer.'}</p>`}
       <div class="actions"><button class="btn primary" type="submit">Post the offer</button></div></form>`;
   } else {
-    const own = (o) => (o.kind === 'labour' ? `Offering ${o.qty} worker${o.qty > 1 ? 's' : ''} (${EDU[o.edu || 0].toLowerCase()}) for ${o.days} days at ${each(o.price)} a day each` : o.kind === 'sell' ? `Selling ${o.qty} ${nm(o.res)} at ${each(o.price)} each` : o.kind === 'buy' ? `Buying ${o.qty} ${nm(o.res)} at ${each(o.price)} each` : `Asking to borrow ${money(o.total)}, repaying ${money(o.repay)} within ${o.days} days`);
+    const own = (o) => (o.kind === 'labour' ? `Offering ${o.qty} worker${o.qty > 1 ? 's' : ''} (${EDU[o.edu || 0].toLowerCase()}) for ${o.days} days at ${each(o.price)} a day each` : o.kind === 'sell' ? `Selling ${o.qty} ${nm(o.res)} at ${each(o.price)} each` : o.kind === 'buy' ? `Buying ${o.qty} ${nm(o.res)} at ${each(o.price)} each` : o.kind === 'rent' ? `Renting out its ${B[o.btype]?.name.toLowerCase() || 'building'}: about ${o.nominal} ${nm(o.res)} a day for ${o.days} days` : `Asking to borrow ${money(o.total)}, repaying ${money(o.repay)} within ${o.days} days`);
     const line = (o) => `<li><span>${own(o)}</span><button class="btn small" type="button" data-cancel-offer="${o.id}">Withdraw</button></li>`;
     body = `<h3 class="sub">Your open offers</h3>${mine.length ? `<ul class="picklist">${mine.map(line).join('')}</ul>` : '<p class="soft small">None.</p>'}
       <h3 class="sub">You owe</h3>${debts.length ? `<ul class="picklist">${debts.map((d) => `<li><span>${money(d.repay)} to ${esc(d.toName)}<small class="${s.day > d.due ? 'warn' : 'soft'}">${s.day > d.due ? `Late by ${s.day - d.due} days` : `Due on day ${d.due}`}</small></span></li>`).join('')}</ul>` : '<p class="soft small">Nothing.</p>'}
-      <h3 class="sub">Owed to you</h3>${loansOut.length ? `<ul class="picklist">${loansOut.map((l) => `<li><span>${money(l.repay)} from ${esc(l.toName)}<small class="soft">By day ${l.due}</small></span></li>`).join('')}</ul>` : '<p class="soft small">Nothing.</p>'}`;
+      <h3 class="sub">Owed to you</h3>${loansOut.length ? `<ul class="picklist">${loansOut.map((l) => `<li><span>${money(l.repay)} from ${esc(l.toName)}<small class="soft">By day ${l.due}</small></span></li>`).join('')}</ul>` : '<p class="soft small">Nothing.</p>'}
+      <h3 class="sub">Rented out</h3>${leasesOut.length ? `<ul class="picklist">${leasesOut.map((l) => `<li><span>${B[l.tile !== undefined ? s.grid[l.tile] : 0]?.name || 'A building'} rented out<small class="soft">Day ${l.startDay} to ${l.startDay + l.days}</small></span></li>`).join('')}</ul>` : '<p class="soft small">Nothing.</p>'}
+      <h3 class="sub">Renting</h3>${leasesIn.length ? `<ul class="picklist">${leasesIn.map((l) => `<li><span>About ${l.nominal} ${nm(l.res)} a day from ${esc(l.from)}<small class="soft">Day ${l.startDay} to ${l.startDay + l.days}</small></span></li>`).join('')}</ul>` : '<p class="soft small">Nothing.</p>'}`;
   }
   return `${head('Market')}<p class="soft small">Trade resources and factory products with other cities, lend or borrow money, and buy shares.</p>
     <div class="seg tabs" role="tablist">${tabs.map(([k, l]) => `<button type="button" role="tab" aria-selected="${tab === k}" data-mtab="${k}">${l}</button>`).join('')}</div>

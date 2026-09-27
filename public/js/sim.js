@@ -9,7 +9,7 @@ import {
   SEASONS, SEASON_DAYS, YEAR_DAYS, UTILITY_POP, DECISIONS, ELECTION_EVERY, ZONES, ZONE_COST,
   HALL_LEVELS, FEATURE_NEEDS, MAT_PER_COST, MAT_BUY, HARVEST, EXCHANGE, PER_CAPITA, STOCK, TRADE_RES, MARKET, RES, FOOD, USE, STORE_BASE, SURPLUS_SALE, MATERIALS_BOOST, MATERIALS_PER_WORK, PLOT_BUY_PARCELS, PLOT_BUY_STEP, PLOT_BUY_MIN, BUILD_SPEED, RECRUIT_COST, FIRED_DAYS, ADULT_STUDY_YEARS, TRAINING_YEARS, EDU, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
   PRODUCTS, PRODUCT_IDS, FACTORY_BATCHES, STORE_SALE_SHARE, RAW_GOODS, STARTING_RES, BRICK_DISCOUNT,
-  kindOf, KIND_IDS, PICKS, BATCH_CAP, LEASE_TAX_SHARE, LEASE_MIN_DAYS, LEASE_CATS,
+  kindOf, KIND_IDS, PICKS, BATCH_CAP, LEASE_TAX_SHARE, LEASE_MIN_DAYS, LEASE_CATS, RENT_MAX_DAYS, RENT_MAX_TOTAL,
 } from './constants.js';
 // Products (and raw resources) can be posted or taken on the player-to-player Market; only raw resources trade
 // instantly on the world Exchange (worldPrices/buyResource/sellResource below).
@@ -186,6 +186,8 @@ export function migrate(s, rng = Math.random) {
   if (!s.wants) s.wants = [];
   if (!s.batches || typeof s.batches !== 'object' || Array.isArray(s.batches)) s.batches = {};
   if (!s.lease || typeof s.lease !== 'object' || Array.isArray(s.lease)) s.lease = {};
+  if (!Array.isArray(s.leasesIn)) s.leasesIn = [];
+  if (!Array.isArray(s.leasesOut)) s.leasesOut = [];
   if (!s.clock) {
     // Line this city up with the world clock, keeping any time it still has to catch up on.
     const now = Date.now(), due = Math.max(0, Math.floor((now - s.lastTick) / TICK_MS));
@@ -511,6 +513,33 @@ export function unlease(s, i) {
   s._plan = null;
   return { ok: true };
 }
+// ---------- renting a building to another mayor ----------
+// The renter's side: guaranteed nominal a day for the term, arriving locally regardless of the owner's city -
+// they already paid for it in full when they took the offer.
+export function startRentIn(s, { offer, res, nominal, days, from }) {
+  (s.leasesIn ||= []).push({ offer, res, nominal, days, from, startDay: s.day });
+}
+// The owner's side: the tile sits out the term (see canStartBatch/canLease, which already refuse on any leased
+// or listed tile) - that's the real cost of having been paid up front.
+export function startRentOut(s, tile, days) {
+  if (tile == null) return;
+  (s.leasesOut ||= []).push({ tile, days, startDay: s.day });
+  if (s.lease?.[tile]?.k === 'list') s.lease[tile] = { k: 'out' };
+}
+// Run once a day from daily(): pays the renter their due amount and, once a term's up, frees the owner's tile.
+// No cross-city message is needed for any of this - both sides settled the whole thing when the deal was made.
+function processRentals(s) {
+  if (s.leasesIn?.length) s.leasesIn = s.leasesIn.filter((l) => {
+    if (s.day >= l.startDay + l.days) return false;
+    s.res ||= {}; s.res[l.res] = Math.round(((s.res[l.res] || 0) + l.nominal) * 100) / 100;
+    return true;
+  });
+  if (s.leasesOut?.length) s.leasesOut = s.leasesOut.filter((l) => {
+    if (s.day < l.startDay + l.days) return true;
+    if (s.lease?.[l.tile]?.k === 'out') delete s.lease[l.tile];
+    return false;
+  });
+}
 // What leasing (or taking back) this building actually changes day to day, for the confirmation modal.
 export function leaseQuote(s, i) {
   const d = B[s.grid[i]], moodK = clamp((s.happiness - 0.1) / 0.6) * (s.policy?.tax || 1);
@@ -670,10 +699,19 @@ export function sellCityShares(s, plotId, n, price) {
   return { ok: true, got };
 }
 
+// A building the mayor could rent out to another mayor: a producer, finished, not already leased or listed.
+export function canRentOut(s, i) {
+  if (s.status !== 'alive') return { ok: false, reason: 'This city has fallen' };
+  if (i == null || !PICKS[s.grid[i]]) return { ok: false, reason: 'This can’t be rented out' };
+  if (!active(s, i)) return { ok: false, reason: 'Not built yet' };
+  if (s.lease?.[i]) return { ok: false, reason: 'Already leased or listed' };
+  if (s.queue.some((q) => q.i === i)) return { ok: false, reason: 'Wait until it’s finished' };
+  return { ok: true };
+}
 // ---------- the market: escrow, deliveries and debts ----------
 // Posting an offer sets its goods (sell) or money (buy) aside until it's taken or cancelled.
-export function reserve(s, offer, kind, res, qty, price) {
-  if (!['sell', 'buy', 'loan', 'labour'].includes(kind)) return { ok: false, reason: 'Unknown offer' };
+export function reserve(s, offer, kind, res, qty, price, extra = {}) {
+  if (!['sell', 'buy', 'loan', 'labour', 'rent'].includes(kind)) return { ok: false, reason: 'Unknown offer' };
   if ((s.escrow || []).length >= MARKET.maxOpen) return { ok: false, reason: `You can have ${MARKET.maxOpen} offers open at once` };
   if (kind === 'loan') {
     if (!(qty >= 100 && qty <= MARKET.maxLoan)) return { ok: false, reason: `Ask for between $100 and $${MARKET.maxLoan.toLocaleString()}` };
@@ -687,6 +725,17 @@ export function reserve(s, offer, kind, res, qty, price) {
     if (!(price > 0 && price <= 30)) return { ok: false, reason: 'A daily fee between $0.01 and $30 a worker' };
     (s.escrow ||= []).push({ offer, kind, res: null, qty, money: 0, e });
     return { ok: true };
+  }
+  if (kind === 'rent') {
+    const i = extra.tile, check = canRentOut(s, i), picks = picksAt(s, i);
+    if (!check.ok) return check;
+    if (!picks?.[res]) return { ok: false, reason: 'Pick something this building actually makes' };
+    if (!(Number.isInteger(qty) && qty >= 1 && qty <= RENT_MAX_DAYS)) return { ok: false, reason: `Between 1 and ${RENT_MAX_DAYS} days` };
+    if (!(price > 0 && price <= RENT_MAX_TOTAL)) return { ok: false, reason: `Up to $${RENT_MAX_TOTAL} total` };
+    const nominal = Math.round((picks[res].makes[res] / picks[res].hours) * 24 * 100) / 100;
+    (s.escrow ||= []).push({ offer, kind, res, qty: 0, money: 0, tile: i, btype: s.grid[i], days: qty, nominal, total: Math.round(price) });
+    s.lease ||= {}; s.lease[i] = { k: 'list', offer };
+    return { ok: true, total: Math.round(price), nominal };
   }
   if (!TRADEABLE.includes(res)) return { ok: false, reason: 'That can’t be traded' };
   if (!(Number.isInteger(qty) && qty >= 1 && qty <= MARKET.maxQty)) return { ok: false, reason: `Between 1 and ${MARKET.maxQty}` };
@@ -708,7 +757,8 @@ export function release(s, offer, completed = false) {
   const k = (s.escrow || []).findIndex((e) => e.offer === offer);
   if (k < 0) return null;
   const [e] = s.escrow.splice(k, 1);
-  if (!completed) { if (e.res) s.res[e.res] = (s.res[e.res] || 0) + e.qty; s.money += e.money; }
+  if (e.kind === 'rent') { if (!completed && s.lease?.[e.tile]?.k === 'list') delete s.lease[e.tile]; }
+  else if (!completed) { if (e.res) s.res[e.res] = (s.res[e.res] || 0) + e.qty; s.money += e.money; }
   return e;
 }
 // Something arriving from another city: money, goods, or both.
@@ -2153,6 +2203,7 @@ function daily(s, plan, rng) {
   for (const d of s.debts || []) if (s.day > d.due) d.late = (d.late || 0) + 1;
   for (const p of s.people) if (p.oc && s.day >= p.oc) { p.oc = 0; remember(s, p, 'Came back from a job in another city'); }
   if (s.contracts) s.contracts = s.contracts.filter((k) => k.until > s.day);
+  processRentals(s);
   const rs = resourcesDay(s, uc);
   st.res = rs;
   if (rs.importCost) { st.upkeep += rs.importCost; st.upkeepBy = { ...st.upkeepBy, imports: rs.importCost }; }
@@ -2480,7 +2531,7 @@ export function collapse(s, outcome = 'collapsed') {
     if (s.grid[i] !== T.EMPTY) { s.grid[i] = T.RUBBLE; s.cond[i] = 0; }
     s.lv[i] = 1;
   }
-  Object.assign(s, { queue: [], people: [], status: 'ruins', happiness: 0, cases: 0, _plan: null, batches: {}, lease: {} });
+  Object.assign(s, { queue: [], people: [], status: 'ruins', happiness: 0, cases: 0, _plan: null, batches: {}, lease: {}, leasesIn: [], leasesOut: [] });
   return record;
 }
 
@@ -2488,7 +2539,7 @@ export function rebuild(s, name, money = REBUILD_MONEY) {
   s.grid[HALL_INDEX] = T.HALL;
   s.cond[HALL_INDEX] = 100;
   Object.assign(s, {
-    name: name || s.name, queue: [], money, res: { ...STARTING_RES }, history: [], log: [], flags: {}, people: [], nextId: 1, graves: 0, cases: 0, batches: {}, lease: {},
+    name: name || s.name, queue: [], money, res: { ...STARTING_RES }, history: [], log: [], flags: {}, people: [], nextId: 1, graves: 0, cases: 0, batches: {}, lease: {}, leasesIn: [], leasesOut: [],
     happiness: 0.65, hour: 0, day: 0, peakPop: 6, unpaidDays: 0, waterShortDays: 0, trafficBadDays: 0, debtDays: 0, cityNo: s.cityNo + 1, status: 'alive', goalsDone: [],
   });
   settle(s, Math.random);

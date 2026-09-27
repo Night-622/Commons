@@ -837,6 +837,46 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(sim.canLease(s, shop).ok, 'and lease it again once taken back');
   console.log('leasing ok: half the tax, no upkeep, self-repairs, blocked from direct management, a minimum term');
 }
+// ---- renting a building to another mayor: paid up front, settled locally on each side, no ongoing messages
+{
+  seed = 131;
+  const owner = sim.newCity('Owner', rng), renter = sim.newCity('Renter', rng);
+  owner.money = 5000; renter.money = 5000; owner.land.fill(1);
+  for (let x = 2; x <= 12; x++) put(owner, x, c + 1, T.ROAD);
+  put(owner, 11, c + 2, T.QUARRY);
+  finishAll(owner);
+  const quarry = sim.idx(11, c + 2), ownerMoneyAfterBuild = owner.money;
+  assert(sim.canRentOut(owner, quarry).ok, 'a finished producer can be rented out');
+  assert(!sim.canRentOut(owner, sim.HALL_INDEX).ok, 'the town hall has nothing to pick, so it can’t be rented');
+  // Post: rent the quarry's iron, 5 days, $200 total.
+  const r1 = sim.reserve(owner, 'rent1', 'rent', 'iron', 5, 200, { tile: quarry });
+  assert(r1.ok && r1.nominal > 0, 'posting a rental works: ' + JSON.stringify(r1));
+  assert(sim.leaseOf(owner, quarry)?.k === 'list', 'the tile is listed while the offer is open');
+  assert(!sim.canRentOut(owner, quarry).ok, 'can’t post it twice');
+  assert(!sim.canStartBatch(owner, quarry, 'metal').ok, 'a listed tile can’t be picked either');
+  // Cancelling gives the tile back.
+  sim.release(owner, 'rent1', false);
+  assert(!sim.leaseOf(owner, quarry), 'cancelling frees the tile');
+  // Post again and "take" it (mirrors main.js's acceptOffer/deal flow, minus the Firestore round-trip).
+  const r2 = sim.reserve(owner, 'rent2', 'rent', 'iron', 5, 200, { tile: quarry });
+  const before = renter.money;
+  renter.money -= 200;
+  sim.startRentIn(renter, { offer: 'rent2', res: 'iron', nominal: r2.nominal, days: 5, from: 'Owner' });
+  const e = sim.release(owner, 'rent2', true);
+  sim.receive(owner, { money: 200 });
+  sim.startRentOut(owner, e.tile, e.days);
+  assert.equal(renter.money, before - 200, 'the renter paid up front');
+  assert.equal(owner.money, ownerMoneyAfterBuild + 200, 'the owner was paid in full immediately');
+  assert(sim.leaseOf(owner, quarry)?.k === 'out', 'the tile is rented out');
+  assert(!sim.canStartBatch(owner, quarry, 'metal').ok, 'the owner can’t use it during the term');
+  for (let d = 0; d < 6; d++) for (let h = 0; h < 24; h++) { sim.tick(renter, rng); sim.tick(owner, rng); }   // the 5 days it runs, plus one for the term to actually close out
+  assert(renter.res.iron > 0, 'the renter received iron every day, with no message from the owner at all');
+  assert.equal(renter.leasesIn.length, 0, 'the rental ends on schedule');
+  assert.equal(owner.leasesOut.length, 0, 'and the owner’s side ends too');
+  assert(!sim.leaseOf(owner, quarry), 'the tile is free again');
+  assert(sim.canStartBatch(owner, quarry, 'metal').ok, 'and can be picked again');
+  console.log('renting ok: paid up front, iron arrived daily with zero cross-city messages, tile freed on schedule');
+}
 // ---- every tradeable resource has a real price and a scarcity weight, or the exchange divides by zero
 {
   for (const k of TRADE_RES) {

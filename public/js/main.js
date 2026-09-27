@@ -4,7 +4,7 @@ import {
   REBUILD_MONEY, MOVE_KEEP, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome, DECISIONS, ZONES, ZONE_COST,
   LOAN_DAYS, HISTORIC_DAYS, BADGES, REGIONAL, REGIONAL_SHARE, ALLIANCE_TRADE, DAILY, DAILY_REWARD, WEEKLY, WEEKLY_REWARD, GIFT_LIMITS, REACTIONS,
   RES, FOOD, TRADE_RES, PRODUCTS, PRODUCT_IDS, RAW_GOODS, USE, HARVEST, MARKET, STOCK, HALL_LEVELS, TECH, STYLES, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
-  PICKS, BATCH_CAP, LEASE_MIN_DAYS,
+  PICKS, BATCH_CAP, LEASE_MIN_DAYS, RENT_MAX_DAYS, RENT_MAX_TOTAL,
 } from './constants.js';
 import { Renderer, STRIDE, thumbnail, modelHeight } from './render.js';
 import { loadPrefs, savePrefs, applyPrefs, resolvedTheme, palette, PALETTES } from './prefs.js';
@@ -744,9 +744,13 @@ function startMarket() {
         sim.receive(state, { money: d.money });
         state.loansOut = (state.loansOut || []).filter((l) => l.offer !== d.offer);
         notify(`${d.fromName} repaid ${money(d.money)}.`, 'good');
+      } else if (d.kind === 'rent') {
+        sim.receive(state, { money: d.money });
+        sim.startRentOut(state, e?.tile, e?.days || 1);
+        notify(`${d.fromName} is renting your ${B[e?.btype]?.name.toLowerCase() || 'building'} for ${money(d.money)}.`, 'good');
       }
       play('coin');
-      if (d.kind === 'sell' || d.kind === 'buy' || d.kind === 'labour') fb.clearOffer(world.id, d.offer).catch(() => {});   // done: off the board
+      if (d.kind === 'sell' || d.kind === 'buy' || d.kind === 'labour' || d.kind === 'rent') fb.clearOffer(world.id, d.offer).catch(() => {});   // done: off the board
       fb.finishDeal(world.id, d.id).catch((err) => console.error(err));
       afterChange(); save();
     }
@@ -766,7 +770,7 @@ async function acceptOffer(o) {
   const deal = { kind: o.kind, fromName: state.name.slice(0, 40), toOwner: o.owner, toPlot: o.plot, money: 0, res: null, qty: 0 };
   if (o.kind === 'sell') { if (state.money < o.total) throw new Error(`Needs ${money(o.total)}.`); deal.money = o.total; }
   if (o.kind === 'buy') { if ((state.res?.[o.res] || 0) < o.qty) throw new Error(`You have ${Math.floor(state.res?.[o.res] || 0)} ${RES_NAME(o.res)} in store.`); deal.res = o.res; deal.qty = o.qty; }
-  if (o.kind === 'loan' || o.kind === 'labour') { if (state.money < o.total) throw new Error(`Needs ${money(o.total)}.`); deal.money = o.total; }
+  if (o.kind === 'loan' || o.kind === 'labour' || o.kind === 'rent') { if (state.money < o.total) throw new Error(`Needs ${money(o.total)}.`); deal.money = o.total; }
   await fb.takeOffer(world.id, o.id, user, plotId, state.name.slice(0, 40), deal);
   state.counters.traded = (state.counters.traded || 0) + 1;
   state.counters.deals = (state.counters.deals || 0) + 1;
@@ -774,6 +778,7 @@ async function acceptOffer(o) {
   if (o.kind === 'buy') { state.res[o.res] -= o.qty; state.money += o.total; notify(`Sold ${o.qty} ${RES_NAME(o.res)} to ${o.city} for ${money(o.total)}.`, 'good'); }
   if (o.kind === 'labour') { state.money -= o.total; sim.hireCrew(state, { n: o.qty, e: o.edu || 0, days: o.days || 1, from: o.city }); notify(`${o.qty} workers from ${o.city} start today, for ${o.days} days.`, 'good'); }
   if (o.kind === 'loan') { state.money -= o.total; (state.loansOut ||= []).push({ offer: o.id, to: o.owner, toName: o.city, repay: o.repay, due: state.day + (o.days || 7) }); notify(`Lent ${money(o.total)} to ${o.city}. They repay ${money(o.repay)}.`, 'good'); }
+  if (o.kind === 'rent') { state.money -= o.total; sim.startRentIn(state, { offer: o.id, res: o.res, nominal: o.nominal, days: o.days, from: o.city }); notify(`Renting ${o.city}'s ${B[o.btype]?.name.toLowerCase() || 'building'}: about ${o.nominal} ${RES_NAME(o.res)} a day for ${o.days} days.`, 'good'); }
   play('coin'); afterChange(); await save();
 }
 async function postOffer(form) {
@@ -797,6 +802,18 @@ async function postOffer(form) {
   catch (e) { sim.release(state, id); afterChange(); throw e; }
   play('coin'); notify('Your offer is on the market.', 'act'); afterChange(); marketTab = 'yours';
 }
+// Rent a producing building to another mayor: they pay the whole term now, and get a fixed amount of one thing
+// it makes, every day, for as long as it runs - see sim.js's reserve('rent')/startRentOut/startRentIn.
+async function postRent(i, res, days, price) {
+  const id = fb.newOfferId(world.id);
+  const r = sim.reserve(state, id, 'rent', res, days, price, { tile: i });
+  if (!r.ok) throw new Error(r.reason + '.');
+  await save();
+  const offer = { kind: 'rent', res, qty: 0, price: 0, total: r.total, nominal: r.nominal, days, tile: i, btype: state.grid[i] };
+  try { await fb.postOffer(world.id, id, { ...offer, owner: user.uid, ownerName: mayor.slice(0, 24), plot: plotId, city: state.name.slice(0, 40) }); }
+  catch (e) { sim.release(state, id); afterChange(); throw e; }
+  play('coin'); notify('Your offer is on the market.', 'act'); afterChange();
+}
 function marketCtx() {
   refreshPrices();
   const cities = [...stocks.values()].filter((st) => st.id !== plotId && plots.get(st.id)).map((st) => { const p = plots.get(st.id);
@@ -805,7 +822,8 @@ function marketCtx() {
   // Shares you still hold in cities that were taken off the exchange or left the world show too, so you can see them.
   return { locked: { shares: !isOpen('shares') }, day: sim.worldDay(), prices: state._prices || {}, yday: sim.worldPrices(worldCities(), sim.worldDay() - 1), cities,
     listing: state.listed ? stocks.get(plotId) || {} : null, canList: sim.canList(state, STOCK.listMin), myPrice: sim.sharePrice(sim.summary(state)), offers: offers.filter((o) => o.owner !== user.uid), mine: myOffers.filter((o) => o.status === 'open'), s: state, tab: marketTab, kind: marketKind, postRes: marketRes,
-    debts: state.debts || [], loansOut: state.loansOut || [], money: state.money, stock: sim.resourceStock(state) };
+    debts: state.debts || [], loansOut: state.loansOut || [], money: state.money, stock: sim.resourceStock(state),
+    leasesIn: state.leasesIn || [], leasesOut: state.leasesOut || [] };
 }
 function wireMarket(box) {
   const done = (r, text) => { if (!r.ok) { notify(r.reason + '.', 'act'); play('error'); return false; } play('coin'); notify(text, 'act'); afterChange(); save(); return true; };
@@ -2502,6 +2520,13 @@ function wireDrawer(box) {
   // Goal "how" details stay open across redraws (the drawer's whole innerHTML is rebuilt often) by remembering
   // which ids are open, keyed separately from whether a goal is done so re-opening the same id always works.
   box.querySelectorAll('details[data-goal]').forEach((d) => { d.addEventListener('toggle', () => { if (d.open) openHow.add(d.dataset.goal); else openHow.delete(d.dataset.goal); }); });
+  const rentForm = box.querySelector('#rent-form');
+  if (rentForm) rentForm.onsubmit = (e) => {
+    e.preventDefault();
+    const tile = +rentForm.dataset.tile, fd = new FormData(rentForm);
+    postRent(tile, fd.get('res'), Math.round(+fd.get('days')), Math.round(+fd.get('price')))
+      .catch((err) => notify(err.message, 'act'));
+  };
   box.querySelectorAll('[data-filter]').forEach((b) => { b.onclick = () => { peopleFilter = b.dataset.filter; renderDrawer(); }; });
   box.querySelectorAll('[data-stats-tab]').forEach((b) => { b.onclick = () => { statsTab = b.dataset.statsTab; renderDrawer(); }; });
   if (drawer === 'region') wireRegion(box);
@@ -2855,6 +2880,16 @@ function ownTile(i) {
       body += `<details><summary>Lease to local operators</summary><p class="soft small">Today it earns you about ${money(q.taxNow)} in tax and costs ${money(q.upkeep)} upkeep. Leased, residents run it themselves: you'd collect about ${money(q.taxLeased)} and pay nothing, and it repairs itself even when the city is broke - but you can't hire, upgrade or pick what it makes there, and you can't take it back for ${LEASE_MIN_DAYS} days. Worth it when you can't staff or afford it.</p>
         <div class="actions"><button class="btn ${q.delta > 0 ? 'primary' : ''}" type="button" data-do="lease">Lease it${q.delta > 0 ? ` (+${money(q.delta)} a day)` : q.delta < 0 ? ` (${money(q.delta)} a day)` : ''}</button></div></details>`;
     }
+    if (!leased && sim.canRentOut(state, i).ok && sim.unlocked(state, 'market')) {
+      body += `<details><summary>Rent to another mayor</summary>
+        <p class="soft small">Post it on the Market. Another mayor pays the whole term up front; their city then gets a fixed amount of one thing this makes, every day, for as long as it runs. It can't be picked, leased or re-rented here while it's out.</p>
+        <form id="rent-form" data-tile="${i}" class="mk-form">
+          <label class="field"><span>What</span><select name="res">${Object.entries(PICKS[t]).map(([id, p]) => `<option value="${id}">${p.name}</option>`).join('')}</select></label>
+          <label class="field"><span>Days</span><input name="days" type="number" min="1" max="${RENT_MAX_DAYS}" value="7" required></label>
+          <label class="field"><span>Total price</span><input name="price" type="number" min="1" max="${RENT_MAX_TOTAL}" step="1" value="150" required></label>
+          <div class="actions"><button class="btn primary" type="submit">Post the offer</button></div>
+        </form></details>`;
+    }
   }
   if (isHome(t)) body += row('Homes', `${people.filter((p) => p.h === i).length} of ${sim.homeCap(state, i)}`) + faces(people.filter((p) => p.h === i), 'Residents');
   if (d.school) body += row(d.school.stage === 'daycare' ? 'Places' : 'Seats', `${people.filter((p) => p.sc === i || p.tu === i).length} of ${sim.capacity(state, i, 'seats')}`) + faces(people.filter((p) => p.sc === i || p.tu === i), 'Pupils');
@@ -2883,7 +2918,7 @@ function ownTile(i) {
           : '<p class="warn small">Paused: nobody works here.</p>';
       } else body += `<p class="soft small">Storing as much as it can hold until you collect.</p>`;
       if (batch.p === 0 && !batch.ready) body += `<button class="linkbtn danger-link" type="button" data-do="cancel-batch">Stop making ${pick.name.toLowerCase()}</button>`;
-    } else body += '<p class="soft small">Pick something to make. It keeps going by itself once you do (a seed is spent once you collect it).</p>';
+    } else body += `<p class="soft small">Pick something to make.${Object.values(picks).some((p) => p.cost) ? ' A seed costs money and is spent once you collect it; everything else keeps going by itself.' : ' It keeps going by itself once you do.'}</p>`;
     const groups = new Map();
     for (const [id, p] of Object.entries(picks)) { const g = p.group || ''; if (!groups.has(g)) groups.set(g, []); groups.get(g).push([id, p]); }
     const list = (entries) => `<ul class="tech">${entries.map(([id, p]) => {

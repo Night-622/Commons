@@ -498,6 +498,23 @@ test('market: labour contracts are a kind of offer', async () => {
   await b.fb.takeOffer(w.id, id, b.user, pb.id, 'Ben', { kind: 'labour', fromName: 'B', toOwner: a.uid, toPlot: pa.id, money: 60, res: null, qty: 0 });
 });
 
+test('market: renting a building to another mayor is a kind of offer, with its own bounds', async () => {
+  const a = await player(), b = await player(), c = await player();
+  const w = await newWorld(a);
+  const pa = await a.fb.claimPlot(a.user, 'Ana', 'A', w.id), pb = await b.fb.claimPlot(b.user, 'Ben', 'B', w.id);
+  const base = { kind: 'rent', res: 'iron', qty: 0, price: 0, total: 200, days: 5, tile: 61, btype: 61, nominal: 8, owner: a.uid, ownerName: 'Ana', plot: pa.id, city: 'A' };
+  await assertFails(a.fb.postOffer(w.id, a.fb.newOfferId(w.id), { ...base, tile: 576 }));   // off the grid
+  await assertFails(a.fb.postOffer(w.id, a.fb.newOfferId(w.id), { ...base, days: 31 }));    // more than a month
+  await assertFails(a.fb.postOffer(w.id, a.fb.newOfferId(w.id), { ...base, total: 6001 }));
+  await assertFails(b.fb.postOffer(w.id, b.fb.newOfferId(w.id), { ...base, owner: b.uid, plot: pa.id }));   // not Ben's city
+  const id = a.fb.newOfferId(w.id);
+  await a.fb.postOffer(w.id, id, base);
+  await assert.rejects(c.fb.takeOffer(w.id, id, c.user, 'x', 'Cy', { kind: 'rent', fromName: 'C', toOwner: a.uid, toPlot: pa.id, money: 9999, res: null, qty: 0 }), /permission/i, 'can’t pay more than the offer’s total');
+  await b.fb.takeOffer(w.id, id, b.user, pb.id, 'Ben', { kind: 'rent', fromName: 'B', toOwner: a.uid, toPlot: pa.id, money: 200, res: null, qty: 0 });
+  const deals = await first((cb) => a.fb.listenDeals(w.id, a.uid, cb));
+  assert.equal(deals[0].money, 200);
+});
+
 test('city shares: only the owner lists; trades only move the counter within bounds; delist when all are back', async () => {
   const a = await player(), b = await player();
   const w = await newWorld(a);

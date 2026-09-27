@@ -582,3 +582,8 @@ export const ZONE_COST = 2;   // per tile painted
 // the operator's margin for running it. Worth it when you can't staff or afford a building, not one already
 // earning its keep. LEASE_MIN_DAYS is how long before you can take it back.
 export const LEASE_TAX_SHARE = 0.5, LEASE_MIN_DAYS = 5, LEASE_CATS = ['work', 'fun'];
+// Renting a producing building to another mayor: they pay the whole term up front (like any Market offer), and
+// in return their own city gets a fixed daily amount of whatever it was renting - settled locally on each side,
+// once, rather than a running exchange between two cities that might not even be online at the same time. The
+// building itself sits out the term (it can't be picked, leased or re-rented) - that's the owner's real cost.
+export const RENT_MAX_DAYS = 30, RENT_MAX_TOTAL = 6000;
