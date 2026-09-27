@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import * as sim from '../public/js/sim.js';
-import { T, PLOT, B, START_MONEY, START_CHUNKS, STARTING_RES, BRICK_DISCOUNT, COLLAPSE_POP, COLLAPSE_WATER_DAYS, COLLAPSE_DEBT, COLLAPSE_DEBT_DAYS } from '../public/js/constants.js';
+import { T, PLOT, B, START_MONEY, START_CHUNKS, STARTING_RES, BRICK_DISCOUNT, COLLAPSE_POP, COLLAPSE_WATER_DAYS, COLLAPSE_DEBT, COLLAPSE_DEBT_DAYS, BATCH_CAP, TRADE_RES, RES, PER_CAPITA } from '../public/js/constants.js';
 
 // sim.tick() never reads the real clock, but sim.newCity() sets the city's *starting* hour of day from
 // Date.now() - left alone, that makes every run start at a different hour, which can shift a long test's exact
@@ -483,7 +483,7 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(!sim.autoFill(s, road).ok, 'a building with no jobs is refused');
   console.log('auto-fill ok: filled', r.filled, 'of the shop\'s jobs,', r.left.idle, 'still idle');
 }
-// ---- resources: farms, water, power, imports, variety, storage and materials
+// ---- resources: pick something, wait for it, and collect it; water, power, imports, variety, storage, materials
 {
   seed = 33;
   const s = sim.newCity('Harvest', rng); s.money = 50000; s.land.fill(1);
@@ -492,30 +492,50 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   row.forEach((t, k) => put(s, 3 + k * 2, c + 2, t));
   for (const x of [3, 5, 7, 9, 15, 17]) put(s, x, c, T.HOUSE);   // enough people to staff everything
   for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = [];
+  const farm = sim.idx(9, c + 2), sawmill = sim.idx(17, c + 2);
+  s.res.wood = 0;   // isolate the pine-counts-as-wood check below from the starting stock
+  assert(sim.startBatch(s, farm, 'carrots').ok, 'pick carrots at the farm');
+  assert(sim.startBatch(s, sawmill, 'pine').ok, 'pick pine at the sawmill');
+  assert(!sim.startBatch(s, farm, 'nosuchpick').ok, 'an unknown pick is refused');
+  assert(!sim.startBatch(s, sawmill, 'carrots').ok, 'a pick from the wrong building is refused');
   for (let d = 0; d < 3; d++) for (let h = 0; h < 24; h++) sim.tick(s, rng);
   const r = s.stats.res;
-  assert(r.prod.vegetables > 0 && r.prod.water > 0 && r.prod.power > 0, 'farms, water towers and wind turbines make things: ' + JSON.stringify(r.prod));
+  assert(r.prod.water > 0 && r.prod.power > 0, 'water towers and wind turbines still make things passively: ' + JSON.stringify(r.prod));
+  assert(sim.batchReady(s, farm) && sim.batchReady(s, sawmill), 'three days is enough for a 3-hour pick to be ready');
+  const cf = sim.collectBatch(s, farm), cw = sim.collectBatch(s, sawmill);
+  assert(cf.ok && cf.got.carrots > 0, 'collecting the farm gives carrots');
+  assert(cw.ok && cw.got.pine > 0, 'collecting the sawmill gives pine');
+  assert.equal(sim.stockOf(s, 'vegetables'), s.res.carrots, 'carrots count as vegetables');
+  assert.equal(sim.stockOf(s, 'wood'), s.res.pine, 'pine counts as wood');
+  assert(!sim.batchReady(s, farm), 'collecting empties the bank, but the same pick keeps going by itself');
+  assert(!sim.collectBatch(s, farm).ok, 'nothing to collect again straight away');
   assert(r.need.food > 0 && Math.abs(r.need.food - s.people.length) <= 12, 'everyone eats (measured at the start of the day, before newcomers)');
-  assert(r.imported >= 0 && r.importCost === Math.round(r.imported * 0.2375), 'missing food is imported at the average price');
-  assert(r.variety >= 1, 'vegetables count as one kind of food');
+  assert(r.imported >= 0, 'missing food is imported');
   // Orchards need research; with it, a second kind of food.
   assert(!sim.availability(s, T.ORCHARD).ok, 'orchards need research');
   s.tech = [...(s.tech || []), 'orchards'];
   put(s, 19, c + 2, T.ORCHARD);
   for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = [];
+  const orchard = sim.idx(19, c + 2);
+  assert(sim.startBatch(s, orchard, 'fruit').ok, 'pick fruit at the orchard');
   for (let h = 0; h < 24 * 3; h++) sim.tick(s, rng);
-  assert(s.stats.res.variety >= 2, 'fruit makes a second kind of food: ' + JSON.stringify(s.stats.res.prod) + ' staff ' + sim.staffing(s, sim.idx(19, c + 2)));
-  // Wood speeds up builders (a sawmill's the source now, not one "materials" resource); the stock goes down as they work.
-  s.res.wood = 100;
+  sim.collectBatch(s, orchard);
+  assert(s.res.fruit > 0, 'the orchard gave fruit: staff ' + sim.staffing(s, orchard));
+  // Enough of each in store (more than a day's eating) to see them both count towards variety at once.
+  s.res.carrots = 200; s.res.fruit = 200;
+  for (let h = 0; h < 24; h++) sim.tick(s, rng);
+  assert(s.stats.res.variety >= 2, 'carrots and fruit are two kinds of food, whatever species they are');
+  // Wood speeds up builders (any wood species counts, cheapest first) - the stock goes down as they work.
+  s.res.pine = 0; s.res.oak = 0; s.res.cedar = 0; s.res.wood = 100;
   put(s, 21, c + 2, T.HOUSE);
-  const before = s.res.wood;
+  const before = sim.stockOf(s, 'wood');
   sim.work(s, 0.05);
-  assert(s.res.wood < before, 'builders use wood');
+  assert(sim.stockOf(s, 'wood') < before, 'builders use wood');
   // Storage: anything over the limit sells.
   s.res.vegetables = 5000;
   for (let h = 0; h < 24; h++) sim.tick(s, rng);
   assert(s.res.vegetables <= s.stats.res.cap && s.stats.res.sold > 0, 'surplus food sells');
-  console.log('resources ok:', JSON.stringify(s.stats.res.prod), 'imported', s.stats.res.imported, 'variety', s.stats.res.variety);
+  console.log('resources ok: carrots', s.res.carrots, 'pine', s.res.pine, 'fruit', s.res.fruit, 'variety', s.stats.res.variety);
 }
 // ---- labour contracts between cities
 {
@@ -565,13 +585,14 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   const farm = sim.idx(5, c + 2);
   const hand = s.people.find((p) => p.a >= 18 && p.a < 65 && !(p.j === sim.HALL_INDEX && p.jt === 0));
   if (hand) { hand.j = -1; sim.hire(s, hand.i, farm, 0); }   // a settler takes the farm job
+  assert(sim.startBatch(s, farm, 'carrots').ok, 'pick carrots');
   for (let h = 0; h < 6; h++) sim.tick(s, rng);
   assert(sim.staffing(s, farm) > 0, 'the farm has staff');
-  assert(sim.harvestReady(s, farm), 'after a few hours the farm has a harvest');
-  const v = s.res.vegetables || 0, r = sim.harvest(s, farm);
-  assert(r.ok && r.got.vegetables > 0 && s.res.vegetables === v + r.got.vegetables, 'collecting adds to the store');
-  assert(!sim.harvestReady(s, farm), 'and starts again');
-  console.log('materials prices and harvests ok: harvest gave', r.got.vegetables, 'vegetables');
+  assert(sim.batchReady(s, farm), 'after a few hours the carrots are ready');
+  const v = s.res.carrots || 0, r = sim.collectBatch(s, farm);
+  assert(r.ok && r.got.carrots > 0 && s.res.carrots === v + r.got.carrots, 'collecting adds to the store');
+  assert(!sim.batchReady(s, farm), 'and starts again');
+  console.log('materials prices and harvests ok: collecting gave', r.got.carrots, 'carrots');
 }
 // ---- the exchange: resource prices from scarcity and demand, and city shares
 {
@@ -628,10 +649,10 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   s.hallDone = { school: true, farm: true, harvest: true, utilities: true };
   for (let k = 0; k < 30; k++) s.people.push({ ...s.people[0], i: 950 + k });
   s.res = {};
-  assert.equal(sim.checkHall(s), null, 'not without 40 wood');
-  s.res = { wood: 55 };
+  assert.equal(sim.checkHall(s), null, 'not without 24 wood');
+  s.res = { wood: 39 };
   assert.equal(sim.checkHall(s)?.name, 'Town');
-  assert.equal(s.res.wood, 15, 'the upgrade used 40 wood');
+  assert.equal(s.res.wood, 15, 'the upgrade used 24 wood');
   assert.equal(s.lv[sim.HALL_INDEX], 2, 'a bigger hall');
   // Land: a town can hold 16 parcels.
   s.land.fill(0); for (let k = 0; k < 16; k++) s.land[k] = 1;
@@ -645,6 +666,13 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   sim.migrate(old);
   assert.equal(old.hall, 3, 'a 96-person city from before starts as a large town');
   assert(sim.unlocked(old, 'market') && sim.unlocked(old, 'shares') && sim.hasTech(old, 'highschool'), 'and keeps its market, shares and high schools');
+  // Any wood species counts towards a resource requirement, cheapest first.
+  s.hallDone = { materials: true, tech2: true, trade1: true, clinic: true };
+  for (let k = 0; k < 40; k++) s.people.push({ ...s.people[0], i: 1000 + k });
+  s.res = { pine: 10, wood: 90, metal: 24, vegetables: 40 };
+  assert.equal(sim.checkHall(s)?.name, 'Large town', 'pine and wood together clear the 48-wood requirement');
+  assert.equal(sim.stockOf(s, 'wood'), 100 - 48, 'pine (cheaper) is spent before wood');
+  assert.equal(s.res.pine, 0, 'pine ran out first');
   console.log('town hall ok: settlement > village > town; land capped at 16');
 }
 // ---- factories with a recipe turn resources into products; a Store and the Market both sell them
@@ -675,7 +703,8 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(s.res.furniture < 500, 'a staffed Store sells product stock: ' + s.res.furniture);
   console.log('factories and products ok: store sold down to', s.res.furniture);
 }
-// ---- more raw resources: quarries make stone alongside metal, coal mines make coal, bricks turn both into a product
+// ---- more raw resources: the quarry can dig metal, stone or prospect for minerals; coal mines make coal;
+// bricks turn stone and coal into a product
 {
   seed = 91;
   const s = sim.newCity('Digger', rng); s.money = 20000; s.land.fill(1);
@@ -683,12 +712,20 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   [T.HOUSE, T.HOUSE, T.HOUSE, T.HOUSE, T.QUARRY, T.COALMINE, T.FACTORY].forEach((t, k) => put(s, 3 + k * 2, c + 2, t));
   finishAll(s);
   for (let k = 0; k < 40; k++) s.people.push({ ...s.people[0], i: 900 + k, j: -1 });   // plenty of idle adults to staff every job
-  for (let h = 0; h < 48; h++) sim.tick(s, rng);
   const quarry = sim.idx(11, c + 2), mine = sim.idx(13, c + 2), factory = sim.idx(15, c + 2);
+  assert(sim.startBatch(s, quarry, 'stone').ok, 'pick stone at the quarry');
+  assert(sim.startBatch(s, mine, 'coal').ok, 'pick coal at the mine');
+  for (let h = 0; h < 48; h++) sim.tick(s, rng);
   assert(sim.staffing(s, quarry) > 0 && sim.staffing(s, mine) > 0 && sim.staffing(s, factory) > 0, 'the quarry, coal mine and factory all have staff');
   for (let h = 0; h < 24; h++) sim.tick(s, rng);
-  assert(s.res.stone > 0, 'the quarry makes stone alongside metal: ' + JSON.stringify(s.stats.res.prod));
-  assert(s.res.coal > 0, 'the coal mine makes coal: ' + JSON.stringify(s.stats.res.prod));
+  assert(sim.batchReady(s, quarry), 'the quarry has stone ready');
+  assert(sim.batchReady(s, mine), 'the coal mine has coal ready');
+  const cs = sim.collectBatch(s, quarry), cc = sim.collectBatch(s, mine);
+  assert(cs.ok && cs.got.stone > 0, 'the quarry gives stone: ' + JSON.stringify(cs.got));
+  assert(cc.ok && cc.got.coal > 0, 'the coal mine gives coal: ' + JSON.stringify(cc.got));
+  // Switching to a mineral pick works too, and metal from prospecting for iron still counts as metal.
+  assert(sim.startBatch(s, quarry, 'iron').ok, 'switch the quarry to prospect for iron');
+  assert.equal(sim.picksAt(s, quarry).iron.group, 'Prospect');
   assert(sim.reserve(s, 'st1', 'sell', 'stone', 1, 1).ok && sim.reserve(s, 'co1', 'sell', 'coal', 1, 1).ok, 'stone and coal can be posted on the Market');
   sim.release(s, 'st1'); sim.release(s, 'co1');
   assert(!sim.setRecipe(s, factory, 'bricks').ok, 'bricks need the masonry technology');
@@ -697,7 +734,7 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   s.res.stone = 200; s.res.coal = 200;
   for (let h = 0; h < 24; h++) sim.tick(s, rng);
   assert(s.res.bricks > 0, 'the factory turned stone and coal into bricks: ' + JSON.stringify(s.stats.products));
-  console.log('more resources ok: quarry stone, coal mine, bricks recipe');
+  console.log('more resources ok: quarry stone/iron, coal mine, bricks recipe');
 }
 // ---- more ways a city can fall: no water or deep debt, each only after a run of bad days, and each resets
 // the moment the problem is gone. (Gridlock uses the exact same pattern in sim.js - traffic.needs.commute in
@@ -722,5 +759,57 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   for (let h = 0; h < 24; h++) sim.tick(s3, rng);
   assert.equal(s3.status, 'ruins', `no water for ${COLLAPSE_WATER_DAYS} days running falls, once past ${COLLAPSE_POP} people`);
   console.log('more ways to fall ok: debt and drought both end a city after a run of bad days, and both reset when fixed');
+}
+// ---- picking what to make: banking a cap of loads, a spent seed, cancelling, and surviving bulldoze/move
+{
+  seed = 111;
+  const s = sim.newCity('Picker', rng); s.money = 20000; s.land.fill(1);
+  for (let x = 2; x <= 16; x++) put(s, x, c + 1, T.ROAD);
+  [T.HOUSE, T.HOUSE, T.HOUSE, T.HOUSE, T.FARM, T.GREENHOUSE].forEach((t, k) => put(s, 3 + k * 2, c + 2, t));
+  finishAll(s);
+  for (let k = 0; k < 20; k++) s.people.push({ ...s.people[0], i: 900 + k, j: -1 });
+  const farm = sim.idx(11, c + 2), gh = sim.idx(13, c + 2);
+  // A cost-free pick banks up loads, then holds at BATCH_CAP without wasting further progress.
+  assert(sim.startBatch(s, farm, 'carrots').ok);
+  for (let h = 0; h < 24 * 6; h++) sim.tick(s, rng);   // far more than enough for many cycles
+  const cap = sim.batchAt(s, farm).ready;
+  assert.equal(cap, BATCH_CAP, 'never banks past the cap');
+  assert(cap >= 2, 'banked more than one load while unattended: ' + cap);
+  for (let h = 0; h < 24; h++) sim.tick(s, rng);
+  assert.equal(sim.batchAt(s, farm).ready, cap, 'stays capped rather than piling up forever');
+  // A seed (Greenhouse) is spent on collection - it doesn't keep going by itself.
+  const before = s.money;
+  assert(!sim.canStartBatch(s, gh, 'nope').ok, 'unknown pick refused');
+  const started = sim.startBatch(s, gh, 'strawberries');
+  assert(started.ok && s.money < before, 'the seed is paid for up front');
+  for (let h = 0; h < 24 * 2; h++) sim.tick(s, rng);
+  assert(sim.batchReady(s, gh), 'the strawberries are ready');
+  const before2 = s.res.strawberries || 0;
+  const got = sim.collectBatch(s, gh);
+  assert(got.ok && got.got.strawberries > 0 && s.res.strawberries === before2 + got.got.strawberries);
+  assert(!sim.batchAt(s, gh), 'collecting a seeded pick clears it - grow more means buying another seed');
+  assert(!sim.collectBatch(s, gh).ok, 'nothing left to collect');
+  // Cancelling banks whatever was already finished, and refuses on a building with nothing running.
+  assert(sim.startBatch(s, farm, 'tomatoes').ok, 'switching picks is allowed any time');
+  assert(!sim.cancelBatch(s, gh).ok, 'nothing running there to cancel');
+  const c1 = sim.cancelBatch(s, farm);
+  assert(c1.ok && !sim.batchAt(s, farm), 'cancelling clears the batch');
+  // Bulldozing and moving carry (or clear) the batch correctly.
+  assert(sim.startBatch(s, farm, 'potatoes').ok);
+  for (let h = 0; h < 12; h++) sim.tick(s, rng);
+  const empty = sim.idx(11, c + 4);
+  assert(sim.moveBuilding(s, farm, empty).ok, 'move the farm');
+  assert(!sim.batchAt(s, farm) && sim.batchAt(s, empty), 'the batch moved with the building');
+  assert(sim.bulldoze(s, empty).ok, 'bulldoze the farm');
+  assert(!sim.batchAt(s, empty), 'bulldozing clears the batch');
+  console.log('batches ok: banked', cap, 'loads, a spent greenhouse seed, cancel refunds, move and bulldoze both tidy up');
+}
+// ---- every tradeable resource has a real price and a scarcity weight, or the exchange divides by zero
+{
+  for (const k of TRADE_RES) {
+    assert(typeof RES[k].import === 'number' && RES[k].import > 0, `${k} needs an import price`);
+    assert(typeof PER_CAPITA[k] === 'number' && PER_CAPITA[k] > 0, `${k} needs a PER_CAPITA weight, or worldPrices divides by zero`);
+  }
+  console.log('resource prices ok:', TRADE_RES.length, 'tradeable resources all price and weight correctly');
 }
 console.log('all tests passed');

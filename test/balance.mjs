@@ -4,7 +4,7 @@
 // Runs are reproducible: the world clock starts on launch day and moves one hour per tick, and
 // Math.random (used in a few places in sim.js) is replaced by the seeded generator.
 import * as sim from '../public/js/sim.js';
-import { T, B, PLOT, TICK_MS, TECH } from '../public/js/constants.js';
+import { T, B, PLOT, TICK_MS, TECH, kindOf } from '../public/js/constants.js';
 
 const START = Date.UTC(2026, 8, 25);
 let clock = START, seed = 1;
@@ -43,6 +43,24 @@ function run(startSeed, verbose) {
     // Like a player, research whatever it can afford (cheapest first) and collect any harvests that are ready.
     for (const t of [...TECH].sort((a, b) => a.cost - b.cost)) if (sim.canResearch(s, t.id).ok) sim.research(s, t.id);
     for (let i = 0; i < PLOT * PLOT; i++) if (sim.harvestReady(s, i)) sim.harvest(s, i);
+    // Since 2.0, a sawmill/quarry/farm/etc makes nothing until you pick a target: collect anything ready, and
+    // set every idle producer going again - whatever the town hall's next level still needs first, otherwise
+    // the quickest thing on offer, same as a player just keeping the lights on rather than optimising hard.
+    {
+      const hs = sim.hallState(s, { cities: 1 });
+      const needKinds = new Set((hs.res || []).filter((r) => !r.done).map((r) => r.k));
+      for (let i = 0; i < PLOT * PLOT; i++) {
+        const picks = sim.picksAt(s, i);
+        if (!picks) continue;
+        if (sim.batchReady(s, i)) sim.collectBatch(s, i);
+        if (sim.batchAt(s, i)) continue;
+        const options = Object.entries(picks).filter(([id]) => sim.canStartBatch(s, i, id).ok);
+        if (!options.length) continue;
+        const need = options.find(([, p]) => Object.keys(p.makes).some((r) => needKinds.has(kindOf(r))));
+        const [id] = need || options.sort((a, b) => a[1].hours - b[1].hours)[0];
+        sim.startBatch(s, i, id);
+      }
+    }
     // A sensible mayor gets water and power in well before the town is big enough to need them (a city can now
     // fall for going without water for days on end - see COLLAPSE_POP/COLLAPSE_WATER_DAYS in constants.js), not
     // just when the advisor happens to notice a shortage.

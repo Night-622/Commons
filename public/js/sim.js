@@ -9,6 +9,7 @@ import {
   SEASONS, SEASON_DAYS, YEAR_DAYS, UTILITY_POP, DECISIONS, ELECTION_EVERY, ZONES, ZONE_COST,
   HALL_LEVELS, FEATURE_NEEDS, MAT_PER_COST, MAT_BUY, HARVEST, EXCHANGE, PER_CAPITA, STOCK, TRADE_RES, MARKET, RES, FOOD, USE, STORE_BASE, SURPLUS_SALE, MATERIALS_BOOST, MATERIALS_PER_WORK, PLOT_BUY_PARCELS, PLOT_BUY_STEP, PLOT_BUY_MIN, BUILD_SPEED, RECRUIT_COST, FIRED_DAYS, ADULT_STUDY_YEARS, TRAINING_YEARS, EDU, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
   PRODUCTS, PRODUCT_IDS, FACTORY_BATCHES, STORE_SALE_SHARE, RAW_GOODS, STARTING_RES, BRICK_DISCOUNT,
+  kindOf, KIND_IDS, PICKS, BATCH_CAP,
 } from './constants.js';
 // Products (and raw resources) can be posted or taken on the player-to-player Market; only raw resources trade
 // instantly on the world Exchange (worldPrices/buyResource/sellResource below).
@@ -183,6 +184,7 @@ export function migrate(s, rng = Math.random) {
   if (s.loan && !(s.loan.left > 0)) s.loan = null;
   if (!s.zone) s.zone = new Array(N).fill(0);
   if (!s.wants) s.wants = [];
+  if (!s.batches || typeof s.batches !== 'object' || Array.isArray(s.batches)) s.batches = {};
   if (!s.clock) {
     // Line this city up with the world clock, keeping any time it still has to catch up on.
     const now = Date.now(), due = Math.max(0, Math.floor((now - s.lastTick) / TICK_MS));
@@ -344,7 +346,8 @@ function resourcesDay(s, uc) {
   for (const k of [...FOOD, ...RAW_GOODS]) res[k] = (res[k] || 0) + prod[k];
   const inStock = FOOD.reduce((a, k) => a + res[k], 0), eat = Math.min(inStock, need.food);
   for (const k of FOOD) res[k] = inStock ? res[k] - eat * (res[k] / inStock) : 0;
-  const variety = FOOD.filter((k) => prod[k] > 0 || res[k] >= 1).length;
+  // By kind, not by specific resource - three vegetable species in store is still one kind of variety, same as one.
+  const variety = new Set(FOOD.filter((k) => prod[k] > 0 || res[k] >= 1).map(kindOf)).size;
   // Imported food: the cheapest kinds first would be dull, so an even mix.
   const band = (k) => clamp(priceOf(s, k), RES[k].import * EXCHANGE.importBand[0], RES[k].import * EXCHANGE.importBand[1]);
   const imported = Math.round(need.food - eat), avg = FOOD.reduce((a, k) => a + band(k), 0) / FOOD.length;
@@ -405,6 +408,70 @@ export function setRecipe(s, i, id) {
   s._plan = null;
   return { ok: true };
 }
+
+// ---------- picking what to make: a Quarry, Sawmill, Farm, Greenhouse and the rest of the producers make
+// nothing until you pick a target; then it takes its own time, and you collect it when it's ready. A pick with
+// no seed cost keeps going by itself (up to BATCH_CAP loads banked, so a city left alone still finds something
+// waiting); a seed (Greenhouse) is spent once its planting is collected, so growing more means buying another.
+export const picksAt = (s, i) => PICKS[s.grid[i]] || null;
+export const batchAt = (s, i) => s.batches?.[i] || null;
+export const batchReady = (s, i) => (s.batches?.[i]?.ready || 0) > 0;
+export function canStartBatch(s, i, k) {
+  if (s.status !== 'alive') return { ok: false, reason: 'This city has fallen' };
+  const picks = picksAt(s, i);
+  if (!picks?.[k]) return { ok: false, reason: 'Nothing to pick here' };
+  if (!active(s, i)) return { ok: false, reason: 'Not built yet' };
+  if (s.lease?.[i]) return { ok: false, reason: 'Leased: its operator runs it' };
+  const p = picks[k];
+  if (p.tech && !hasTech(s, p.tech)) return { ok: false, reason: `Research ${TECH.find((t) => t.id === p.tech)?.name} first` };
+  if (p.cost && s.money < p.cost) return { ok: false, reason: `Needs $${p.cost} for the seed` };
+  return { ok: true };
+}
+// Start (or switch to) a pick. Switching banks whatever the old one had already finished, but loses any
+// in-progress hours towards its next load - the workers are simply retasked.
+export function startBatch(s, i, k) {
+  const check = canStartBatch(s, i, k);
+  if (!check.ok) return check;
+  if (s.batches?.[i]) collectBatch(s, i);
+  const p = picksAt(s, i)[k];
+  if (p.cost) s.money -= p.cost;
+  s.batches ||= {};
+  s.batches[i] = { k, p: 0, h: p.hours, ready: 0 };
+  s._plan = null;
+  return { ok: true };
+}
+export function collectBatch(s, i) {
+  const b = s.batches?.[i];
+  if (!b || !b.ready) return { ok: false, reason: 'Nothing ready yet' };
+  const pick = picksAt(s, i)?.[b.k], got = {};
+  s.res ||= {};
+  if (pick) for (const [r, n] of Object.entries(pick.makes)) { const amt = n * b.ready; got[r] = amt; s.res[r] = Math.round(((s.res[r] || 0) + amt) * 100) / 100; }
+  s.counters.collects = (s.counters.collects || 0) + 1;
+  if (pick?.cost) delete s.batches[i];   // a seed is spent: pick it again (and pay again) to keep going
+  else b.ready = 0;
+  return { ok: true, got };
+}
+export function cancelBatch(s, i) {
+  if (!s.batches?.[i]) return { ok: false, reason: 'Nothing running here' };
+  collectBatch(s, i);   // keep whatever's already banked rather than losing it
+  delete s.batches[i];
+  return { ok: true };
+}
+// One tick's progress on every running batch. A batch pauses (no wasted time) whenever its building is
+// unstaffed, under construction or already banked as many loads as it can hold.
+function advanceBatches(s, uc = underConstruction(s)) {
+  for (const key of Object.keys(s.batches || {})) {
+    const i = +key, b = s.batches[i], pick = picksAt(s, i)?.[b.k];
+    if (!pick) { delete s.batches[i]; continue; }   // bulldozed, moved off, or the type changed under it
+    const cap = pick.cost ? 1 : BATCH_CAP;
+    if (b.ready >= cap || !active(s, i, uc)) continue;
+    const r = staffing(s, i);
+    if (r <= 0) continue;
+    b.p += r;
+    while (b.p >= b.h && b.ready < cap) { b.p -= b.h; b.ready++; }
+    if (b.ready >= cap) b.p = Math.min(b.p, b.h);
+  }
+}
 // ---------- the town hall: how big the city is ----------
 // How each objective is checked. `x` has what the city can't know by itself: its alliance and how many cities
 // its council runs.
@@ -413,7 +480,7 @@ const PATH_TESTS = {
   roads: (s) => pathCount(s, T.ROAD, T.XING) >= 10, homes: (s) => pathCount(s, T.HOUSE, T.APARTMENT, T.VILLA) >= 3,
   work: (s) => pathCount(s, T.WORK, T.FACTORY) >= 1, shop: (s) => pathCount(s, T.SHOP) >= 1,
   pop15: (s) => s.people.length >= 15, school: (s) => pathCount(s, T.SCHOOL) >= 1, farm: (s) => pathCount(s, T.FARM) >= 1,
-  harvest: (s) => (s.counters.harvests || 0) >= 1,
+  harvest: (s) => (s.counters.harvests || 0) + (s.counters.collects || 0) >= 1,
   pop40: (s) => s.people.length >= 40, utilities: (s) => pathCount(s, T.WATER) >= 1 && pathCount(s, T.POWER, T.SOLAR, T.WIND) >= 1,
   tech1: (s) => (s.tech || []).length >= 1, tech2: (s) => (s.tech || []).length >= 2, tech6: (s) => (s.tech || []).length >= 6, materials: (s) => pathCount(s, T.MATERIALS, T.QUARRY) >= 1,
   clinic: (s) => pathCount(s, T.CLINIC) >= 1, highschool: (s) => pathCount(s, T.HIGH) >= 1, land3: (s) => (s.counters.land || 0) >= 3, happy60: (s) => s.people.length >= 20 && s.happiness >= 0.6,
@@ -448,7 +515,7 @@ export function hallState(s, x = {}) {
   if (!next) return { level: h, name: HALL_LEVELS[h].name, next: null, complete: true };
   const done = (s.hallDone ||= {});
   const goals = next.goals.map(([id, text, how]) => { const d = !!done[id] || !!PATH_TESTS[id]?.(s, x); return { id, text, how, done: d, progress: d ? null : hallGoalProgress(s, id) }; });
-  const res = Object.entries(next.res).map(([k, n]) => ({ k, need: n, have: Math.floor(s.res?.[k] || 0), done: (s.res?.[k] || 0) >= n }));
+  const res = Object.entries(next.res).map(([k, n]) => ({ k, need: n, have: Math.floor(stockOf(s, k)), done: stockOf(s, k) >= n }));
   const pop = { need: next.pop, have: s.people.length, done: s.people.length >= next.pop };
   return { level: h, name: HALL_LEVELS[h].name, next, goals, res, pop, ready: pop.done && goals.every((g) => g.done) && res.every((r) => r.done), complete: false };
 }
@@ -459,7 +526,7 @@ export function checkHall(s, x = {}) {
   if (st.complete) return null;
   for (const g of st.goals) if (g.done) s.hallDone[g.id] = true;
   if (!st.ready) return null;
-  for (const r of st.res) s.res[r.k] -= r.need;
+  for (const r of st.res) takeKind(s, r.k, r.need);
   s.hall = hallLevel(s) + 1;
   s.hallDone = {};
   s.lv[HALL_INDEX] = hallSize(s.hall);
@@ -730,12 +797,29 @@ export function tileCost(s, i, type) {
   return base;
 }
 
+// How much of a kind (wood, metal, vegetables...) is in store, across every specific resource that counts as it -
+// oak and cedar both count towards "wood", the same way a plain resource with no kind only ever counts as itself.
+export function stockOf(s, kind) { return (KIND_IDS[kind] || [kind]).reduce((a, k) => a + (s.res?.[k] || 0), 0); }
+// Take n of a kind from store, cheapest resource first (so a load of plain wood goes before valuable cedar).
+// Returns exactly what was taken, by resource id, so it can be refunded precisely if the build is undone.
+export function takeKind(s, kind, n) {
+  const took = {};
+  for (const k of KIND_IDS[kind] || [kind]) {
+    if (n <= 0) break;
+    const t = Math.min(n, s.res?.[k] || 0);
+    if (t <= 0) continue;
+    s.res[k] = Math.round((s.res[k] - t) * 100) / 100;
+    took[k] = t; n -= t;
+  }
+  return took;
+}
+
 // Materials a building needs, and what it costs: the price includes buying them in, less MAT_BUY for each load
 // from your store. Wood is used first, then metal, for whatever's short.
 export const matCost = (type) => (B[type]?.cost ? Math.max(1, Math.round(B[type].cost * MAT_PER_COST)) : 0);
 export function buildPrice(s, i, type) {
   const mat = matCost(type);
-  const wood = Math.min(mat, Math.floor(s.res?.wood || 0)), metal = Math.min(mat - wood, Math.floor(s.res?.metal || 0));
+  const wood = Math.min(mat, Math.floor(stockOf(s, 'wood'))), metal = Math.min(mat - wood, Math.floor(stockOf(s, 'metal')));
   const use = wood + metal, bought = mat - use;
   let base = type === T.XING ? B[type].cost : tileCost(s, i, type);
   if ((s.res?.bricks || 0) > 0) base = Math.round(base * BRICK_DISCOUNT);   // bricks in store: everything costs a little less
@@ -1574,13 +1658,12 @@ export function place(s, i, type) {
   if (crossing(s, i, type)) type = T.XING;
   const price = buildPrice(s, i, type), cost = price.money;
   s.money -= cost;
-  if (price.wood) s.res.wood -= price.wood;
-  if (price.metal) s.res.metal -= price.metal;
+  const took = { ...(price.wood ? takeKind(s, 'wood', price.wood) : {}), ...(price.metal ? takeKind(s, 'metal', price.metal) : {}) };
   if (s.zone) s.zone[i] = 0;   // your own buildings are public: you pay their upkeep
   s.grid[i] = type;
   s.cond[i] = 0;
   s.lv[i] = 1;
-  s.queue.push({ i, left: B[type].work, tap: 0, paid: cost, mat: price.use, wood: price.wood, metal: price.metal });
+  s.queue.push({ i, left: B[type].work, tap: 0, paid: cost, mat: price.use, wood: price.wood, metal: price.metal, took });
   s.counters.built++;
   s._plan = null;
   return { ok: true, cost, mat: price.mat, wood: price.wood, metal: price.metal };
@@ -1593,7 +1676,11 @@ export function undoPlace(s, i) {
   const [q] = s.queue.splice(k, 1);
   const back = q.paid ?? (t === T.XING ? B[t].cost : tileCost(s, i, t));
   s.money += back;
-  if (q.mat) { s.res ||= {}; s.res.wood = (s.res.wood || 0) + (q.wood || 0); s.res.metal = (s.res.metal || 0) + (q.metal || 0); }
+  if (q.mat) {
+    s.res ||= {};
+    if (q.took) for (const [k2, v] of Object.entries(q.took)) s.res[k2] = (s.res[k2] || 0) + v;
+    else { s.res.wood = (s.res.wood || 0) + (q.wood || 0); s.res.metal = (s.res.metal || 0) + (q.metal || 0); }   // older queue items, before specific ids
+  }
   s.grid[i] = T.EMPTY;
   s.cond[i] = 0;
   s.counters.built = Math.max(0, s.counters.built - 1);
@@ -1659,6 +1746,7 @@ export function bulldoze(s, i) {
   s.lv[i] = 1;
   if (s.zone) s.zone[i] = 0;
   if (s.bday) s.bday[i] = -1;
+  if (s.batches) delete s.batches[i];
   s._plan = null;
   if (wasHistoric) { for (const p of s.people) p.m = clamp(p.m - 0.03); note(s, 'warn', `The old ${B[t].name.toLowerCase()} was pulled down. Some residents mourn a piece of the town’s history.`); }
   return { ok: true, refund, historic: wasHistoric };
@@ -1685,6 +1773,7 @@ export function moveBuilding(s, from, to) {
   for (const k of ['grid', 'cond', 'lv']) { s[k][to] = s[k][from]; s[k][from] = k === 'lv' ? 1 : 0; }
   s.grid[from] = T.EMPTY;
   if (s.bday) { s.bday[to] = s.day; s.bday[from] = -1; }   // a moved building starts its history again
+  if (s.batches?.[from]) { s.batches[to] = s.batches[from]; delete s.batches[from]; }
   for (const p of s.people) for (const k of ['h', 'j', 'sc', 'tu', 'fun']) if (p[k] === from) p[k] = to;
   s.counters.moved++;
   s._plan = null;
@@ -1711,14 +1800,13 @@ function construct(s, hours = 1) {
     else if (p.j < 0 && canWork(p)) labour += VOLUNTEER_RATE;
   }
   labour *= BUILD_SPEED * hours;
-  // Wood or metal in stock: builders work faster, using some as they go (wood first).
-  const mat = (s.res?.wood || 0) + (s.res?.metal || 0);
+  // Wood or metal (any kind of either) in stock: builders work faster, using some as they go (wood first).
+  const mat = stockOf(s, 'wood') + stockOf(s, 'metal');
   if (mat > 0 && s.queue.some((q) => !q.priv)) {
     const boosted = labour * MATERIALS_BOOST, use = Math.min(mat, boosted * MATERIALS_PER_WORK / BUILD_SPEED);
     labour = labour + (boosted - labour) * (use / Math.max(1e-9, boosted * MATERIALS_PER_WORK / BUILD_SPEED));
-    const wUse = Math.min(s.res?.wood || 0, use), mUse = use - wUse;
-    s.res.wood = Math.round(((s.res?.wood || 0) - wUse) * 100) / 100;
-    s.res.metal = Math.round(((s.res?.metal || 0) - mUse) * 100) / 100;
+    const wUse = Math.min(stockOf(s, 'wood'), use);
+    takeKind(s, 'wood', wUse); takeKind(s, 'metal', use - wUse);
   }
   for (const q of s.queue.filter((x) => x.priv)) { q.left -= 3 * BUILD_SPEED * hours; if (q.left <= 1e-6) finish(s, q); }
   const pub = () => s.queue.find((x) => !x.priv);
@@ -2332,7 +2420,7 @@ export function collapse(s, outcome = 'collapsed') {
     if (s.grid[i] !== T.EMPTY) { s.grid[i] = T.RUBBLE; s.cond[i] = 0; }
     s.lv[i] = 1;
   }
-  Object.assign(s, { queue: [], people: [], status: 'ruins', happiness: 0, cases: 0, _plan: null });
+  Object.assign(s, { queue: [], people: [], status: 'ruins', happiness: 0, cases: 0, _plan: null, batches: {} });
   return record;
 }
 
@@ -2340,7 +2428,7 @@ export function rebuild(s, name, money = REBUILD_MONEY) {
   s.grid[HALL_INDEX] = T.HALL;
   s.cond[HALL_INDEX] = 100;
   Object.assign(s, {
-    name: name || s.name, queue: [], money, res: { ...STARTING_RES }, history: [], log: [], flags: {}, people: [], nextId: 1, graves: 0, cases: 0,
+    name: name || s.name, queue: [], money, res: { ...STARTING_RES }, history: [], log: [], flags: {}, people: [], nextId: 1, graves: 0, cases: 0, batches: {},
     happiness: 0.65, hour: 0, day: 0, peakPop: 6, unpaidDays: 0, waterShortDays: 0, trafficBadDays: 0, debtDays: 0, cityNo: s.cityNo + 1, status: 'alive', goalsDone: [],
   });
   settle(s, Math.random);
@@ -2450,12 +2538,14 @@ export function tick(s, rng = Math.random) {
   if (s.status !== 'alive') return { plan: null, collapsed: null };
   construct(s, Math.max(0, 1 - (s.wk || 0)));
   s.wk = 0;
-  // Producing buildings build up a harvest to collect by tapping.
+  // Power and water plants build up a harvest to collect by tapping.
   const ready = (s.ready ||= {});
   for (let i = 0; i < N; i++) {
     if (!B[s.grid[i]]?.makes || !active(s, i) || !(staffing(s, i) > 0)) { if (ready[i]) delete ready[i]; continue; }
     ready[i] = Math.min(HARVEST.max, (ready[i] || 0) + 1);
   }
+  // Everything else you pick a target for (Quarry, Sawmill, Farm, Greenhouse and the rest): progress its batch.
+  advanceBatches(s);
   const p = s._plan && s._plan.day === s.day ? s._plan : plan(s, rng);
   // An empty town counts as hopeful as a new one, so it can fill up again if it still has homes and money.
   const avg = s.people.length ? s.people.reduce((a, x) => a + x.m, 0) / s.people.length : 0.65;
@@ -2547,8 +2637,18 @@ export function advice(s, plan) {
     if (rsd.short.water > 0 && rsd.prod.water > 0) add(6.5, `Water is running short: ${rsd.short.water} kilolitres a day. Build another water tower.`, T.WATER);
     if (rsd.short.power > 0 && rsd.prod.power > 0) add(6, `Power is running short: ${rsd.short.power} megawatt-hours a day. Build a power station, solar farm or wind turbine.`, s.money >= B[T.POWER].cost ? T.POWER : T.WIND);
   }
-  if (s.people.length >= 15 && !tot.counts[T.MATERIALS] && !tot.counts[T.QUARRY] && s.queue.length) add(3.5, 'Buying wood and metal costs extra. A sawmill or quarry makes them, and builders work faster with some in store.', T.MATERIALS);
-  if (rsd?.importCost >= 8 && s.people.length >= 30) add(2.5, `Imported food costs ${'$'}${rsd.importCost} a day. Farms grow it here, and more kinds of food make people happier.`, T.FARM);
+  if (s.people.length >= 15 && !tot.counts[T.MATERIALS] && !tot.counts[T.QUARRY] && s.queue.length) add(3.5, 'Buying wood and metal costs extra. A sawmill or quarry cuts and digs them to order, and builders work faster with some in store.', T.MATERIALS);
+  if (rsd?.importCost >= 8 && s.people.length >= 30) add(2.5, `Imported food costs ${'$'}${rsd.importCost} a day. A farm or greenhouse grows it here, and more kinds of food make people happier.`, T.FARM);
+  {
+    let idlePicks = 0, ready = 0;
+    for (let i = 0; i < N; i++) {
+      if (!picksAt(s, i) || !active(s, i) || !(staffing(s, i) > 0)) continue;
+      if (batchReady(s, i)) ready++;
+      else if (!s.batches?.[i]) idlePicks++;
+    }
+    if (ready) add(4.2, `${ready} producer${ready > 1 ? 's have' : ' has'} something ready to collect. Tap it, or open its panel.`, null);
+    if (idlePicks) add(3.6, `${idlePicks} staffed producer${idlePicks > 1 ? 's aren’t' : ' isn’t'} making anything. Open it and pick what to cut, dig or grow.`, null);
+  }
   if (n.leisure < 0.6) add(3 + 3 * (0.6 - n.leisure), 'People have nothing to do in the evenings.', T.PARK);
   if (n.commute < 0.8) add(3.5, 'Roads are jammed. Add routes or footpaths, or a bus service.', tot.counts[T.DEPOT] ? T.STOP : T.DEPOT);
   if (s.flags.utilSince !== undefined) {

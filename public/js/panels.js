@@ -1,5 +1,5 @@
 // HTML for the side drawer and the build catalogue. Pure functions: main.js supplies data and wires up buttons.
-import { REGIONAL, ALLIANCE_TRADE, REACTIONS, T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY, BONDS, INSURANCE, TECH, ERAS, TRAITS, CARBON_TAX, LOANS, LOAN_DAYS, CONGESTION_FEE, BADGES, RES, FOOD, TECH_BRANCHES, STORE_BASE, TRADE_RES, PRODUCTS, PRODUCT_IDS, RAW_GOODS, MARKET, USE, EXCHANGE, STOCK, HALL_LEVELS, FEATURE_NEEDS } from './constants.js';
+import { REGIONAL, ALLIANCE_TRADE, REACTIONS, T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY, BONDS, INSURANCE, TECH, ERAS, TRAITS, CARBON_TAX, LOANS, LOAN_DAYS, CONGESTION_FEE, BADGES, RES, FOOD, TECH_BRANCHES, STORE_BASE, TRADE_RES, PRODUCTS, PRODUCT_IDS, RAW_GOODS, MARKET, USE, EXCHANGE, STOCK, HALL_LEVELS, FEATURE_NEEDS, PICKS, KIND_NAME, KIND_IDS } from './constants.js';
 import { t as tr } from './i18n.js';
 import { creditRating, greenShare, traitOf, hasTech, canResearch, eraOf, resourceStock, matCost, goalProgress } from './sim.js';
 import { ROLES, roleOf, jobText, family, healthText, moodReasons, thought, personName } from './people.js';
@@ -552,6 +552,7 @@ export function gives(t) {
   if (d.catchment) bits.push(`serves homes within ${d.catchment} tiles`);
   if (d.graves) bits.push(`${d.graves} graves`);
   if (d.makes) bits.push(`makes ${Object.entries(d.makes).map(([r, n]) => `${n} ${RES[r].name.toLowerCase()}`).join(' and ')} a day`);
+  if (PICKS[t]) bits.push(`makes ${Object.values(PICKS[t]).map((p) => p.name.toLowerCase()).join(', ')} once you pick one`);
   if (d.makesProducts) bits.push('makes a product once you pick a recipe');
   if (d.sellsProducts) bits.push('sells products to your residents');
   if (d.store) bits.push(`stores ${d.store} more of each resource and product`);

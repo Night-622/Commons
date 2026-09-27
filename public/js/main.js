@@ -4,6 +4,7 @@ import {
   REBUILD_MONEY, MOVE_KEEP, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome, DECISIONS, ZONES, ZONE_COST,
   LOAN_DAYS, HISTORIC_DAYS, BADGES, REGIONAL, REGIONAL_SHARE, ALLIANCE_TRADE, DAILY, DAILY_REWARD, WEEKLY, WEEKLY_REWARD, GIFT_LIMITS, REACTIONS,
   RES, FOOD, TRADE_RES, PRODUCTS, PRODUCT_IDS, RAW_GOODS, USE, HARVEST, MARKET, STOCK, HALL_LEVELS, TECH, STYLES, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
+  PICKS, BATCH_CAP,
 } from './constants.js';
 import { Renderer, STRIDE, thumbnail, modelHeight } from './render.js';
 import { loadPrefs, savePrefs, applyPrefs, resolvedTheme, palette, PALETTES } from './prefs.js';
@@ -1723,6 +1724,7 @@ function click(h, sx, sy) {
   } else {
     if (state.queue.some((q) => q.i === h.i)) tap(h.i);
     else if (sim.harvestReady(state, h.i)) collect(h.i);
+    else if (sim.batchReady(state, h.i)) collectTap(h.i);
     select(h);
   }
 }
@@ -1733,6 +1735,17 @@ function collect(i) {
   const { x, y } = sim.xy(i);
   const text = Object.entries(r.got).map(([k, n]) => `+${n} ${RES[k].name.toLowerCase()}`).join(', ');
   addPop(x, y, 1.2, text, '#2f9e5a');
+  play('coin');
+  announce(`Collected ${text}.`);
+  afterChange();
+}
+// Tapping a producer with something ready collects it, same gesture as a harvest bubble.
+function collectTap(i) {
+  const r = sim.collectBatch(state, i);
+  if (!r.ok) return;
+  const { x, y } = sim.xy(i);
+  const text = Object.entries(r.got).map(([k, n]) => `+${Math.round(n)} ${RES[k].name.toLowerCase()}`).join(', ');
+  addPop(x, y, 1.2, text, '#ffd24a');
   play('coin');
   announce(`Collected ${text}.`);
   afterChange();
@@ -2669,6 +2682,24 @@ function inspectorAction(what, arg) {
     play('level'); notify(id ? `Now making ${PRODUCTS[id].name.toLowerCase()}.` : 'Recipe cleared.', 'act'); afterChange();
   }
   else if (what === 'harvest') { collect(i); refreshDrawer(); return; }
+  else if (what === 'start-batch') {
+    checkpoint('picking what to make');
+    const r = sim.startBatch(state, i, arg);
+    if (!r.ok) { notify(r.reason + '.', 'act'); play('error'); return; }
+    play('level'); notify(`Now making ${PICKS[state.grid[i]][arg].name.toLowerCase()}.`, 'act'); afterChange();
+  }
+  else if (what === 'collect-batch') {
+    const r = sim.collectBatch(state, i);
+    if (!r.ok) { notify(r.reason + '.', 'act'); return; }
+    const { x, y } = sim.xy(i);
+    addPop(x, y, 1.6, `+${Object.entries(r.got).map(([res, n]) => `${Math.round(n)} ${RES[res].name.toLowerCase()}`).join(', ')}`, '#ffd24a');
+    play('coin'); afterChange();
+  }
+  else if (what === 'cancel-batch') {
+    const r = sim.cancelBatch(state, i);
+    if (!r.ok) { notify(r.reason + '.', 'act'); return; }
+    afterChange();
+  }
   else if (what === 'recruit') {
     const r = sim.recruit(state, i, +arg);
     if (!r.ok) { notify(r.reason + '.', 'act'); play('error'); return; }
@@ -2804,6 +2835,31 @@ function ownTile(i) {
     body += sim.harvestReady(state, i) ? `<div class="actions"><button class="btn primary" type="button" data-do="harvest">Collect the harvest</button></div>`
       : `<p class="soft small">${hrs ? `Ready to collect in ${HARVEST.min - hrs} hour${HARVEST.min - hrs === 1 ? '' : 's'}.` : 'Builds up a harvest while it works. Tap it to collect.'}</p>`;
   }
+  if (PICKS[t]) {
+    const picks = PICKS[t], batch = sim.batchAt(state, i), pick = batch && picks[batch.k];
+    if (batch && pick) {
+      const cap = pick.cost ? 1 : BATCH_CAP;
+      body += row('Making', pick.name);
+      if (batch.ready > 0) body += row('Ready to collect', Object.entries(pick.makes).map(([r, n]) => `${n * batch.ready} ${RES[r].name.toLowerCase()}`).join(', '))
+        + `<div class="actions"><button class="btn primary" type="button" data-do="collect-batch">${icon('i-check')}Collect</button></div>`;
+      if (batch.ready < cap) {
+        const left = Math.max(0, pick.hours - batch.p);
+        body += sim.staffing(state, i) > 0
+          ? bar('Progress to the next load', batch.p / pick.hours, 'small') + `<p class="soft small">Ready in about ${Math.ceil(left)} hour${Math.ceil(left) === 1 ? '' : 's'}${pick.cost ? '' : ', then it keeps going by itself'}.</p>`
+          : '<p class="warn small">Paused: nobody works here.</p>';
+      } else body += `<p class="soft small">Storing as much as it can hold until you collect.</p>`;
+      if (batch.p === 0 && !batch.ready) body += `<button class="linkbtn danger-link" type="button" data-do="cancel-batch">Stop making ${pick.name.toLowerCase()}</button>`;
+    } else body += '<p class="soft small">Pick something to make. It keeps going by itself once you do (a seed is spent once you collect it).</p>';
+    const groups = new Map();
+    for (const [id, p] of Object.entries(picks)) { const g = p.group || ''; if (!groups.has(g)) groups.set(g, []); groups.get(g).push([id, p]); }
+    const list = (entries) => `<ul class="tech">${entries.map(([id, p]) => {
+      const check = sim.canStartBatch(state, i, id), picked = batch?.k === id;
+      return `<li class="${picked ? 'done' : check.ok ? '' : 'blocked'}"><span class="pmain"><b>${p.name}</b>
+        <small>${Object.entries(p.makes).map(([r, n]) => `${n} ${RES[r].name.toLowerCase()}`).join(' and ')} in ${p.hours} hour${p.hours === 1 ? '' : 's'}${p.cost ? `, needs a $${p.cost} seed` : ''}.${!check.ok && !picked ? ` ${esc(check.reason)}.` : ''}</small></span>
+        ${picked ? '<span class="tag">Picked</span>' : `<button class="btn ${check.ok ? 'primary' : ''}" type="button" data-do="start-batch" data-arg="${id}" ${check.ok ? '' : 'disabled'}>Pick</button>`}</li>`;
+    }).join('')}</ul>`;
+    for (const [g, entries] of groups) body += g ? `<details><summary>${esc(g)}</summary>${list(entries)}</details>` : list(entries);
+  }
   if (d.makesProducts) {
     const recId = state.rec?.[i] || null, rec = recId && PRODUCTS[recId];
     body += rec
@@ -2899,8 +2955,10 @@ function styleScene() {
   return { theme, styleId: st.id, palette: prefs.colours === 'standard' ? st.cols : palette(prefs), paletteKey: prefs.colours, mapStyle: theme === 'dark' && !st.dark ? null : st.map };
 }
 function readyTiles() {
-  if (!state?.ready || !me) return [];
-  return Object.entries(state.ready).filter(([i, h]) => h >= HARVEST.min && state.grid[i]).map(([i, h]) => ({ px: me.px, py: me.py, ...sim.xy(+i), full: h >= HARVEST.max }));
+  if (!state || !me) return [];
+  const out = Object.entries(state.ready || {}).filter(([i, h]) => h >= HARVEST.min && state.grid[i]).map(([i, h]) => ({ px: me.px, py: me.py, ...sim.xy(+i), full: h >= HARVEST.max }));
+  for (const key of Object.keys(state.batches || {})) if (sim.batchReady(state, +key)) out.push({ px: me.px, py: me.py, ...sim.xy(+key), full: true });
+  return out;
 }
 function freePlots() {
   if (!state || state.status !== 'alive') return [];
