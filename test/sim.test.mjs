@@ -457,6 +457,32 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(learner.e >= 1, 'an adult with no schooling can earn a primary certificate at the library');
   console.log('hiring ok: recruit, hire, fire; evening classes took', days, 'days');
 }
+// ---- auto-fill: only touches people who are jobless right now, and only where they can reach the job
+{
+  seed = 22;
+  const s = sim.newCity('AutoFill', rng); s.money = 5000; s.land.fill(1);
+  for (let x = c - 4; x <= c + 4; x++) put(s, x, c + 1, T.ROAD);
+  put(s, c + 1, c + 2, T.SHOP);
+  for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = [];
+  const shop = sim.idx(c + 1, c + 2);
+  // Before any plan() call, the six founding settlers (living above the hall) are all still jobless.
+  const adults = s.people.filter((p) => p.a >= 18 && p.a < 65).length;
+  assert(adults >= 3, 'the fixture needs enough working-age settlers');
+  const beforeMoney = s.money, beforeJobs = s.people.map((p) => p.j);
+  const dry = sim.autoFill(s, shop, { dry: true });
+  assert(dry.ok && dry.filled > 0, 'a dry run still reports what it would fill');
+  assert.equal(s.money, beforeMoney, 'a dry run changes nothing');
+  assert.deepEqual(s.people.map((p) => p.j), beforeJobs, 'a dry run hires nobody');
+  const r = sim.autoFill(s, shop);
+  assert(r.ok && r.filled === dry.filled, 'a real run fills exactly what the dry run promised');
+  assert.equal(s.people.filter((p) => p.j === shop).length, r.filled);
+  assert.equal(sim.autoFill(s, shop, { dry: true }).filled, 0, 'nothing left to fill once it is staffed');
+  assert(r.left.idle <= adults - r.filled, 'never invents workers');
+  // Unknown or non-job tiles are refused, not silently a no-op.
+  const road = sim.idx(c, c + 1);
+  assert(!sim.autoFill(s, road).ok, 'a building with no jobs is refused');
+  console.log('auto-fill ok: filled', r.filled, 'of the shop\'s jobs,', r.left.idle, 'still idle');
+}
 // ---- resources: farms, water, power, imports, variety, storage and materials
 {
   seed = 33;

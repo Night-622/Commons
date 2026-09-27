@@ -2437,9 +2437,9 @@ function renderDrawer() {
     if (!p) { drawer = 'people'; return renderDrawer(); }
     const agent = trips.agents(plotId).find((a) => a.p === p.i);
     html = panels.personCard(state, plan, p, whereabouts(state, plan, p, clockNow(), agent), favs().has(p.i));
-  } else if (drawer === 'goals') html = panels.goalsPanel(state, state.status === 'alive' ? daily() : null, sim.hallState(state, pathCtx()), state.status === 'alive' ? sim.advice(state, plan).slice(0, 4) : []);
+  } else if (drawer === 'goals') html = panels.goalsPanel(state, state.status === 'alive' ? daily() : null, sim.hallState(state, pathCtx()), state.status === 'alive' ? sim.advice(state, plan).slice(0, 4) : [], totalsNow || sim.totals(state), openHow);
   else if (drawer === 'people') html = panels.peoplePanel(state, plan, peopleFilter, peopleQuery, favs());
-  else if (drawer === 'stats') html = panels.statsPanel({ state, totals: totalsNow || sim.totals(state), plan, census: sim.census(state) }, statsTab);
+  else if (drawer === 'stats') html = panels.statsPanel({ state, totals: totalsNow || sim.totals(state), plan, census: sim.census(state), fill: statsTab === 'overview' && state.status === 'alive' ? sim.autoFill(state, null, { dry: true }) : null }, statsTab);
   else if (drawer === 'news') html = panels.newsPanel(state, unseenFrom(), { tab: newsTab, inbox: [...inbox].reverse(), plan, forecast: [1, 2, 3].map((k) => sim.weather(sim.worldDay() + k)) });
   else if (drawer === 'chat') { const m = muted(); html = panels.chatPanel({ messages: chatMessages.filter((x) => !m.has(x.uid)).map((x) => ({ ...x, text: clean(x.text) })), me: user.uid, world, colourOf, error: chatError && fb.authMessage(chatError), dmUnread: dmUnread() }); }
   else if (drawer === 'world') html = panels.worldPanel(worldCtx());
@@ -2471,6 +2471,7 @@ function renderDrawer() {
 }
 
 let drawerMax = false, lastLikes = null, likeCache = '';
+const openHow = new Set();   // which goal "how" details the player has opened, kept open across redraws
 async function loadLikes(id) {
   try {
     const { count, mine } = await fb.likes(world.id, id, user.uid);
@@ -2485,6 +2486,9 @@ function wireDrawer(box) {
   box.querySelectorAll('[data-close-drawer]').forEach((b) => { b.onclick = closeDrawer; });
   box.querySelectorAll('[data-do]').forEach((b) => { b.onclick = () => inspectorAction(b.dataset.do, b.dataset.arg); });
   box.querySelectorAll('[data-build-type]').forEach((b) => { b.onclick = () => buildGo(+b.dataset.buildType)(); });
+  // Goal "how" details stay open across redraws (the drawer's whole innerHTML is rebuilt often) by remembering
+  // which ids are open, keyed separately from whether a goal is done so re-opening the same id always works.
+  box.querySelectorAll('details[data-goal]').forEach((d) => { d.addEventListener('toggle', () => { if (d.open) openHow.add(d.dataset.goal); else openHow.delete(d.dataset.goal); }); });
   box.querySelectorAll('[data-filter]').forEach((b) => { b.onclick = () => { peopleFilter = b.dataset.filter; renderDrawer(); }; });
   box.querySelectorAll('[data-stats-tab]').forEach((b) => { b.onclick = () => { statsTab = b.dataset.statsTab; renderDrawer(); }; });
   if (drawer === 'region') wireRegion(box);
@@ -2692,11 +2696,35 @@ function inspectorAction(what, arg) {
     }; });
     return;
   }
+  else if (what === 'autofill') {
+    const scope = arg === 'all' ? null : i;
+    const pre = sim.autoFill(state, scope, { dry: true });
+    if (!pre.ok || !pre.filled) { notify(fillText(pre), 'act'); play('error'); return; }
+    checkpoint(scope == null ? 'filling jobs' : 'filling jobs here');
+    const r = sim.autoFill(state, scope);
+    play('coin'); notify(fillText(r), 'good'); afterChange(); return;
+  }
   else if (what === 'move') { setMode('move'); moveFrom = i; renderModebar(); notify('Now tap an empty tile you own to put it down.', 'act'); dirty = true; }
   else if (what === 'follow') { follow(+arg); return; }
   else if (what === 'home') { const { x, y } = sim.xy(+arg); select({ px: me.px, py: me.py, tx: x, ty: y, i: +arg }); goTo(me.px, me.py, x, y, 18); return; }
   else if (what === 'moveto') { confirmMove(arg); return; }
   renderDrawer();
+}
+// A summary for the auto-fill button: what got filled, and why anyone left over is still jobless.
+function fillText(r) {
+  if (!r.ok) return r.reason + '.';
+  if (!r.filled) {
+    const { idle, noJob, noSchooling, noRoute } = r.left;
+    if (!idle) return 'Nobody here needs work right now.';
+    const why = [];
+    if (noSchooling) why.push(`${noSchooling} lack${noSchooling === 1 ? 's' : ''} the schooling for the jobs that are open`);
+    if (noRoute) why.push(`${noRoute} can't reach an open job by road or path`);
+    if (noJob) why.push(`${noJob} - there's no open job in scope`);
+    return `Nobody to fill jobs with. ${idle} people need work: ${why.join(', ') || 'no matching job is open'}. More jobs, a road link or evening classes at a library would help.`;
+  }
+  let msg = `Filled ${r.filled} job${r.filled > 1 ? 's' : ''}.`;
+  if (r.left.idle) msg += ` ${r.left.idle} people still need work.`;
+  return msg;
 }
 const row = (label, value) => `<div class="kv"><span>${label}</span><b class="num">${value}</b></div>`;
 const meter = (label, v) => `<div class="kv"><span>${label}</span>${bar(label, v, 'small')}</div>`;
@@ -2751,6 +2779,9 @@ function ownTile(i) {
   if (d.jobs) {
     const slots = sim.jobSlots(state, i), staff = people.filter((p) => p.j === i && !p.oj);
     body += `<div class="kv"><span>Staff</span><b class="num">${staff.length} of ${slots.reduce((a, b) => a + b, 0)}</b></div>`;
+    const fillHere = sim.autoFill(state, i, { dry: true });
+    if (fillHere.ok && fillHere.filled) body += `<div class="actions"><button class="btn primary" type="button" data-do="autofill" data-arg="here">Fill ${fillHere.filled} job${fillHere.filled > 1 ? 's' : ''} from people who need work</button></div>
+      <p class="soft small">Only residents without a job, best-qualified fit first. Same as pressing Hire for each.</p>`;
     d.jobs.forEach(([title, e], k) => {
       const n = staff.filter((p) => p.jt === k).length;
       if (n < slots[k]) body += `<div class="vacancy"><p class="soft small">${slots[k] - n} ${title.toLowerCase()} job${slots[k] - n > 1 ? 's' : ''} open${e ? `, needs ${EDU[e].toLowerCase()}` : ''}.</p>

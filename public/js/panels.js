@@ -1,7 +1,7 @@
 // HTML for the side drawer and the build catalogue. Pure functions: main.js supplies data and wires up buttons.
 import { REGIONAL, ALLIANCE_TRADE, REACTIONS, T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY, BONDS, INSURANCE, TECH, ERAS, TRAITS, CARBON_TAX, LOANS, LOAN_DAYS, CONGESTION_FEE, BADGES, RES, FOOD, TECH_BRANCHES, STORE_BASE, TRADE_RES, PRODUCTS, PRODUCT_IDS, RAW_GOODS, MARKET, USE, EXCHANGE, STOCK, HALL_LEVELS, FEATURE_NEEDS } from './constants.js';
 import { t as tr } from './i18n.js';
-import { creditRating, greenShare, traitOf, hasTech, canResearch, eraOf, resourceStock, matCost } from './sim.js';
+import { creditRating, greenShare, traitOf, hasTech, canResearch, eraOf, resourceStock, matCost, goalProgress } from './sim.js';
 import { ROLES, roleOf, jobText, family, healthText, moodReasons, thought, personName } from './people.js';
 
 // The market: open offers from other cities, a form to post your own, and what you owe or are owed.
@@ -112,8 +112,22 @@ const personRow = (s, plan, p) => `<button type="button" class="person" data-per
 // Hall-path goal ids that map to a building you can jump straight to in the catalogue.
 const HALL_GOAL_TYPE = { roads: T.ROAD, homes: T.HOUSE, work: T.WORK, shop: T.SHOP, school: T.SCHOOL, farm: T.FARM, utilities: T.WATER, materials: T.MATERIALS, clinic: T.CLINIC, highschool: T.HIGH, uni: T.UNI, monument: T.MONUMENT };
 const showMe = (t) => t != null ? `<button class="btn small" type="button" data-build-type="${t}">Show me</button>` : '';
+// A live "3 of 10" count (or a two-part "People 22 of 30, Mood 62% of 75%") under a goal's text. Goals that only
+// ever need one of something (open a clinic, and so on) get no bar - "0 of 1" says nothing useful.
+const progHtml = (p) => {
+  if (!p) return '';
+  if (p.parts) {
+    const avg = p.parts.reduce((a, x) => a + Math.min(1, x.have / x.need), 0) / p.parts.length;
+    return `<span class="gcount num">${p.parts.map((x) => `${x.label} ${x.have}${x.pct ? '%' : ''} of ${x.need}${x.pct ? '%' : ''}`).join(', ')}</span>${bar('Progress', avg, 'tiny')}`;
+  }
+  return p.need > 1 ? `<span class="gcount num">${p.have} of ${p.need}</span>${bar('Progress', p.have / p.need, 'tiny')}` : '';
+};
+// A row you can click to see how, with live progress where it's a count. `key` keeps each row's open/closed
+// state distinct between the hall path and the milestone list, since both can have the same goal id.
+const howRow = (key, text, how, prog, open) =>
+  `<details class="ghow" data-goal="${key}" ${open.has(key) ? 'open' : ''}><summary id="how-${key}"><span class="glabel">${text}</span>${prog}</summary><p class="soft small">${esc(how)}</p></details>`;
 // The town hall: how big the city is, what the next level needs, and what it brings.
-export function hallHtml(hs) {
+export function hallHtml(hs, open = new Set()) {
   const cur = HALL_LEVELS[hs.level];
   const strip = `<ol class="chapters" aria-label="Town hall levels">${HALL_LEVELS.map((l, i) => `<li class="${i < hs.level ? 'done' : i === hs.level ? 'now' : ''}">${esc(l.name)}</li>`).join('')}</ol>`;
   if (hs.complete) return `<div class="path"><h3 class="sub">${icon('i-trophy')}Town hall: ${esc(cur.name)}</h3><p>The biggest there is. Everything is open to you: explore.</p>${strip}</div>`;
@@ -123,19 +137,19 @@ export function hallHtml(hs) {
     <p>Next it grows into a <b>${esc(n.name.toLowerCase())}</b>. It upgrades by itself when all of this is done:</p>
     ${bar(`${n.name} progress`, k / all.length)}
     <ul class="pathgoals">
-      <li class="${hs.pop.done ? 'done' : ''}">${mark(hs.pop.done)}<span class="glabel">Reach ${n.pop} people <span class="soft">(${hs.pop.have})</span></span></li>
-      ${hs.goals.map((g) => `<li class="${g.done ? 'done' : ''}">${mark(g.done)}<span class="glabel">${esc(g.text)}</span>${g.done ? '' : showMe(HALL_GOAL_TYPE[g.id])}</li>`).join('')}
-      ${hs.res.map((r) => `<li class="${r.done ? 'done' : ''}">${mark(r.done)}<span class="glabel">Have ${r.need} ${esc(RES[r.k].name.toLowerCase())} in store <span class="soft">(${r.have})</span></span></li>`).join('')}
+      <li class="${hs.pop.done ? 'done' : ''}">${mark(hs.pop.done)}${howRow(`hp`, `Reach ${n.pop} people`, 'People move in when there are free homes, jobs and good mood. Build homes beside roads, and fix whatever "What your city needs" lists first.', progHtml(hs.pop.done ? null : { have: hs.pop.have, need: n.pop }), open)}</li>
+      ${hs.goals.map((g) => `<li class="${g.done ? 'done' : ''}">${mark(g.done)}${howRow(`h-${g.id}`, esc(g.text), g.how, progHtml(g.progress), open)}${g.done ? '' : showMe(HALL_GOAL_TYPE[g.id])}</li>`).join('')}
+      ${hs.res.map((r) => `<li class="${r.done ? 'done' : ''}">${mark(r.done)}${howRow(`hr-${r.k}`, `Have ${r.need} ${esc(RES[r.k].name.toLowerCase())} in store`, `Collect ${RES[r.k].name.toLowerCase()} at the matching building (Build, Work and shops), or buy it on the Market.`, progHtml(r.done ? null : { have: r.have, need: r.need }), open)}</li>`).join('')}
     </ul>
     <p class="small">A ${esc(n.name.toLowerCase())} can buy up to ${n.land} parcels of land (now ${cur.land}), stores ${n.store - cur.store} more of everything, earns ${n.rp} research a day and has a bigger hall with more builders.${n.res && Object.keys(n.res).length ? ' The upgrade uses the resources.' : ''}</p>
     ${strip}</div>`;
 }
-export function goalsPanel(state, daily, hs, needs = []) {
+export function goalsPanel(state, daily, hs, needs = [], tot = null, open = new Set()) {
   const done = state.goalsDone.length;
   const wants = (state.wants || []).map((w) => ({ ...w, p: state.people.find((x) => x.i === w.p) })).filter((w) => w.p);
   return `${head('Goals', `<span class="soft num fill">${done} of ${GOALS.length}</span>`)}
-    <p class="soft small">This panel is your guide: it always shows exactly what to do next. Open Build (the dock at the bottom) to place roads and buildings on empty land next to what you already have; tap a building to see or change what it does.</p>
-    ${hs ? hallHtml(hs) : ''}
+    <p class="soft small">This panel is your guide: it always shows exactly what to do next. Open Build (the dock at the bottom) to place roads and buildings on empty land next to what you already have; tap a building to see or change what it does. Click any goal below to see how.</p>
+    ${hs ? hallHtml(hs, open) : ''}
     <h3 class="sub">${icon('i-alert')}What your city needs</h3>
     ${needs.length ? `<ul class="needlist">${needs.map((n) => `<li><span>${esc(n.text)}</span>${showMe(n.type)}</li>`).join('')}</ul>`
       : '<p class="soft small">Nothing pressing. Keep growing.</p>'}
@@ -153,7 +167,7 @@ export function goalsPanel(state, daily, hs, needs = []) {
     <div class="progress"><i style="width:${(done / GOALS.length) * 100}%"></i></div>
     <ul class="goal-list">${GOALS.map((g) => {
       const ok = state.goalsDone.includes(g.id);
-      return `<li class="${ok ? 'done' : ''}"><span class="tick">${ok ? icon('i-check') : ''}</span><span>${g.text}${ok ? '<span class="sr-only"> (done)</span>' : ''}</span>${ok ? '' : showMe(g.t)}<b class="num">${money(g.reward)}</b></li>`;
+      return `<li class="${ok ? 'done' : ''}"><span class="tick">${ok ? icon('i-check') : ''}</span>${howRow(`m-${g.id}`, `${esc(g.text)}${ok ? '<span class="sr-only"> (done)</span>' : ''}`, g.how, ok ? '' : progHtml(tot && goalProgress(state, g.id, tot)), open)}${ok ? '' : showMe(g.t)}<b class="num">${money(g.reward)}</b></li>`;
     }).join('')}</ul>`;
 }
 
@@ -227,7 +241,7 @@ function spark(values, colour, fmt) {
     <div class="spark-axis"><span>${fmt(min)}</span><span>${fmt(max)}</span></div>`;
 }
 export function statsPanel(ctx, tab) {
-  const { state: s, totals, plan, census: c } = ctx;
+  const { state: s, totals, plan, census: c, fill } = ctx;
   const tabs = [['overview', 'People'], ['services', 'Services'], ['resources', 'Resources'], ['budget', 'Budget'], ['policy', 'Policy', 'adv'], ['research', 'Research', 'adv'], ['history', 'History']];
   let body = '';
   if (tab === 'overview') {
@@ -238,7 +252,9 @@ export function statsPanel(ctx, tab) {
       <h3 class="sub">Work</h3>
       <div class="grid2"><div class="kv"><span>Working</span><b class="num">${c.employed}</b></div><div class="kv"><span>Need work</span><b class="num">${c.seeking}</b></div>
       <div class="kv"><span>Builders</span><b class="num">${c.builders}</b></div><div class="kv"><span>At home with kids</span><b class="num">${c.carers}</b></div>
-      <div class="kv"><span>At university</span><b class="num">${c.uni}</b></div><div class="kv"><span>Jobs in town</span><b class="num">${totals.jobs}</b></div></div>`;
+      <div class="kv"><span>At university</span><b class="num">${c.uni}</b></div><div class="kv"><span>Jobs in town</span><b class="num">${totals.jobs}</b></div></div>
+      ${fill?.ok && fill.filled ? `<div class="actions"><button class="btn primary" type="button" data-do="autofill" data-arg="all">Fill ${fill.filled} job${fill.filled > 1 ? 's' : ''} across the city</button></div>
+        <p class="soft small">Only residents without a job, best-qualified fit first, and only where they can walk or drive to work.</p>` : ''}`;
   } else if (tab === 'services') {
     const seats = (st) => totals.seats[st] || 0;
     const row = (l, used, cap, a, b) => `<div class="cap"><span>${l}</span><span class="num soft">${used} ${a}, ${cap} ${b}</span>${bar(l, cap ? Math.min(1, cap / Math.max(1, used)) : 0)}</div>`;

@@ -426,12 +426,28 @@ const PATH_TESTS = {
 export const hallLevel = (s) => s.hall || 0;
 // The hall's size on the map follows its level (buildings have three sizes).
 const hallSize = (h) => [1, 1, 2, 2, 3, 3, 3][h] || 3;
+// Live progress for a hall-path goal, for the "3 of 10" bars in the Goals panel. Goals that only ever need one
+// of something (open a clinic, and so on) return null - a tick or a blank is clearer than "0 of 1".
+const HALL_COUNT = {
+  roads: { need: 10, have: (s) => pathCount(s, T.ROAD, T.XING) },
+  homes: { need: 3, have: (s) => pathCount(s, T.HOUSE, T.APARTMENT, T.VILLA) },
+  tech2: { need: 2, have: (s) => (s.tech || []).length },
+  tech6: { need: 6, have: (s) => (s.tech || []).length },
+  land3: { need: 3, have: (s) => s.counters.land || 0 },
+};
+export function hallGoalProgress(s, id) {
+  if (id === 'happy60') return { parts: [{ label: 'People', have: s.people.length, need: 20 }, { label: 'Mood', have: Math.round(s.happiness * 100), need: 60, pct: true }] };
+  if (id === 'happy70') return { parts: [{ label: 'People', have: s.people.length, need: 100 }, { label: 'Mood', have: Math.round(s.happiness * 100), need: 70, pct: true }] };
+  if (id === 'utilities') return { parts: [{ label: 'Water tower', have: pathCount(s, T.WATER), need: 1 }, { label: 'Power source', have: pathCount(s, T.POWER, T.SOLAR, T.WIND), need: 1 }] };
+  const c = HALL_COUNT[id];
+  return c ? { have: Math.min(c.need, c.have(s)), need: c.need } : null;
+}
 // What the next level asks for, and how far along the city is.
 export function hallState(s, x = {}) {
   const h = hallLevel(s), next = HALL_LEVELS[h + 1];
   if (!next) return { level: h, name: HALL_LEVELS[h].name, next: null, complete: true };
   const done = (s.hallDone ||= {});
-  const goals = next.goals.map(([id, text]) => ({ id, text, done: !!done[id] || !!PATH_TESTS[id]?.(s, x) }));
+  const goals = next.goals.map(([id, text, how]) => { const d = !!done[id] || !!PATH_TESTS[id]?.(s, x); return { id, text, how, done: d, progress: d ? null : hallGoalProgress(s, id) }; });
   const res = Object.entries(next.res).map(([k, n]) => ({ k, need: n, have: Math.floor(s.res?.[k] || 0), done: (s.res?.[k] || 0) >= n }));
   const pop = { need: next.pop, have: s.people.length, done: s.people.length >= next.pop };
   return { level: h, name: HALL_LEVELS[h].name, next, goals, res, pop, ready: pop.done && goals.every((g) => g.done) && res.every((r) => r.done), complete: false };
@@ -972,6 +988,52 @@ export function recruit(s, i, k, rng = Math.random) {
   s.counters.arrivals = (s.counters.arrivals || 0) + 1;
   s._plan = null;
   return { ok: true, cost, pid: p.i };
+}
+
+// Fill open job slots from residents who currently have none, at the press of a button (unlike the daily plan,
+// which quietly reshuffles some already-employed people too). The most demanding job is filled first, each time
+// with the least over-qualified idle person who can walk there - so a graduate isn't used up on a job anyone
+// could do, and nobody is placed further than they could actually walk to work.
+export function autoFill(s, i = null, { dry = false } = {}) {
+  if (s.status !== 'alive') return { ok: false, reason: 'This city has fallen.' };
+  const uc = underConstruction(s);
+  if (i != null && !B[s.grid[i]]?.jobs) return { ok: false, reason: 'No jobs here' };
+  const buildings = i != null ? [i] : (() => { const out = []; for (let j = 0; j < N; j++) if (B[s.grid[j]]?.jobs && active(s, j, uc)) out.push(j); return out; })();
+  const slots = [];
+  for (const j of buildings) { const d = B[s.grid[j]]; for (let k = 0; k < d.jobs.length; k++) for (let n = 0; n < openSlot(s, j, k); n++) slots.push({ j, k, need: d.jobs[k][1] }); }
+  slots.sort((a, b) => b.need - a.need);
+  const walkNet = network(s, uc, false), homeDist = new Map();
+  const distTo = (h, j) => {
+    let m = homeDist.get(h);
+    if (!m) { m = bfs(walkNet, doorsteps(s, walkNet, h)); homeDist.set(h, m); }
+    let best = -1;
+    for (const d of doorsteps(s, walkNet, j)) if (m.dist[d] >= 0 && (best < 0 || m.dist[d] < best)) best = m.dist[d];
+    return best;
+  };
+  const pool = idleWorkers(s).filter((p) => active(s, p.h, uc) && isHome(s.grid[p.h]));
+  const used = new Set(), hires = [], unfilled = [];
+  for (const slot of slots) {
+    let best = null, bestOver = Infinity, bestD = Infinity;
+    for (const p of pool) {
+      if (used.has(p.i) || p.e < slot.need || (p.nf === slot.j && s.day < p.nfu)) continue;
+      const d = distTo(p.h, slot.j);
+      if (d < 0) continue;
+      const over = p.e - slot.need;
+      if (!best || over < bestOver || (over === bestOver && d < bestD)) { best = p; bestOver = over; bestD = d; }
+    }
+    if (best) { used.add(best.i); hires.push({ pid: best.i, i: slot.j, k: slot.k }); } else unfilled.push(slot.need);
+  }
+  let filled = 0;
+  if (dry) filled = hires.length;
+  else for (const h of hires) if (hire(s, h.pid, h.i, h.k).ok) filled++;
+  const left = { idle: pool.length - used.size, noJob: 0, noSchooling: 0, noRoute: 0 };
+  for (const p of pool) {
+    if (used.has(p.i)) continue;
+    if (!slots.length) left.noJob++;
+    else if (!unfilled.some((need) => p.e >= need)) left.noSchooling++;
+    else left.noRoute++;
+  }
+  return { ok: true, filled, open: slots.length - hires.length, left };
 }
 
 export function totals(s, uc = underConstruction(s)) {
@@ -1950,6 +2012,10 @@ function daily(s, plan, rng) {
   const ps = productsDay(s, uc);
   st.products = ps;
   if (ps.sold) { st.income += ps.sold; st.byClass = { ...st.byClass, produce: (st.byClass.produce || 0) + ps.sold }; }
+  // Produce, products and food imports are folded into income/upkeep above for the Budget's figures, but the
+  // day's main money line (just above) has already been applied - without this they'd show in Budget and the
+  // money chart without ever actually changing the balance.
+  s.money += (rs.sold || 0) + (ps.sold || 0) - (rs.importCost || 0);
   // Having none at all is already covered by power and water coverage; this is for having some, but not enough.
   const shortOf = (k) => (pop >= UTILITY_POP && rs.prod[k] > 0 ? rs.short[k] / Math.max(1, rs.need[k]) : 0);
   const shortK = { water: shortOf('water'), power: shortOf('power') };
@@ -2351,6 +2417,22 @@ export function checkGoals(s, tot = totals(s)) {
     if (GOAL_TESTS[g.id](s, tot)) { s.goalsDone.push(g.id); s.money += g.reward; done.push(g); note(s, 'good', `Goal complete: ${g.text}. +$${g.reward}.`); }
   }
   return done;
+}
+// Live progress for a milestone goal, for the "3 of 10" bars in the Goals panel (see hallGoalProgress above for
+// the same idea on the town hall's path). Goals that only ever need one of something return null.
+const GOAL_COUNT = {
+  roads10: { need: 10, have: (s, t) => count(t, T.ROAD) },
+  houses3: { need: 3, have: (s, t) => count(t, T.HOUSE, T.APARTMENT, T.VILLA) },
+  fun3: { need: 3, have: (s, t) => count(t, T.PARK, T.PLAYGROUND, T.SPORTS, T.GYM, T.DOJO, T.POOL, T.CINEMA, T.CAFE, T.LIBRARY) },
+  pop25: { need: 25, have: (s) => s.people.length },
+  pop100: { need: 100, have: (s) => s.people.length },
+  days10: { need: 10, have: (s) => s.day },
+  days30: { need: 30, have: (s) => s.day },
+};
+export function goalProgress(s, id, tot) {
+  if (id === 'happy75') return { parts: [{ label: 'People', have: s.people.length, need: 30 }, { label: 'Mood', have: Math.round(s.happiness * 100), need: 75, pct: true }] };
+  const c = GOAL_COUNT[id];
+  return c ? { have: Math.min(c.need, c.have(s, tot)), need: c.need } : null;
 }
 
 // One in-game hour.

@@ -272,13 +272,24 @@ kbd {
 .phead .soft { font-weight: 700; }
 .fill { flex: 1; }
 .goal-list { list-style: none; margin: 10px 0 0; padding: 0; }
-.goal-list li { display: grid; grid-template-columns: 24px 1fr auto auto; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); font-weight: 600; }
+.goal-list li { display: grid; grid-template-columns: 24px 1fr auto auto; gap: 8px; align-items: start; padding: 8px 0; border-bottom: 1px solid var(--line); font-weight: 600; }
 .goal-list li:last-child { border-bottom: 0; }
-.goal-list .tick { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; }
+.goal-list .tick { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line); display: grid; place-items: center; margin-top: 2px; }
 .goal-list .done .tick { background: var(--good); border-color: var(--good); color: #fff; }
 .goal-list .done .tick .ic { width: 14px; height: 14px; stroke-width: 3; }
-.goal-list .done > span:nth-child(2) { color: var(--soft); text-decoration: line-through; }
+.goal-list .done .glabel { color: var(--soft); text-decoration: line-through; }
 .goal-list b { color: var(--soft); font-size: .9em; }
+.goal-list .btn.small, .goal-list b.num { margin-top: 2px; }
+
+/* A goal you can click open for a plain "how", with a live count where the goal is naturally a count. */
+.ghow summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-weight: inherit; }
+.ghow summary::-webkit-details-marker { display: none; }
+.ghow summary::after { content: '▾'; margin-left: auto; font-size: .8em; color: var(--soft); transition: transform .15s; flex: none; }
+.ghow[open] summary::after { transform: rotate(180deg); }
+.ghow p { margin: 4px 0 0; font-weight: 400; }
+.ghow .gcount { color: var(--soft); font-weight: 700; font-size: .85em; }
+.pathgoals .ghow { flex: 1; }
+.pathgoals .ghow summary { gap: 6px; }
 
 /* ---------- panel rail ---------- */
 .rail {
