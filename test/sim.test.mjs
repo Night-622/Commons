@@ -102,7 +102,7 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
 {
   seed = 11;
   const s = sim.newCity('Transit', rng);
-  s.money = 50000; s.res.wood = 5000; s.land.fill(1);
+  s.money = 50000; s.res.wood = 5000; s.res.bricks = 5000; s.land.fill(1);
   for (let x = 2; x <= 21; x++) put(s, x, c + 1, T.ROAD);
   for (let x = 2; x <= 21; x++) put(s, x, 3, T.RAIL);
   for (let y = 4; y <= c; y++) { put(s, 2, y, T.ROAD); put(s, 21, y, T.ROAD); }
@@ -580,11 +580,12 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   s.res = { bricks: 1 };
   const bricked = sim.buildPrice(s, sim.idx(5, c + 2), T.FARM);
   assert.equal(bricked.money, Math.round(B[T.FARM].cost * BRICK_DISCOUNT), 'any bricks in store take a little off everything');
-  s.res = { wood: 3 };
-  const m0 = s.money;
+  s.res = { wood: 3, bricks: 5 };   // building now needs some of each in stock, not just wood
+  const m0 = s.money, finalPrice = sim.buildPrice(s, sim.idx(5, c + 2), T.FARM).money;
   put(s, 5, c + 2, T.FARM);
-  assert.equal(s.money, m0 - cheaper.money);
+  assert.equal(s.money, m0 - finalPrice);
   assert.equal(s.res.wood, 0, 'the wood is used');
+  assert(s.res.bricks < 5, 'the bricks are used too');
   for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = [];
   const farm = sim.idx(5, c + 2);
   const hand = s.people.find((p) => p.a >= 18 && p.a < 65 && !(p.j === sim.HALL_INDEX && p.jt === 0));
@@ -781,21 +782,45 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(s.cond[shop] > 0, `a fully-decayed building repairs once solvent: cond ${s.cond[shop]}`);
   console.log('derelict repair ok: a building stuck at 0% condition climbed back to', s.cond[shop]);
 }
-// ---- wood is a real construction ingredient, not just a discount on the price
+// ---- wood and bricks are real construction ingredients, not just a discount on the price
 {
   seed = 131;
   const s = sim.newCity('Lumberless', rng); s.money = 50000; s.land.fill(1);
   s.res.wood = 0;
   assert(!sim.canPlace(s, sim.idx(8, c), T.SHOP).ok, 'no wood in stock, so no building it');
   assert.equal(sim.place(s, sim.idx(8, c), T.SHOP).ok, false, 'place refuses it too');
-  // The Sawmill is exempt - you can always build the thing that gets you wood again, even at zero.
-  assert(sim.canPlace(s, sim.idx(8, c), T.MATERIALS).ok, 'a Sawmill can still go up with no wood on hand');
+  // The Sawmill, Quarry, Coal mine and Factory are exempt - you can always build your way out of a shortage.
+  for (const t of [T.MATERIALS, T.QUARRY, T.COALMINE, T.FACTORY]) assert(sim.canPlace(s, sim.idx(8, c), t).ok, `${B[t].name} can still go up with no wood on hand`);
   // Buying a little wood on the Exchange unblocks ordinary building again.
   assert(sim.buyResource(s, 'pine', 5).ok, 'buy some wood');
+  assert(sim.canPlace(s, sim.idx(8, c), T.SHOP).ok, 'wood is back, and the starting bricks are still there, so building unblocks again');
+  s.res.bricks = 0;
+  assert(!sim.canPlace(s, sim.idx(8, c), T.SHOP).ok, 'no bricks in stock, so still no building it');
+  for (const t of [T.MATERIALS, T.QUARRY, T.COALMINE, T.FACTORY]) assert(sim.canPlace(s, sim.idx(8, c), t).ok, `${B[t].name} is exempt from the brick requirement too`);
+  s.res.bricks = 5;
   const r = sim.place(s, sim.idx(8, c), T.SHOP);
   assert(r.ok, r.reason);
-  assert(r.wood > 0, 'the build actually spent some of it: ' + JSON.stringify(r));
-  console.log('wood requirement ok: no stock blocks building (except the Sawmill), buying some unblocks it');
+  assert(r.wood > 0 && r.brick > 0, 'the build actually spent some of each: ' + JSON.stringify(r));
+  assert(s.res.bricks < 5, 'bricks in the bank went down');
+  console.log('wood and brick requirement ok: no stock of either blocks building (except the four exempt buildings)');
+}
+// ---- the HUD's "$X a day" reflects a new, staffed building straight away, without waiting for daily() to
+// next settle the day (matches the real game loop: any action that changes staffing clears s._plan, and the
+// next sim.plan() call picks idle qualified residents up into open jobs the same way autoFill would)
+{
+  seed = 141;
+  const s = sim.newCity('Instant', rng); s.money = 20000; s.land.fill(1);
+  for (let x = c - 3; x <= c + 3; x++) put(s, x, c + 1, T.ROAD);
+  for (let k = 0; k < 5; k++) s.people.push({ ...s.people[0], i: 900 + k, j: -1 });   // idle, degree-educated adults
+  let plan = sim.plan(s, rng);
+  const before = sim.previewNet(s, plan).income;
+  put(s, c + 1, c + 2, T.WORK);
+  finishAll(s);
+  plan = sim.plan(s, rng);   // place() already cleared s._plan; recompute like the game loop does after any action
+  assert(sim.staffing(s, sim.idx(c + 1, c + 2)) > 0, 'the new office picked up staff from the idle residents');
+  const after = sim.previewNet(s, plan).income;
+  assert(after > before, `a newly staffed office raises the live income estimate straight away: ${before} -> ${after}`);
+  console.log('instant income ok:', before, '->', after);
 }
 // ---- picking what to make: banking a cap of loads, a spent seed, cancelling, and surviving bulldoze/move
 {

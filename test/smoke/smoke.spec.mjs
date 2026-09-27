@@ -469,13 +469,15 @@ test('private messages: message a neighbour, who sees it and replies', async ({ 
 
 test('resources bar, materials in prices, and what buildings make', async ({ page }) => {
   const errors = await newGame(page);
-  // Water, power, materials, food, and products (a new city starts with some bricks in store).
+  // Water, power, brick, wood, and people fed. Products (furniture/tools/baked) stays hidden until the city has
+  // actually made one - a new city's starting bricks don't count, since those get their own chip now.
   await expect(page.locator('#resbar .rchip')).toHaveCount(5);
   await page.locator('#map').focus();
   await page.keyboard.press('b');
   for (const k of ['ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter']) await page.keyboard.press(k);
   await page.locator('#cat-q').fill('farm');
   await expect(page.locator('#catalog .card').first().locator('use[href="#i-materials"]')).toHaveCount(1);
+  await expect(page.locator('#catalog .card').first().locator('use[href="#i-bricks"]')).toHaveCount(1);
   await expect(page.locator('#catalog .card').first()).toContainText('makes');
   if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/resbar.png` });
   await page.keyboard.press('Escape');

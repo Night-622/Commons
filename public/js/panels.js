@@ -568,7 +568,7 @@ export function catalogHtml(ctx) {
   const needle = q.trim().toLowerCase();
   const list = BUILDINGS.filter((t) => (cat === 'all' || B[t].cat === cat) && (!needle || `${B[t].name} ${tr(B[t].name)} ${B[t].blurb} ${gives(t)}`.toLowerCase().includes(needle)) && (!afford || avail(t).ok));
   const x = tile % 24 + 1, y = Math.floor(tile / 24) + 1;
-  return `<div class="cat-head"><div><h2 id="catalog-title">Build on tile ${x}, ${y}</h2><small class="soft">You have <b>${money(s.money)}</b> and <b>${Math.floor((s.res?.wood || 0) + (s.res?.metal || 0))} ${icon('i-materials')}</b>; each load of your own takes $2 off the price. Staffed buildings need people with the right education.</small></div>
+  return `<div class="cat-head"><div><h2 id="catalog-title">Build on tile ${x}, ${y}</h2><small class="soft">You have <b>${money(s.money)}</b>, <b>${Math.floor(KIND_IDS.wood.reduce((a, k) => a + (s.res?.[k] || 0), 0) + (s.res?.metal || 0))} ${icon('i-materials')}</b> and <b>${Math.floor(s.res?.bricks || 0)} ${icon('i-bricks')}</b>; each load of wood or metal takes $2 off the price, and bricks take a little off everything. Every building needs at least 1 wood and 1 brick in stock. Staffed buildings need people with the right education.</small></div>
       <button class="iconbtn" type="button" data-cat-close aria-label="Close">${icon('i-close')}</button></div>
     <div class="cat-tools"><label class="search">${icon('i-search')}<input type="search" id="cat-q" placeholder="Search buildings" value="${esc(q)}" aria-label="Search buildings"></label>
       <label class="tgl compact"><input type="checkbox" id="cat-afford" ${afford ? 'checked' : ''}><span class="sw" aria-hidden="true"></span><span>Only what I can build now</span></label></div>
@@ -576,9 +576,9 @@ export function catalogHtml(ctx) {
     <div class="cat-grid">${list.map((t) => {
       const a = avail(t);
       return `<button type="button" class="card ${a.ok ? '' : a.locked ? 'locked' : 'short'}" data-build="${t}" ${a.locked ? 'aria-disabled="true"' : ''}
-        aria-label="${B[t].name}, $${B[t].cost} and ${matCost(t)} materials. ${esc(B[t].blurb)} ${a.ok ? '' : esc(a.reason)}">
+        aria-label="${B[t].name}, $${B[t].cost}, ${matCost(t)} materials and ${matCost(t)} bricks. ${esc(B[t].blurb)} ${a.ok ? '' : esc(a.reason)}">
         <canvas class="thumb" data-type="${t}" aria-hidden="true"></canvas>
-        <span class="cname">${B[t].name}</span><span class="ccost num">$${B[t].cost} <small title="Building materials">+${matCost(t)} ${icon('i-materials')}</small></span>
+        <span class="cname">${B[t].name}</span><span class="ccost num">$${B[t].cost} <small title="Building materials">+${matCost(t)} ${icon('i-materials')}</small> <small title="Bricks needed">+${matCost(t)} ${icon('i-bricks')}</small></span>
         <span class="cgives">${esc(gives(t))}</span>
         ${a.ok ? '' : `<span class="cwhy">${a.locked ? icon('i-lock') : ''}${esc(a.reason)}</span>`}
       </button>`;

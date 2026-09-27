@@ -3,7 +3,7 @@ import {
   T, B, PLOT, TICK_MS, MAX_OFFLINE_DAYS, HOURS_PER_DAY, SAVE_EVERY_MS, RUBBLE_CLEAR_COST, MAX_LEVEL, LEVEL, UPGRADABLE,
   REBUILD_MONEY, MOVE_KEEP, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome, DECISIONS, ZONES, ZONE_COST,
   LOAN_DAYS, HISTORIC_DAYS, BADGES, REGIONAL, REGIONAL_SHARE, ALLIANCE_TRADE, DAILY, DAILY_REWARD, WEEKLY, WEEKLY_REWARD, GIFT_LIMITS, REACTIONS,
-  RES, TRADE_RES, PRODUCTS, PRODUCT_IDS, RAW_GOODS, USE, HARVEST, MARKET, STOCK, HALL_LEVELS, TECH, STYLES, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
+  RES, TRADE_RES, PRODUCTS, PRODUCT_IDS, KIND_IDS, USE, HARVEST, MARKET, STOCK, HALL_LEVELS, TECH, STYLES, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
   PICKS, BATCH_CAP, LEASE_MIN_DAYS, LEASE_TAX_MAX, LEASE_TAX_DEFAULT, RENT_MAX_DAYS, RENT_MAX_TOTAL,
 } from './constants.js';
 import { Renderer, STRIDE, thumbnail, modelHeight } from './render.js';
@@ -644,25 +644,33 @@ function nextStep(tips) {
 }
 
 // ---------- resources in the top bar ----------
-// 1.2 split "materials" into wood and metal. Kept calm by grouping them into one chip (Materials) with the
-// breakdown in the tooltip. The old Food chip showed raw food stock; it now shows people actually fed by a
-// grocer (the "shops" need from plan()), which is what mayors actually care about.
-// Products only appear once the city has ever made or held one, so a town with no factories sees nothing extra.
+// Water and power are used up daily by every building and person, so they lead. Brick and wood are the two
+// ingredients building now actually requires (not just a discount) - shown separately, not folded into one
+// "materials" chip, since running out of either is the thing that stops you building. Metal/stone/coal are
+// still tracked in full in the Resources panel, just not iconified up here. The old Food chip showed raw food
+// stock; it now shows people actually fed by a grocer (the "shops" need from plan()), which is what mayors
+// actually care about. Products only appear once the city has ever made or held one.
 function renderResbar() {
   const bar = $('resbar');
   if (!bar || !state) return;
   const st = sim.resourceStock(state), r = state.stats?.res, ps = state.stats?.products, n = (v) => Math.floor(v || 0).toLocaleString();
   const chip = (iconId, label, v, bad, title) => `<span class="rchip ${bad ? 'bad' : ''}" title="${esc(title)}">${icon(iconId)}<b class="num">${v}</b><span class="sr">${label}</span></span>`;
-  const materials = RAW_GOODS.reduce((a, k) => a + (st[k] || 0), 0);
-  const materialsTitle = `Materials: ${RAW_GOODS.map((k) => `${n(st[k])} ${RES[k].name.toLowerCase()} (${n(r?.prod[k])} made a day)`).join(', ')}. Wood and metal take $2 off the price of a load when you build; stone and coal are for trade and for Bricks.`;
+  const wood = sim.stockOf(state, 'wood');
+  const woodTitle = `Wood: ${KIND_IDS.wood.map((k) => `${n(st[k])} ${RES[k].name.toLowerCase()}`).join(', ')}. Every building needs at least 1 in stock - a Sawmill (or the Exchange) always gets you more.`;
+  const brickTitle = `Bricks: ${n(st.bricks)} in store. Every building needs at least 1 in stock, and a little in store takes 5% off the price of everything - make more at a Factory once you have Masonry.`;
   const pop = state.people.length, shopsNeed = plan?.needs?.shops ?? 1, fed = Math.round(shopsNeed * pop);
   const fedTitle = `People fed: ${fed} of ${pop} have a grocer (or the hall’s little shop) with room to serve them.`;
-  const hasProducts = PRODUCT_IDS.some((k) => st[k] > 0 || ps?.made?.[k] > 0);
-  const products = PRODUCT_IDS.reduce((a, k) => a + (st[k] || 0), 0);
-  const productsTitle = `Products: ${PRODUCT_IDS.map((k) => `${n(st[k])} ${PRODUCTS[k].name.toLowerCase()}`).join(', ')}`;
+  // Bricks are technically a factory product (recipe: stone+coal), but they get their own chip above now, so
+  // they're left out of the general Products chip - otherwise a new city would show "products" from day one
+  // just for its starting bricks, despite never having made a furniture, tool or baked good.
+  const otherProducts = PRODUCT_IDS.filter((k) => k !== 'bricks');
+  const hasProducts = otherProducts.some((k) => st[k] > 0 || ps?.made?.[k] > 0);
+  const products = otherProducts.reduce((a, k) => a + (st[k] || 0), 0);
+  const productsTitle = `Products: ${otherProducts.map((k) => `${n(st[k])} ${PRODUCTS[k].name.toLowerCase()}`).join(', ')}`;
   bar.innerHTML = chip('i-water', 'water', n(st.water), r?.short.water > 0 && r?.prod.water > 0, `Water: ${n(st.water)} in store, ${n(r?.prod.water)} made and ${n(r?.need.water)} used a day`)
     + chip('i-power', 'power', n(st.power), r?.short.power > 0 && r?.prod.power > 0, `Power: ${n(st.power)} in store, ${n(r?.prod.power)} made and ${n(r?.need.power)} used a day`)
-    + chip('i-materials', 'materials', n(materials), false, materialsTitle)
+    + chip('i-bricks', 'brick', n(st.bricks), st.bricks < 1, brickTitle)
+    + chip('i-materials', 'wood', n(wood), wood < 1, woodTitle)
     + chip('i-food', 'fed', n(fed), shopsNeed < 0.8, fedTitle)
     + (hasProducts ? chip('i-products', 'products', n(products), false, productsTitle) : '');
 }
@@ -2306,7 +2314,10 @@ function updateHud() {
   if (!state) return;
   const tot = totalsNow || sim.totals(state);
   const c = sim.census(state), st = state.stats, pop = c.total;
-  const net = (st.income || 0) - (st.upkeep || 0);
+  // A live estimate from current staffing/leases, not just the once-a-day figure daily() last settled - so
+  // staffing an office shows up in "+$X a day" the moment it happens, not up to a day later.
+  const preview = plan && state.status === 'alive' ? sim.previewNet(state, plan) : null;
+  const net = preview ? preview.income - preview.upkeep : (st.income || 0) - (st.upkeep || 0);
   $('city-name').textContent = state.name;
   $('city-name').dataset.era = t(HALL_LEVELS[sim.hallLevel(state)].name);   // the city's size is its town hall's level
   $('clock').textContent = `${hourLabel(state.hour)}, ${dateLabel()}`;
@@ -3186,8 +3197,13 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 2.2';
+const VERSION = 'Commons 2.3';
 const CHANGELOG = [
+  ['2.3', [
+    'Building now needs bricks in stock too, not just wood - except the Sawmill, Quarry, Coal mine and Factory, so you can always build your way to more of either.',
+    'The top bar is reordered and split: water, power, bricks, wood, then people fed - metal, stone and coal are still tracked in full in the Resources panel.',
+    'The "$X a day" figure now updates the instant a job, lease or building changes, instead of waiting for the next day to settle - build an office, staff it, and watch the number move right away.',
+  ]],
   ['2.2', [
     'Fixed a real bug: a building that fully decayed while the city was broke could get stuck at 0% condition forever, even once you were solvent again - earning and costing nothing. It now repairs like anything else once you can afford it.',
     'Fixed the Lease/Rent panel closing itself right after you opened it.',

@@ -937,13 +937,20 @@ export function takeKind(s, kind, n) {
 // Materials a building needs, and what it costs: the price includes buying them in, less MAT_BUY for each load
 // from your store. Wood is used first, then metal, for whatever's short.
 export const matCost = (type) => (B[type]?.cost ? Math.max(1, Math.round(B[type].cost * MAT_PER_COST)) : 0);
+// Wood and bricks are real, required ingredients (canPlace), not just a price discount - except these four:
+// the ones you'd need to build in order to ever get more wood or bricks in the first place. Requiring materials
+// to build the things that make materials would be a dead end with no way out.
+const BUILD_MAT_EXEMPT = [T.MATERIALS, T.QUARRY, T.COALMINE, T.FACTORY];
 export function buildPrice(s, i, type) {
   const mat = matCost(type);
   const wood = Math.min(mat, Math.floor(stockOf(s, 'wood'))), metal = Math.min(mat - wood, Math.floor(stockOf(s, 'metal')));
   const use = wood + metal, bought = mat - use;
+  // Bricks are a required ingredient too, spent at the same rate as wood/metal (capped by what's in stock, same
+  // pattern - 'bricks' isn't a kind with several ids, so stockOf/takeKind just fall back to that one id).
+  const brick = Math.min(mat, Math.floor(stockOf(s, 'bricks')));
   let base = type === T.XING ? B[type].cost : tileCost(s, i, type);
   if ((s.res?.bricks || 0) > 0) base = Math.round(base * BRICK_DISCOUNT);   // bricks in store: everything costs a little less
-  return { money: Math.max(Math.round(base / 2), base - use * MAT_BUY), mat, use, wood, metal, bought, base };
+  return { money: Math.max(Math.round(base / 2), base - use * MAT_BUY), mat, use, wood, metal, bought, brick, base };
 }
 
 // Land value, 0..1 per tile. Parks, services, transit and clean air raise it; noise lowers it.
@@ -1771,10 +1778,12 @@ export function canPlace(s, i, type) {
   const a = availability(s, type);
   if (!a.ok) return { ok: false, reason: a.reason + '.' };
   const price = buildPrice(s, i, type);
-  // Wood is a real, required ingredient for buildings (not roads/rail/paths) - not just a discount - except for
-  // the Sawmill itself, so a city that ever runs dry can always rebuild the thing that gets it wood again (or
-  // buy some on the Exchange).
-  if (B[type].cat && type !== T.MATERIALS && stockOf(s, 'wood') < 1) return { ok: false, reason: 'Needs wood in stock. Cut some at a Sawmill, or buy it on the Exchange.' };
+  // Wood and bricks are real, required ingredients for buildings (not roads/rail/paths) - not just a discount -
+  // except for the handful of buildings you'd need to recover from running out (see BUILD_MAT_EXEMPT above).
+  if (B[type].cat && !BUILD_MAT_EXEMPT.includes(type)) {
+    if (stockOf(s, 'wood') < 1) return { ok: false, reason: 'Needs wood in stock. Cut some at a Sawmill, or buy it on the Exchange.' };
+    if ((s.res?.bricks || 0) < 1) return { ok: false, reason: 'Needs bricks in stock. Make some at a Factory (once you have Masonry), or trade for some on the Market.' };
+  }
   if (s.money < price.money) return { ok: false, reason: `${ter === 2 ? 'A bridge here' : ter === 1 ? 'Building on a hill' : 'It'} costs $${price.money}.` };
   return { ok: true };
 }
@@ -1785,16 +1794,16 @@ export function place(s, i, type) {
   if (crossing(s, i, type)) type = T.XING;
   const price = buildPrice(s, i, type), cost = price.money;
   s.money -= cost;
-  const took = { ...(price.wood ? takeKind(s, 'wood', price.wood) : {}), ...(price.metal ? takeKind(s, 'metal', price.metal) : {}) };
+  const took = { ...(price.wood ? takeKind(s, 'wood', price.wood) : {}), ...(price.metal ? takeKind(s, 'metal', price.metal) : {}), ...(price.brick ? takeKind(s, 'bricks', price.brick) : {}) };
   if (s.zone) s.zone[i] = 0;   // your own buildings are public: you pay their upkeep
   if (s.lease) delete s.lease[i];
   s.grid[i] = type;
   s.cond[i] = 0;
   s.lv[i] = 1;
-  s.queue.push({ i, left: B[type].work, tap: 0, paid: cost, mat: price.use, wood: price.wood, metal: price.metal, took });
+  s.queue.push({ i, left: B[type].work, tap: 0, paid: cost, mat: price.use + price.brick, wood: price.wood, metal: price.metal, brick: price.brick, took });
   s.counters.built++;
   s._plan = null;
-  return { ok: true, cost, mat: price.mat, wood: price.wood, metal: price.metal };
+  return { ok: true, cost, mat: price.mat, wood: price.wood, metal: price.metal, brick: price.brick };
 }
 
 export function undoPlace(s, i) {
@@ -1965,6 +1974,82 @@ function removePerson(s, p) {
   for (const q of s.people) { if (q.pt === p.i) q.pt = 0; if (q.pa === p.i) q.pa = 0; }
 }
 
+// Wages, trade, tourism and tax, by class: what the city is earning right now, as things stand this instant.
+// Pure - reads s/plan/tot but never writes them - so it can double as daily()'s real once-a-day figure AND as
+// previewNet()'s live "$X a day" estimate, which the HUD refreshes continuously so a new hire or lease shows up
+// straight away instead of waiting for the day to actually settle.
+function incomeByClass(s, plan, tot, uc) {
+  const pop = s.people.length;
+  const moodK = clamp((s.happiness - 0.1) / 0.6) * (s.policy?.tax || 1);
+  const by = { basic: 0, skilled: 0, degree: 0, benefits: 0, trade: 0, leased: 0 };
+  let savingsGain = 0;
+  for (const p of s.people) {
+    if (p.j >= 0 && !p.ill && p.oj) by[p.oj === 'rail' ? 'skilled' : 'basic'] += WAGE[p.oj === 'rail' ? 1 : 0] * moodK;
+    else if (p.j >= 0 && !p.ill && B[s.grid[p.j]]?.jobs) {
+      const req = B[s.grid[p.j]].jobs[p.jt][1], w = (req >= 3 ? WAGE[2] : req >= 1 ? WAGE[1] : WAGE[0]) * moodK;
+      // A leased job pays its tax to whoever runs it: the mayor only collects the share they set, not the full
+      // wage, and can route part of that share straight into the upgrade fund instead of ordinary money.
+      const L = s.lease?.[p.j];
+      if (L?.k === 'civ') { const cut = w * (L.share ?? LEASE_TAX_DEFAULT); by.leased += cut * (1 - (L.save ?? 0)); savingsGain += cut * (L.save ?? 0); }
+      else by[req >= 3 ? 'degree' : req >= 1 ? 'skilled' : 'basic'] += w;
+    } else if (p.j < 0 && canWork(p)) by.benefits += 0.5 * moodK;
+  }
+  by.trade = TRADE_PER_LINK * Math.min(MAX_LINKS * 2, (s.links || 0) + 2 * (s.railLinks || 0)) * Math.min(1, pop / 30)
+    + (s._regional?.trade || 0) + (s._allies || 0) * 15;
+  const inc = s._incoming || {};
+  if (s.grid.some((t, i) => t === T.AIRPORT && active(s, i, uc) && staffing(s, i) > 0)) by.trade = Math.round(by.trade + 40 + pop * 0.2);
+  if (s.grid.some((t, i) => t === T.HARBOUR && active(s, i, uc) && staffing(s, i) > 0)) by.trade = Math.round(by.trade + 20 + pop * 0.1);
+  by.visitors = (inc.fun || 0) * 2 + (inc.care || 0) * 4 + (inc.shop || 0) * 1 + (inc.school || 0) * 2 + (inc.tourists || 0) * 8;
+  const air = plan.needs?.air ?? 1;
+  let draw = 0, rooms = 0;
+  for (let i = 0; i < N; i++) {
+    const d = B[s.grid[i]];
+    if (!d || !active(s, i, uc) || !(staffing(s, i) > 0)) continue;
+    if (d.draw) draw += d.draw * LEVEL.capacity[level(s, i)];
+    if (d.rooms) rooms += scale(s, i, d.rooms);
+  }
+  draw = Math.round(draw * (0.5 + s.happiness) * (1 + 0.15 * Math.min(MAX_LINKS, (s.links || 0) + (s.railLinks || 0))) * (air < 0.5 ? 0.6 : 1) * (weather(cityDay(s)) === 'clear' ? 1 : 0.7));
+  if (s.flags.festival > 0) draw += 15;
+  draw += s._regional?.draw || 0;
+  let hist = 0;
+  for (let i = 0; i < N; i++) if (isHistoric(s, i)) hist += isProtected(s, i) ? 2 : 1;
+  draw += Math.min(30, hist);
+  const stays = Math.min(draw, rooms), trips = Math.round((draw - stays) * DAYTRIP_SHARE);
+  by.tourism = stays * TOURIST_SPEND.night + trips * TOURIST_SPEND.day;
+  const dirty = s.grid.reduce((a, t, i) => a + (B[t]?.smog && s.cond[i] > 0 ? 1 : 0), 0);
+  by.carbon = s.policy?.carbon ? dirty * CARBON_TAX : 0;
+  const propRate = PROPERTY_TAX[s.policy?.property || 0] || 0;
+  by.property = propRate && plan.value ? s.people.reduce((a, p) => a + (isHome(s.grid[p.h]) ? plan.value[p.h] * propRate : 0), 0) * Math.min(1, moodK + 0.3) : 0;
+  const carTrips = plan.trips.filter((t) => t.mode === 'car').length;
+  by.tolls = s.policy?.toll ? carTrips * CONGESTION_FEE : 0;
+  const recycled = s.grid.reduce((a, t, i) => a + (t === T.RECYCLE && active(s, i, uc) && staffing(s, i) > 0 ? 1 : 0), 0);
+  if (recycled) by.recycling = Math.min(pop, recycled * B[T.RECYCLE].waste) * B[T.RECYCLE].sells;
+  if (s.flags.strike > 0) for (const k of ['basic', 'skilled', 'degree', 'leased']) by[k] *= 0.7;
+  if (s.flags.fourday > 0) for (const k of ['basic', 'skilled', 'degree', 'leased']) by[k] *= 0.9;
+  for (const k in by) by[k] = Math.round(by[k]);
+  return { by, savingsGain, air, tourists: stays + trips, historic: hist };
+}
+
+// A live snapshot of today's money, recomputed from current staffing/leases/policy rather than waiting for
+// daily() to next settle the day - so building an office and staffing it shows up in "$X a day" right away.
+// Produce/product sales and food import costs (resourcesDay/productsDay) have side effects of their own and
+// aren't safe to run as a preview, so those carry forward from the last day that actually settled.
+export function previewNet(s, plan) {
+  const uc = underConstruction(s);
+  const tot = totals(s, uc);
+  const { by } = incomeByClass(s, plan, tot, uc);
+  const income = Object.values(by).reduce((a, b) => a + b, 0) + (s.stats?.res?.sold || 0) + (s.stats?.products?.sold || 0);
+  const riders = (plan.riders?.bus || 0) + (plan.riders?.train || 0) + (plan.riders?.metro || 0);
+  const service = Object.entries(tot.upkeepBy).reduce((a, [t, v]) => a + (B[t]?.cat && B[t].cat !== 'homes' && B[t].cat !== 'work' ? v : 0), 0);
+  let upkeep = tot.upkeep + service * ((s.policy?.funding || 1) - 1) + (s.policy?.freeTransit ? riders * 0.5 : 0) + (s.stats?.res?.importCost || 0);
+  if (s.policy?.insured) upkeep += s.grid.reduce((a, t, i) => a + (B[t]?.cat && s.cond[i] > 0 && s.lease?.[i]?.k !== 'civ' ? 1 : 0), 0) * INSURANCE.premium;
+  if (s.bond?.left > 0) upkeep += Math.min(s.bond.left, s.bond.daily);
+  const retirees = s.people.filter((p) => p.a >= RETIRE).length;
+  if (retirees) upkeep += retirees * PENSION;
+  if (s.loan?.left > 0) upkeep += Math.min(s.loan.left, Math.ceil(s.loan.taken / LOAN_DAYS)) + Math.ceil(s.loan.left * s.loan.rate);
+  return { income: Math.round(income), upkeep: Math.round(upkeep) };
+}
+
 function daily(s, plan, rng) {
   const st = { income: 0, upkeep: 0, failedTrips: plan.failedTrips, arrivals: 0, departures: 0, graduates: 0, births: 0, deaths: 0, crimes: 0, treated: 0, cases: 0 };
   const uc = underConstruction(s);
@@ -2115,59 +2200,14 @@ function daily(s, plan, rng) {
   }
 
   // Money: tax from working people, scaled by mood, against upkeep that doesn't shrink.
-  const moodK = clamp((s.happiness - 0.1) / 0.6) * (s.policy?.tax || 1);
-  const by = { basic: 0, skilled: 0, degree: 0, benefits: 0, trade: 0, leased: 0 };
-  let savingsGain = 0;
-  for (const p of s.people) {
-    if (p.j >= 0 && !p.ill && p.oj) by[p.oj === 'rail' ? 'skilled' : 'basic'] += WAGE[p.oj === 'rail' ? 1 : 0] * moodK;
-    else if (p.j >= 0 && !p.ill && B[s.grid[p.j]]?.jobs) {
-      const req = B[s.grid[p.j]].jobs[p.jt][1], w = (req >= 3 ? WAGE[2] : req >= 1 ? WAGE[1] : WAGE[0]) * moodK;
-      // A leased job pays its tax to whoever runs it: the mayor only collects the share they set, not the full
-      // wage, and can route part of that share straight into the upgrade fund instead of ordinary money.
-      const L = s.lease?.[p.j];
-      if (L?.k === 'civ') { const cut = w * (L.share ?? LEASE_TAX_DEFAULT); by.leased += cut * (1 - (L.save ?? 0)); savingsGain += cut * (L.save ?? 0); }
-      else by[req >= 3 ? 'degree' : req >= 1 ? 'skilled' : 'basic'] += w;
-    } else if (p.j < 0 && canWork(p)) by.benefits += 0.5 * moodK;
-  }
-  by.trade = TRADE_PER_LINK * Math.min(MAX_LINKS * 2, (s.links || 0) + 2 * (s.railLinks || 0)) * Math.min(1, pop / 30)
-    + (s._regional?.trade || 0) + (s._allies || 0) * 15;
-  const inc = s._incoming || {};
-  // Factories used to make an abstract "goods" export; 1.2 replaced that with real recipes (productsDay, below),
-  // sold through a Store or the Market instead of counted here.
-  if (s.grid.some((t, i) => t === T.AIRPORT && active(s, i, uc) && staffing(s, i) > 0)) by.trade = Math.round(by.trade + 40 + pop * 0.2);
-  // A staffed harbour is "the best place to trade with the rest of the world" (its blurb) - a smaller trade
-  // bonus than the airport's, since it's cheaper and opens far earlier (minPop 30 vs 150).
-  if (s.grid.some((t, i) => t === T.HARBOUR && active(s, i, uc) && staffing(s, i) > 0)) by.trade = Math.round(by.trade + 20 + pop * 0.1);
-  by.visitors = (inc.fun || 0) * 2 + (inc.care || 0) * 4 + (inc.shop || 0) * 1 + (inc.school || 0) * 2 + (inc.tourists || 0) * 8;
-  // Tourism: attractions draw visitors, more when the city is pleasant and linked. Hotels turn day trips into stays.
-  let draw = 0, rooms = 0;
-  for (let i = 0; i < N; i++) {
-    const d = B[s.grid[i]];
-    if (!d || !active(s, i, uc) || !(staffing(s, i) > 0)) continue;
-    if (d.draw) draw += d.draw * LEVEL.capacity[level(s, i)];
-    if (d.rooms) rooms += scale(s, i, d.rooms);
-  }
-  draw = Math.round(draw * (0.5 + s.happiness) * (1 + 0.15 * Math.min(MAX_LINKS, (s.links || 0) + (s.railLinks || 0))) * (air < 0.5 ? 0.6 : 1) * (weather(cityDay(s)) === 'clear' ? 1 : 0.7));
-  if (s.flags.festival > 0) { draw += 15; s.flags.festival--; }
-  draw += s._regional?.draw || 0;
-  let hist = 0;
-  for (let i = 0; i < N; i++) if (isHistoric(s, i)) hist += isProtected(s, i) ? 2 : 1;
-  st.historic = hist;
-  draw += Math.min(30, hist);
-  const stays = Math.min(draw, rooms), trips = Math.round((draw - stays) * DAYTRIP_SHARE);
-  st.tourists = stays + trips;
-  by.tourism = stays * TOURIST_SPEND.night + trips * TOURIST_SPEND.day;
-  const dirty = s.grid.reduce((a, t, i) => a + (B[t]?.smog && s.cond[i] > 0 ? 1 : 0), 0);
-  by.carbon = s.policy?.carbon ? dirty * CARBON_TAX : 0;
-  const propRate = PROPERTY_TAX[s.policy?.property || 0] || 0;
-  by.property = propRate && plan.value ? s.people.reduce((a, p) => a + (isHome(s.grid[p.h]) ? plan.value[p.h] * propRate : 0), 0) * Math.min(1, moodK + 0.3) : 0;
-  by.tolls = s.policy?.toll ? carTrips * CONGESTION_FEE : 0;
+  const { by, savingsGain, tourists, historic } = incomeByClass(s, plan, tot, uc);
+  if (s.flags.festival > 0) s.flags.festival--;
+  if (s.flags.strike > 0) s.flags.strike--;
+  st.historic = historic;
+  st.tourists = tourists;
   st.air = Math.round(air * 100) / 100;
-  for (const k in by) by[k] = Math.round(by[k]);
   st.byClass = by;
   st.upkeepBy = Object.fromEntries(Object.entries(tot.upkeepBy).map(([k, v]) => [k, Math.round(v)]));
-  if (s.flags.strike > 0) { for (const k of ['basic', 'skilled', 'degree', 'leased']) by[k] = Math.round(by[k] * 0.7); s.flags.strike--; }
-  if (s.flags.fourday > 0) for (const k of ['basic', 'skilled', 'degree', 'leased']) by[k] = Math.round(by[k] * 0.9);
   st.income = Object.values(by).reduce((a, b) => a + b, 0);
   const riders = (plan.riders?.bus || 0) + (plan.riders?.train || 0) + (plan.riders?.metro || 0);
   const service = Object.entries(tot.upkeepBy).reduce((a, [t, v]) => a + (B[t]?.cat && B[t].cat !== 'homes' && B[t].cat !== 'work' ? v : 0), 0);

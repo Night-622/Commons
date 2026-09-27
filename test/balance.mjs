@@ -41,7 +41,17 @@ function run(startSeed, verbose) {
     if (s.status !== 'alive') { fellOn = day; break; }
     for (const i of roads) if (sim.owns(s, i) && s.grid[i] === T.EMPTY && s.money > 60) sim.place(s, i, T.ROAD);
     // Like a player, research whatever it can afford (cheapest first) and collect any harvests that are ready.
-    for (const t of [...TECH].sort((a, b) => a.cost - b.cost)) if (sim.canResearch(s, t.id).ok) sim.research(s, t.id);
+    // Bricks are a hard building requirement now, so Logistics and Masonry get beelined - not just tried first
+    // each day (research points would still get soaked up by whatever cheaper tech is affordable in the
+    // meantime, which is nearly always something, and Logistics+Masonry would never actually accumulate) but
+    // researched to the exclusion of everything else until masonry is done, same as a mayor actually saving up
+    // for it. Only starts once the bot has actually committed to the quarry/coal/factory chain.
+    if (s.grid.includes(T.FACTORY) && !sim.hasTech(s, 'masonry')) {
+      if (!sim.hasTech(s, 'logistics')) { if (sim.canResearch(s, 'logistics').ok) sim.research(s, 'logistics'); }
+      else if (sim.canResearch(s, 'masonry').ok) sim.research(s, 'masonry');
+    } else {
+      for (const t of [...TECH].sort((a, b) => a.cost - b.cost)) if (sim.canResearch(s, t.id).ok) sim.research(s, t.id);
+    }
     for (let i = 0; i < PLOT * PLOT; i++) if (sim.harvestReady(s, i)) sim.harvest(s, i);
     // Since 2.0, a sawmill/quarry/farm/etc makes nothing until you pick a target: collect anything ready, and
     // set every idle producer going again - whatever the town hall's next level still needs first, otherwise
@@ -49,6 +59,9 @@ function run(startSeed, verbose) {
     {
       const hs = sim.hallState(s, { cities: 1 });
       const needKinds = new Set((hs.res || []).filter((r) => !r.done).map((r) => r.k));
+      // Bricks need a steady stone+coal supply too, but hallState never asks for those kinds directly (bricks
+      // aren't a town hall requirement) - so top them up here whenever the brick stockpile is getting low.
+      if (sim.hasTech(s, 'masonry') && sim.stockOf(s, 'bricks') < 100) { needKinds.add('stone'); needKinds.add('coal'); }
       for (let i = 0; i < PLOT * PLOT; i++) {
         const picks = sim.picksAt(s, i);
         if (!picks) continue;
@@ -71,7 +84,14 @@ function run(startSeed, verbose) {
     // needs a steady supply: put up a sawmill early (it's the one building that never needs wood to build, so
     // there's no chicken-and-egg problem), and top up from the Exchange if the pantry ever runs low regardless.
     else if (s.people.length >= 8 && !utils.counts[T.MATERIALS] && s.money > B[T.MATERIALS].cost + 150) tryBuild(T.MATERIALS);
+    // Bricks are a required ingredient too, but (unlike wood) they can't just be bought on the instant Exchange -
+    // they're a factory product, so the whole chain (quarry for stone, coal mine for coal, factory to turn it
+    // into bricks once Masonry is researched) needs building, same "teach the bot too" treatment as the rest.
+    else if (s.people.length >= 10 && !utils.counts[T.QUARRY] && s.money > B[T.QUARRY].cost + 150) tryBuild(T.QUARRY);
+    else if (s.people.length >= 10 && !utils.counts[T.COALMINE] && s.money > B[T.COALMINE].cost + 150) tryBuild(T.COALMINE);
+    else if (s.people.length >= 12 && !utils.counts[T.FACTORY] && s.money > B[T.FACTORY].cost + 150) tryBuild(T.FACTORY);
     if (sim.stockOf(s, 'wood') < 20 && s.money > 500) sim.buyResource(s, 'pine', 30);
+    if (sim.hasTech(s, 'masonry')) for (let i = 0; i < PLOT * PLOT; i++) if (s.grid[i] === T.FACTORY && !s.rec?.[i]) sim.setRecipe(s, i, 'bricks');
     const p = s._plan || sim.plan(s, rng);
     const tips = sim.advice(s, p).filter((a) => a.type != null);
     // A sensible mayor saves up for the most urgent thing rather than spending on the rest.

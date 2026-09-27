@@ -114,3 +114,12 @@ main"):
          Materials icon is now a log, not a present; the old Food chip
          is now a house showing how many people are actually fed by a
          grocer. No firestore.rules change, no world reset.
+   2.3   Building now also needs bricks in stock, at the same rate as
+         wood (except the Sawmill, Quarry, Coal mine and Factory, which
+         you can always build to get more of either). The top bar is
+         split and reordered: water, power, bricks, wood, then people
+         fed - metal/stone/coal stay fully tracked in the Resources
+         panel, just off the top bar. The "$X a day" figure now updates
+         the instant a job, lease or building changes, instead of
+         waiting for the next day to settle. No firestore.rules change,
+         no world reset.
