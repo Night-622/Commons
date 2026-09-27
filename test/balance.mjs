@@ -67,6 +67,11 @@ function run(startSeed, verbose) {
     const utils = sim.totals(s);
     if (s.people.length >= 15 && !utils.counts[T.WATER] && s.money > B[T.WATER].cost + 150) tryBuild(T.WATER);
     else if (s.people.length >= 15 && !(utils.counts[T.POWER] || utils.counts[T.SOLAR] || utils.counts[T.WIND]) && s.money > B[T.SOLAR].cost + 150) tryBuild(T.SOLAR);
+    // Wood is a real ingredient for building now, not just a discount, so a mayor who wants to keep expanding
+    // needs a steady supply: put up a sawmill early (it's the one building that never needs wood to build, so
+    // there's no chicken-and-egg problem), and top up from the Exchange if the pantry ever runs low regardless.
+    else if (s.people.length >= 8 && !utils.counts[T.MATERIALS] && s.money > B[T.MATERIALS].cost + 150) tryBuild(T.MATERIALS);
+    if (sim.stockOf(s, 'wood') < 20 && s.money > 500) sim.buyResource(s, 'pine', 30);
     const p = s._plan || sim.plan(s, rng);
     const tips = sim.advice(s, p).filter((a) => a.type != null);
     // A sensible mayor saves up for the most urgent thing rather than spending on the rest.

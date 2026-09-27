@@ -3,7 +3,7 @@ import {
   T, B, PLOT, TICK_MS, MAX_OFFLINE_DAYS, HOURS_PER_DAY, SAVE_EVERY_MS, RUBBLE_CLEAR_COST, MAX_LEVEL, LEVEL, UPGRADABLE,
   REBUILD_MONEY, MOVE_KEEP, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome, DECISIONS, ZONES, ZONE_COST,
   LOAN_DAYS, HISTORIC_DAYS, BADGES, REGIONAL, REGIONAL_SHARE, ALLIANCE_TRADE, DAILY, DAILY_REWARD, WEEKLY, WEEKLY_REWARD, GIFT_LIMITS, REACTIONS,
-  RES, FOOD, TRADE_RES, PRODUCTS, PRODUCT_IDS, RAW_GOODS, USE, HARVEST, MARKET, STOCK, HALL_LEVELS, TECH, STYLES, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
+  RES, TRADE_RES, PRODUCTS, PRODUCT_IDS, RAW_GOODS, USE, HARVEST, MARKET, STOCK, HALL_LEVELS, TECH, STYLES, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
   PICKS, BATCH_CAP, LEASE_MIN_DAYS, LEASE_TAX_MAX, LEASE_TAX_DEFAULT, RENT_MAX_DAYS, RENT_MAX_TOTAL,
 } from './constants.js';
 import { Renderer, STRIDE, thumbnail, modelHeight } from './render.js';
@@ -644,8 +644,9 @@ function nextStep(tips) {
 }
 
 // ---------- resources in the top bar ----------
-// 1.2 split "materials" into wood and metal, and "food" into five kinds. Kept calm by grouping them into one
-// chip each (Materials, Food) with the breakdown in the tooltip, same idiom the old combined food chip used.
+// 1.2 split "materials" into wood and metal. Kept calm by grouping them into one chip (Materials) with the
+// breakdown in the tooltip. The old Food chip showed raw food stock; it now shows people actually fed by a
+// grocer (the "shops" need from plan()), which is what mayors actually care about.
 // Products only appear once the city has ever made or held one, so a town with no factories sees nothing extra.
 function renderResbar() {
   const bar = $('resbar');
@@ -654,15 +655,15 @@ function renderResbar() {
   const chip = (iconId, label, v, bad, title) => `<span class="rchip ${bad ? 'bad' : ''}" title="${esc(title)}">${icon(iconId)}<b class="num">${v}</b><span class="sr">${label}</span></span>`;
   const materials = RAW_GOODS.reduce((a, k) => a + (st[k] || 0), 0);
   const materialsTitle = `Materials: ${RAW_GOODS.map((k) => `${n(st[k])} ${RES[k].name.toLowerCase()} (${n(r?.prod[k])} made a day)`).join(', ')}. Wood and metal take $2 off the price of a load when you build; stone and coal are for trade and for Bricks.`;
-  const food = FOOD.reduce((a, k) => a + st[k], 0);
-  const foodTitle = `Food: ${FOOD.map((k) => `${n(st[k])} ${RES[k].name.toLowerCase()}`).join(', ')}${r?.imported ? `. ${n(r.imported)} bought in yesterday` : ''}`;
+  const pop = state.people.length, shopsNeed = plan?.needs?.shops ?? 1, fed = Math.round(shopsNeed * pop);
+  const fedTitle = `People fed: ${fed} of ${pop} have a grocer (or the hall’s little shop) with room to serve them.`;
   const hasProducts = PRODUCT_IDS.some((k) => st[k] > 0 || ps?.made?.[k] > 0);
   const products = PRODUCT_IDS.reduce((a, k) => a + (st[k] || 0), 0);
   const productsTitle = `Products: ${PRODUCT_IDS.map((k) => `${n(st[k])} ${PRODUCTS[k].name.toLowerCase()}`).join(', ')}`;
   bar.innerHTML = chip('i-water', 'water', n(st.water), r?.short.water > 0 && r?.prod.water > 0, `Water: ${n(st.water)} in store, ${n(r?.prod.water)} made and ${n(r?.need.water)} used a day`)
     + chip('i-power', 'power', n(st.power), r?.short.power > 0 && r?.prod.power > 0, `Power: ${n(st.power)} in store, ${n(r?.prod.power)} made and ${n(r?.need.power)} used a day`)
     + chip('i-materials', 'materials', n(materials), false, materialsTitle)
-    + chip('i-food', 'food', n(food), false, foodTitle)
+    + chip('i-food', 'fed', n(fed), shopsNeed < 0.8, fedTitle)
     + (hasProducts ? chip('i-products', 'products', n(products), false, productsTitle) : '');
 }
 $('resbar').onclick = () => { statsTab = 'resources'; drawer = null; openPanel('stats'); };
@@ -2468,7 +2469,7 @@ function renderDrawer() {
     if (!p) { drawer = 'people'; return renderDrawer(); }
     const agent = trips.agents(plotId).find((a) => a.p === p.i);
     html = panels.personCard(state, plan, p, whereabouts(state, plan, p, clockNow(), agent), favs().has(p.i));
-  } else if (drawer === 'goals') html = panels.goalsPanel(state, state.status === 'alive' ? daily() : null, sim.hallState(state, pathCtx()), state.status === 'alive' ? sim.advice(state, plan).slice(0, 4) : [], totalsNow || sim.totals(state), openHow);
+  } else if (drawer === 'goals') html = panels.goalsPanel(state, state.status === 'alive' ? daily() : null, sim.hallState(state, pathCtx()), state.status === 'alive' ? sim.advice(state, plan).slice(0, 4) : [], totalsNow || sim.totals(state), openDetails);
   else if (drawer === 'people') html = panels.peoplePanel(state, plan, peopleFilter, peopleQuery, favs());
   else if (drawer === 'stats') html = panels.statsPanel({ state, totals: totalsNow || sim.totals(state), plan, census: sim.census(state), fill: statsTab === 'overview' && state.status === 'alive' ? sim.autoFill(state, null, { dry: true }) : null }, statsTab);
   else if (drawer === 'news') html = panels.newsPanel(state, unseenFrom(), { tab: newsTab, inbox: [...inbox].reverse(), plan, forecast: [1, 2, 3].map((k) => sim.weather(sim.worldDay() + k)) });
@@ -2502,7 +2503,10 @@ function renderDrawer() {
 }
 
 let drawerMax = false, lastLikes = null, likeCache = '';
-const openHow = new Set();   // which goal "how" details the player has opened, kept open across redraws
+// Every <details data-key="..."> in the drawer stays open or closed across redraws by remembering which keys
+// are open here - the drawer's whole innerHTML gets rebuilt often (every 500ms while playing), which would
+// otherwise slam shut anything the player just opened before they can read it.
+const openDetails = new Set();
 async function loadLikes(id) {
   try {
     const { count, mine } = await fb.likes(world.id, id, user.uid);
@@ -2519,7 +2523,7 @@ function wireDrawer(box) {
   box.querySelectorAll('[data-build-type]').forEach((b) => { b.onclick = () => buildGo(+b.dataset.buildType)(); });
   // Goal "how" details stay open across redraws (the drawer's whole innerHTML is rebuilt often) by remembering
   // which ids are open, keyed separately from whether a goal is done so re-opening the same id always works.
-  box.querySelectorAll('details[data-goal]').forEach((d) => { d.addEventListener('toggle', () => { if (d.open) openHow.add(d.dataset.goal); else openHow.delete(d.dataset.goal); }); });
+  box.querySelectorAll('details[data-key]').forEach((d) => { d.addEventListener('toggle', () => { if (d.open) openDetails.add(d.dataset.key); else openDetails.delete(d.dataset.key); }); });
   const rentForm = box.querySelector('#rent-form');
   if (rentForm) rentForm.onsubmit = (e) => {
     e.preventDefault();
@@ -2862,7 +2866,7 @@ function ownTile(i) {
         if (n < slots[k]) body += `<div class="vacancy"><p class="soft small">${slots[k] - n} ${title.toLowerCase()} job${slots[k] - n > 1 ? 's' : ''} open${e ? `, needs ${EDU[e].toLowerCase()}` : ''}.</p>
           <div class="actions"><button class="btn" type="button" data-do="hire" data-arg="${k}">Hire someone</button><button class="btn" type="button" data-do="recruit" data-arg="${k}">Recruit from outside, ${money(sim.recruitCost(state, i, k))}</button></div></div>`;
       });
-      if (staff.length && t !== T.HALL) body += `<details class="staff"><summary>Manage staff</summary><ul>${staff.map((p) => `<li><span>${esc(sim.personName(p))} <small class="soft">${esc(d.jobs[p.jt][0].toLowerCase())}, ${EDU[p.e].toLowerCase()}</small></span><button class="btn small" type="button" data-do="fire" data-arg="${p.i}">Let go</button></li>`).join('')}</ul></details>`;
+      if (staff.length && t !== T.HALL) body += `<details class="staff" data-key="staff-${i}" ${openDetails.has(`staff-${i}`) ? 'open' : ''}><summary>Manage staff</summary><ul>${staff.map((p) => `<li><span>${esc(sim.personName(p))} <small class="soft">${esc(d.jobs[p.jt][0].toLowerCase())}, ${EDU[p.e].toLowerCase()}</small></span><button class="btn small" type="button" data-do="fire" data-arg="${p.i}">Let go</button></li>`).join('')}</ul></details>`;
     }
     if (!staff.length && (d.school || d.care || d.visits || d.radius || d.cases)) body += '<p class="warn">Closed: nobody works here yet. It needs staff with the right education.</p>';
     body += faces(staff, 'Staff');
@@ -2872,7 +2876,7 @@ function ownTile(i) {
     if (leased) {
       const share = leased.share ?? LEASE_TAX_DEFAULT, save = leased.save ?? 0, q = sim.leaseQuote(state, i, share), un = sim.canUnlease(state, i);
       body += `<p class="good-t small">You collect ${pc(share)} of their workers' tax (about ${money(q.taxLeased)} today)${save ? `, saving ${pc(save)} of that towards upgrades` : ''}.</p>
-        <details><summary>Change the split</summary>
+        <details data-key="lease-${i}" ${openDetails.has(`lease-${i}`) ? 'open' : ''}><summary>Change the split</summary>
           <form id="lease-form" data-tile="${i}" class="mk-form">
             <label class="field"><span>Your share of the tax (0-${Math.round(LEASE_TAX_MAX * 100)}%)</span><input name="share" type="number" min="0" max="${Math.round(LEASE_TAX_MAX * 100)}" value="${Math.round(share * 100)}" required></label>
             <label class="field"><span>Of that, save towards upgrades (0-100%)</span><input name="save" type="number" min="0" max="100" value="${Math.round(save * 100)}" required></label>
@@ -2882,7 +2886,7 @@ function ownTile(i) {
         <div class="actions"><button class="btn" type="button" data-do="unlease" ${un.ok ? '' : 'disabled'}>Take back control</button></div>${un.ok ? '' : `<p class="soft small">${esc(un.reason)}.</p>`}`;
     } else if (sim.canLease(state, i).ok) {
       const q = sim.leaseQuote(state, i);
-      body += `<details><summary>Lease to local operators</summary><p class="soft small">Today it earns you about ${money(q.taxNow)} in tax and costs ${money(q.upkeep)} upkeep. Leased, residents staff it and pay its own upkeep - you only collect the share you set below, up to ${Math.round(LEASE_TAX_MAX * 100)}%, and can route part of that straight into a ring-fenced upgrade fund instead of ordinary money. You can't hire, upgrade or pick what it makes there while it's leased, and can't take it back for ${LEASE_MIN_DAYS} days.</p>
+      body += `<details data-key="lease-${i}" ${openDetails.has(`lease-${i}`) ? 'open' : ''}><summary>Lease to local operators</summary><p class="soft small">Today it earns you about ${money(q.taxNow)} in tax and costs ${money(q.upkeep)} upkeep. Leased, residents staff it and pay its own upkeep - you only collect the share you set below, up to ${Math.round(LEASE_TAX_MAX * 100)}%, and can route part of that straight into a ring-fenced upgrade fund instead of ordinary money. You can't hire, upgrade or pick what it makes there while it's leased, and can't take it back for ${LEASE_MIN_DAYS} days.</p>
         <form id="lease-form" data-tile="${i}" class="mk-form">
           <label class="field"><span>Your share of the tax (0-${Math.round(LEASE_TAX_MAX * 100)}%)</span><input name="share" type="number" min="0" max="${Math.round(LEASE_TAX_MAX * 100)}" value="50" required></label>
           <label class="field"><span>Of that, save towards upgrades (0-100%)</span><input name="save" type="number" min="0" max="100" value="0" required></label>
@@ -2890,7 +2894,7 @@ function ownTile(i) {
         </form></details>`;
     }
     if (!leased && sim.canRentOut(state, i).ok && sim.unlocked(state, 'market')) {
-      body += `<details><summary>Rent to another mayor</summary>
+      body += `<details data-key="rent-${i}" ${openDetails.has(`rent-${i}`) ? 'open' : ''}><summary>Rent to another mayor</summary>
         <p class="soft small">Post it on the Market. Another mayor pays the whole term up front; their city then gets a fixed amount of one thing this makes, every day, for as long as it runs. It can't be picked, leased or re-rented here while it's out.</p>
         <form id="rent-form" data-tile="${i}" class="mk-form">
           <label class="field"><span>What</span><select name="res">${Object.entries(PICKS[t]).map(([id, p]) => `<option value="${id}">${p.name}</option>`).join('')}</select></label>
@@ -2936,7 +2940,7 @@ function ownTile(i) {
         <small>${Object.entries(p.makes).map(([r, n]) => `${n} ${RES[r].name.toLowerCase()}`).join(' and ')} in ${p.hours} hour${p.hours === 1 ? '' : 's'}${p.cost ? `, needs a $${p.cost} seed` : ''}.${!check.ok && !picked ? ` ${esc(check.reason)}.` : ''}</small></span>
         ${picked ? '<span class="tag">Picked</span>' : `<button class="btn ${check.ok ? 'primary' : ''}" type="button" data-do="start-batch" data-arg="${id}" ${check.ok ? '' : 'disabled'}>Pick</button>`}</li>`;
     }).join('')}</ul>`;
-    for (const [g, entries] of groups) body += g ? `<details><summary>${esc(g)}</summary>${list(entries)}</details>` : list(entries);
+    for (const [g, entries] of groups) body += g ? `<details data-key="picks-${i}-${g}" ${openDetails.has(`picks-${i}-${g}`) ? 'open' : ''}><summary>${esc(g)}</summary>${list(entries)}</details>` : list(entries);
   }
   if (d.makesProducts) {
     const recId = state.rec?.[i] || null, rec = recId && PRODUCTS[recId];
@@ -3182,8 +3186,15 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 2.1';
+const VERSION = 'Commons 2.2';
 const CHANGELOG = [
+  ['2.2', [
+    'Fixed a real bug: a building that fully decayed while the city was broke could get stuck at 0% condition forever, even once you were solvent again - earning and costing nothing. It now repairs like anything else once you can afford it.',
+    'Fixed the Lease/Rent panel closing itself right after you opened it.',
+    'A new city now starts with 10 settlers, up from 6.',
+    'Building now really needs wood in stock, not just money - except the Sawmill itself, so you can always build your way out of a shortage (or buy some on the Exchange).',
+    'The Materials chip now shows a log instead of a present; the old Food chip is now a house showing how many people are actually fed by a grocer, out of your population.',
+  ]],
   ['2.1', [
     'Oak and cedar (Sawmill) and iron, gold and diamonds (Quarry) now need their own research first - Forestry and Prospecting.',
     'Leasing a building now lets you set your own share of its workers’ tax, up to 60% - not a fixed 50/50 - and change it any time. Part of your share can go straight into a new ring-fenced upgrade fund instead of ordinary money, which the Upgrade button spends from first.',

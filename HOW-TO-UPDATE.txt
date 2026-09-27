@@ -104,3 +104,13 @@ main"):
          and save part of it into a ring-fenced fund that only pays for
          upgrades. No firestore.rules change. Another fresh start
          (WORLD_ID is now s1).
+   2.2   Fixed a real bug: a building that fully decayed to 0% while the
+         city was broke could get stuck there forever - earning and
+         costing nothing - even once you were solvent again; it repairs
+         normally now. The Lease/Rent panel no longer closes itself right
+         after opening. New cities start with 10 settlers (was 6).
+         Building now really needs wood in stock, not just money (except
+         the Sawmill, which you can always build to get more). The
+         Materials icon is now a log, not a present; the old Food chip
+         is now a house showing how many people are actually fed by a
+         grocer. No firestore.rules change, no world reset.

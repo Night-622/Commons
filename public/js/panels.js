@@ -128,7 +128,7 @@ const progHtml = (p) => {
 // A row you can click to see how, with live progress where it's a count. `key` keeps each row's open/closed
 // state distinct between the hall path and the milestone list, since both can have the same goal id.
 const howRow = (key, text, how, prog, open) =>
-  `<details class="ghow" data-goal="${key}" ${open.has(key) ? 'open' : ''}><summary id="how-${key}"><span class="glabel">${text}</span>${prog}</summary><p class="soft small">${esc(how)}</p></details>`;
+  `<details class="ghow" data-key="${key}" ${open.has(key) ? 'open' : ''}><summary id="how-${key}"><span class="glabel">${text}</span>${prog}</summary><p class="soft small">${esc(how)}</p></details>`;
 // The town hall: how big the city is, what the next level needs, and what it brings.
 export function hallHtml(hs, open = new Set()) {
   const cur = HALL_LEVELS[hs.level];

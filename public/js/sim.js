@@ -116,7 +116,7 @@ export function newCity(name, rng = Math.random) {
   for (const c of START_CHUNKS) land[c] = 1;
   const s = {
     v: 4, name, grid, cond, lv: new Array(N).fill(1), land, queue: [], money: START_MONEY, res: { ...STARTING_RES }, people: [], nextId: 1, hall: 0, hallDone: {},
-    happiness: 0.65, hour: 0, day: 0, peakPop: 6, unpaidDays: 0, waterShortDays: 0, trafficBadDays: 0, debtDays: 0, cityNo: 1, status: 'alive', lastTick: Date.now(),
+    happiness: 0.65, hour: 0, day: 0, peakPop: 10, unpaidDays: 0, waterShortDays: 0, trafficBadDays: 0, debtDays: 0, cityNo: 1, status: 'alive', lastTick: Date.now(),
     goalsDone: [], history: [], log: [], links: 0, flags: {}, graves: 0, cases: 0, clock: 1, wants: [], zone: new Array(N).fill(0), bday: new Array(N).fill(-1), protect: [],
     policy: { tax: 1, funding: 1, freeTransit: false },
     counters: { births: 0, deaths: 0, graduates: 0, crimes: 0, cases: 0, treated: 0, arrivals: 0, departures: 0, built: 0, land: 0, moved: 0 },
@@ -127,7 +127,7 @@ export function newCity(name, rng = Math.random) {
   settle(s, rng);
   return s;
 }
-// The first settlers: a family of three and three others, all living above the hall.
+// The first settlers: a family of three and seven others, all living above the hall.
 function settle(s, rng) {
   const l = Math.floor(rng() * SURNAMES.length);
   const a = person(s, { f: 23, l, a: 33, e: 3, sp: 10 });
@@ -138,6 +138,11 @@ function settle(s, rng) {
   person(s, { f: 7, l: l2, a: 40, e: 1, sp: 10 });
   person(s, { f: 8, l: (l + 13) % SURNAMES.length, a: 26, e: 2, sp: 10 });
   person(s, { f: 37, l: l2, a: 22, e: 0, sp: 4 });
+  const l3 = (l + 20) % SURNAMES.length;
+  person(s, { f: 12, l: l3, a: 29, e: 2, sp: 10 });
+  person(s, { f: 44, l: (l + 5) % SURNAMES.length, a: 35, e: 1, sp: 10 });
+  person(s, { f: 51, l: (l + 9) % SURNAMES.length, a: 19, e: 0, sp: 4 });
+  person(s, { f: 60, l: l3, a: 45, e: 2, sp: 10 });
   s._plan = null;
 }
 
@@ -1765,8 +1770,12 @@ export function canPlace(s, i, type) {
   if (B[type].flat && ter === 1) return { ok: false, reason: `A ${B[type].name.toLowerCase()} needs flat land, not a hill.` };
   const a = availability(s, type);
   if (!a.ok) return { ok: false, reason: a.reason + '.' };
-  const cost = buildPrice(s, i, type).money;
-  if (s.money < cost) return { ok: false, reason: `${ter === 2 ? 'A bridge here' : ter === 1 ? 'Building on a hill' : 'It'} costs $${cost}.` };
+  const price = buildPrice(s, i, type);
+  // Wood is a real, required ingredient for buildings (not roads/rail/paths) - not just a discount - except for
+  // the Sawmill itself, so a city that ever runs dry can always rebuild the thing that gets it wood again (or
+  // buy some on the Exchange).
+  if (B[type].cat && type !== T.MATERIALS && stockOf(s, 'wood') < 1) return { ok: false, reason: 'Needs wood in stock. Cut some at a Sawmill, or buy it on the Exchange.' };
+  if (s.money < price.money) return { ok: false, reason: `${ter === 2 ? 'A bridge here' : ter === 1 ? 'Building on a hill' : 'It'} costs $${price.money}.` };
   return { ok: true };
 }
 
@@ -2192,10 +2201,13 @@ function daily(s, plan, rng) {
   if (st.savingsGain) s.savings = Math.round(((s.savings || 0) + st.savingsGain) * 100) / 100;
 
   // Maintenance. A leased building always keeps itself in repair - that's part of what leasing buys you.
+  // Includes fully-decayed (cond 0) tiles too: a building that decayed all the way while the city was broke
+  // must still be able to repair once it's solvent again, or it's stuck derelict - earning nothing, costing
+  // nothing, forever - the moment its condition hits exactly 0.
   const buildings = [], leased = [];
   for (let i = 0; i < N; i++) {
     const t = s.grid[i];
-    if (!B[t]?.cat || t === T.HALL || uc.has(i) || s.cond[i] <= 0) continue;
+    if (!B[t]?.cat || t === T.HALL || uc.has(i)) continue;
     (s.lease?.[i]?.k === 'civ' ? leased : buildings).push(i);
   }
   for (const i of leased) s.cond[i] = Math.min(100, s.cond[i] + 5);
@@ -2564,7 +2576,7 @@ export function rebuild(s, name, money = REBUILD_MONEY) {
   s.cond[HALL_INDEX] = 100;
   Object.assign(s, {
     name: name || s.name, queue: [], money, res: { ...STARTING_RES }, history: [], log: [], flags: {}, people: [], nextId: 1, graves: 0, cases: 0, batches: {}, lease: {}, leasesIn: [], leasesOut: [], savings: 0,
-    happiness: 0.65, hour: 0, day: 0, peakPop: 6, unpaidDays: 0, waterShortDays: 0, trafficBadDays: 0, debtDays: 0, cityNo: s.cityNo + 1, status: 'alive', goalsDone: [],
+    happiness: 0.65, hour: 0, day: 0, peakPop: 10, unpaidDays: 0, waterShortDays: 0, trafficBadDays: 0, debtDays: 0, cityNo: s.cityNo + 1, status: 'alive', goalsDone: [],
   });
   settle(s, Math.random);
 }

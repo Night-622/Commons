@@ -16,7 +16,7 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
 // ---- a new city
 {
   const s = sim.newCity('Test', rng);
-  assert.equal(s.people.length, 6, 'six settlers');
+  assert.equal(s.people.length, 10, 'ten settlers');
   assert.equal(s.money, START_MONEY);
   assert.deepEqual(s.res, STARTING_RES, 'starts with enough to build and trade straight away');
   assert(sim.owns(s, sim.HALL_INDEX), 'owns the hall');
@@ -82,7 +82,7 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert.equal(rec.outcome, 'moved');
   assert.equal(s.people.length, 0);
   sim.rebuild(s, 'Again', 999);
-  assert.equal(s.people.length, 6);
+  assert.equal(s.people.length, 10);
   assert.equal(s.money, 999);
   console.log('actions ok');
 }
@@ -102,13 +102,13 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
 {
   seed = 11;
   const s = sim.newCity('Transit', rng);
-  s.money = 50000; s.land.fill(1);
+  s.money = 50000; s.res.wood = 5000; s.land.fill(1);
   for (let x = 2; x <= 21; x++) put(s, x, c + 1, T.ROAD);
   for (let x = 2; x <= 21; x++) put(s, x, 3, T.RAIL);
   for (let y = 4; y <= c; y++) { put(s, 2, y, T.ROAD); put(s, 21, y, T.ROAD); }
   for (const x of [3, 4, 5, 6, 7, 8]) put(s, x, c + 2, T.HOUSE);
   for (const x of [17, 18, 19, 20]) put(s, x, c + 2, T.WORK);
-  put(s, 10, c + 2, T.DEPOT); put(s, 11, c + 2, T.SHOP);
+  put(s, 10, c + 2, T.DEPOT); put(s, 11, c + 2, T.SHOP); put(s, 9, c + 2, T.WATER);
   for (let h = 0; h < 24 * 8; h++) sim.tick(s, rng);
   finishAll(s);
   put(s, 3, 4, T.STATION); put(s, 20, 4, T.STATION); put(s, 5, c, T.STOP); put(s, 18, c, T.STOP);
@@ -429,8 +429,12 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = [];
   const shop = sim.idx(c + 1, c + 2), lib = sim.idx(c + 3, c + 2);
   sim.plan(s, rng);
-  // Recruit a librarian from outside: costs money, fills the job, and they stay put.
+  // Recruit a librarian from outside: costs money, fills the job, and they stay put. With this many starting
+  // settlers, the daily plan may have already filled the library's slots with residents - free one up first so
+  // there's an open job to recruit into, same as when the town has fewer idle qualified locals.
   const libJob = B[T.LIBRARY].jobs.findIndex(([, e]) => e >= 2);
+  const incumbent = s.people.find((p) => p.j === lib && p.jt === libJob);
+  if (incumbent) assert(sim.fire(s, incumbent.i).ok, 'free up the library job first');
   const before = s.money, n = s.people.length;
   const r = sim.recruit(s, lib, libJob, rng);
   assert(r.ok, 'recruit: ' + r.reason);
@@ -762,12 +766,43 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert.equal(s3.status, 'ruins', `no water for ${COLLAPSE_WATER_DAYS} days running falls, once past ${COLLAPSE_POP} people`);
   console.log('more ways to fall ok: debt and drought both end a city after a run of bad days, and both reset when fixed');
 }
+// ---- a building that has fully decayed still repairs once the city is solvent again. (A real bug: the
+// Maintenance repair loop excluded any tile already at cond 0 from ever being considered again, so a building
+// that decayed all the way during a broke period stayed stuck derelict - earning and costing nothing - forever,
+// even with plenty of money in the bank afterwards.)
+{
+  seed = 121;
+  const s = sim.newCity('Derelict', rng); s.money = 20000;
+  put(s, 8, c, T.SHOP);
+  finishAll(s);
+  const shop = sim.idx(8, c);
+  s.cond[shop] = 0;
+  for (let h = 0; h < 24; h++) sim.tick(s, rng);
+  assert(s.cond[shop] > 0, `a fully-decayed building repairs once solvent: cond ${s.cond[shop]}`);
+  console.log('derelict repair ok: a building stuck at 0% condition climbed back to', s.cond[shop]);
+}
+// ---- wood is a real construction ingredient, not just a discount on the price
+{
+  seed = 131;
+  const s = sim.newCity('Lumberless', rng); s.money = 50000; s.land.fill(1);
+  s.res.wood = 0;
+  assert(!sim.canPlace(s, sim.idx(8, c), T.SHOP).ok, 'no wood in stock, so no building it');
+  assert.equal(sim.place(s, sim.idx(8, c), T.SHOP).ok, false, 'place refuses it too');
+  // The Sawmill is exempt - you can always build the thing that gets you wood again, even at zero.
+  assert(sim.canPlace(s, sim.idx(8, c), T.MATERIALS).ok, 'a Sawmill can still go up with no wood on hand');
+  // Buying a little wood on the Exchange unblocks ordinary building again.
+  assert(sim.buyResource(s, 'pine', 5).ok, 'buy some wood');
+  const r = sim.place(s, sim.idx(8, c), T.SHOP);
+  assert(r.ok, r.reason);
+  assert(r.wood > 0, 'the build actually spent some of it: ' + JSON.stringify(r));
+  console.log('wood requirement ok: no stock blocks building (except the Sawmill), buying some unblocks it');
+}
 // ---- picking what to make: banking a cap of loads, a spent seed, cancelling, and surviving bulldoze/move
 {
   seed = 111;
   const s = sim.newCity('Picker', rng); s.money = 20000; s.land.fill(1);
   for (let x = 2; x <= 16; x++) put(s, x, c + 1, T.ROAD);
-  [T.HOUSE, T.HOUSE, T.HOUSE, T.HOUSE, T.FARM, T.GREENHOUSE].forEach((t, k) => put(s, 3 + k * 2, c + 2, t));
+  [T.HOUSE, T.HOUSE, T.HOUSE, T.HOUSE, T.FARM, T.GREENHOUSE, T.WATER].forEach((t, k) => put(s, 3 + k * 2, c + 2, t));
   finishAll(s);
   for (let k = 0; k < 20; k++) s.people.push({ ...s.people[0], i: 900 + k, j: -1 });
   const farm = sim.idx(11, c + 2), gh = sim.idx(13, c + 2);
