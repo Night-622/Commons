@@ -1,5 +1,5 @@
 // HTML for the side drawer and the build catalogue. Pure functions: main.js supplies data and wires up buttons.
-import { REGIONAL, ALLIANCE_TRADE, REACTIONS, T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY, BONDS, INSURANCE, TECH, ERAS, TRAITS, CARBON_TAX, LOANS, LOAN_DAYS, CONGESTION_FEE, BADGES, RES, FOOD, TECH_BRANCHES, STORE_BASE, TRADE_RES, PRODUCTS, PRODUCT_IDS, RAW_GOODS, MARKET, USE, EXCHANGE, STOCK, HALL_LEVELS, FEATURE_NEEDS, PICKS, KIND_NAME, KIND_IDS } from './constants.js';
+import { REGIONAL, ALLIANCE_TRADE, REACTIONS, T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY, BONDS, INSURANCE, TECH, ERAS, TRAITS, CARBON_TAX, LOANS, LOAN_DAYS, CONGESTION_FEE, BADGES, RES, FOOD, TECH_BRANCHES, STORE_BASE, TRADE_RES, PRODUCTS, PRODUCT_IDS, RAW_GOODS, MARKET, USE, EXCHANGE, STOCK, HALL_LEVELS, FEATURE_NEEDS, PICKS, KIND_NAME, KIND_IDS, LEASE_TAX_SHARE, LEASE_MIN_DAYS } from './constants.js';
 import { t as tr } from './i18n.js';
 import { creditRating, greenShare, traitOf, hasTech, canResearch, eraOf, resourceStock, matCost, goalProgress } from './sim.js';
 import { ROLES, roleOf, jobText, family, healthText, moodReasons, thought, personName } from './people.js';
@@ -286,6 +286,7 @@ export function statsPanel(ctx, tab) {
     if (by.tolls) inRows.push(['Congestion charge', by.tolls, `${st.cars || 0} car trips`]);
     if (by.recycling) inRows.push(['Recycling sold', by.recycling, 'Sorted rubbish from recycling centres']);
     if (by.property) inRows.push(['Property tax', by.property, 'Scaled by land value where people live']);
+    if (by.leased) inRows.push(['Leased to local operators', by.leased, `${pct(LEASE_TAX_SHARE)} of their workers' tax; they staff it and pay its upkeep themselves`]);
     const outRows = Object.entries(up).sort((a, b) => b[1] - a[1]).map(([t, v]) => [{ loan: 'Loan repayment', pensions: `Pensions (${st.retirees || 0} retirees)`, insurance: 'Disaster insurance', bonds: 'City bonds' }[t] || B[t]?.name || t, v]);
     const rating = creditRating(s), terms = LOANS[rating];
     const bank = s.loan?.left > 0

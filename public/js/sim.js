@@ -9,7 +9,7 @@ import {
   SEASONS, SEASON_DAYS, YEAR_DAYS, UTILITY_POP, DECISIONS, ELECTION_EVERY, ZONES, ZONE_COST,
   HALL_LEVELS, FEATURE_NEEDS, MAT_PER_COST, MAT_BUY, HARVEST, EXCHANGE, PER_CAPITA, STOCK, TRADE_RES, MARKET, RES, FOOD, USE, STORE_BASE, SURPLUS_SALE, MATERIALS_BOOST, MATERIALS_PER_WORK, PLOT_BUY_PARCELS, PLOT_BUY_STEP, PLOT_BUY_MIN, BUILD_SPEED, RECRUIT_COST, FIRED_DAYS, ADULT_STUDY_YEARS, TRAINING_YEARS, EDU, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
   PRODUCTS, PRODUCT_IDS, FACTORY_BATCHES, STORE_SALE_SHARE, RAW_GOODS, STARTING_RES, BRICK_DISCOUNT,
-  kindOf, KIND_IDS, PICKS, BATCH_CAP,
+  kindOf, KIND_IDS, PICKS, BATCH_CAP, LEASE_TAX_SHARE, LEASE_MIN_DAYS, LEASE_CATS,
 } from './constants.js';
 // Products (and raw resources) can be posted or taken on the player-to-player Market; only raw resources trade
 // instantly on the world Exchange (worldPrices/buyResource/sellResource below).
@@ -185,6 +185,7 @@ export function migrate(s, rng = Math.random) {
   if (!s.zone) s.zone = new Array(N).fill(0);
   if (!s.wants) s.wants = [];
   if (!s.batches || typeof s.batches !== 'object' || Array.isArray(s.batches)) s.batches = {};
+  if (!s.lease || typeof s.lease !== 'object' || Array.isArray(s.lease)) s.lease = {};
   if (!s.clock) {
     // Line this city up with the world clock, keeping any time it still has to catch up on.
     const now = Date.now(), due = Math.max(0, Math.floor((now - s.lastTick) / TICK_MS));
@@ -399,6 +400,7 @@ export function productsDay(s, uc) {
 // Assign (or clear, with id null) the recipe a factory runs.
 export function setRecipe(s, i, id) {
   if (s.grid[i] !== T.FACTORY) return { ok: false, reason: 'That’s not a factory' };
+  if (s.lease?.[i]?.k === 'civ') return { ok: false, reason: 'Leased: its operator picks its own recipe' };
   if (id !== null) {
     if (!PRODUCTS[id]) return { ok: false, reason: 'Unknown product' };
     if (!hasTech(s, PRODUCTS[id].tech)) return { ok: false, reason: 'Research that first' };
@@ -471,6 +473,53 @@ function advanceBatches(s, uc = underConstruction(s)) {
     while (b.p >= b.h && b.ready < cap) { b.p -= b.h; b.ready++; }
     if (b.ready >= cap) b.p = Math.min(b.p, b.h);
   }
+}
+
+// ---------- leasing a building to local operators ----------
+export const leaseOf = (s, i) => s.lease?.[i] || null;
+export function canLease(s, i) {
+  if (s.status !== 'alive') return { ok: false, reason: 'This city has fallen' };
+  const t = s.grid[i], d = B[t];
+  if (!d?.jobs || !LEASE_CATS.includes(d.cat)) return { ok: false, reason: 'This can’t be leased' };
+  if (s.zone?.[i]) return { ok: false, reason: 'Developer-built: it already pays no upkeep' };
+  if (s.queue.some((q) => q.i === i)) return { ok: false, reason: 'Wait until it’s finished' };
+  if (s.cond[i] <= 0) return { ok: false, reason: 'Repair it first' };
+  if (s.lease?.[i]) return { ok: false, reason: 'Already leased' };
+  return { ok: true };
+}
+// Lease it to residents: they staff and run it themselves, and you collect a smaller cut of its wage tax
+// instead of paying its upkeep.
+export function lease(s, i) {
+  const check = canLease(s, i);
+  if (!check.ok) return check;
+  s.lease ||= {};
+  s.lease[i] = { k: 'civ', d: s.day };
+  s._plan = null;
+  return { ok: true };
+}
+export function canUnlease(s, i) {
+  const l = s.lease?.[i];
+  if (!l || l.k !== 'civ') return { ok: false, reason: 'Not leased' };
+  const left = LEASE_MIN_DAYS - (s.day - l.d);
+  if (left > 0) return { ok: false, reason: `Wait ${left} more day${left === 1 ? '' : 's'}` };
+  return { ok: true };
+}
+export function unlease(s, i) {
+  const check = canUnlease(s, i);
+  if (!check.ok) return check;
+  delete s.lease[i];
+  s._plan = null;
+  return { ok: true };
+}
+// What leasing (or taking back) this building actually changes day to day, for the confirmation modal.
+export function leaseQuote(s, i) {
+  const d = B[s.grid[i]], moodK = clamp((s.happiness - 0.1) / 0.6) * (s.policy?.tax || 1);
+  const wageOf = (req) => (req >= 3 ? WAGE[2] : req >= 1 ? WAGE[1] : WAGE[0]);
+  let taxNow = 0;
+  for (const p of s.people) if (p.j === i && !p.ill && !p.oj) taxNow += wageOf(d.jobs[p.jt][1]) * moodK;
+  taxNow = Math.round(taxNow);
+  const taxLeased = Math.round(taxNow * LEASE_TAX_SHARE), upkeep = Math.round(d.upkeep * LEVEL.upkeep[level(s, i)]);
+  return { taxNow, taxLeased, upkeep, delta: taxLeased - taxNow + upkeep };
 }
 // ---------- the town hall: how big the city is ----------
 // How each objective is checked. `x` has what the city can't know by itself: its alliance and how many cities
@@ -1026,6 +1075,7 @@ const openSlot = (s, i, k) => jobSlots(s, i)[k] - s.people.filter((p) => p.j ===
 export function hire(s, pid, i, k) {
   const p = s.people.find((x) => x.i === pid), d = B[s.grid[i]];
   if (!p || !d?.jobs?.[k] || !active(s, i)) return { ok: false, reason: 'No such job' };
+  if (s.lease?.[i]?.k === 'civ') return { ok: false, reason: 'Leased: its operator hires its own staff' };
   if (!canWork(p)) return { ok: false, reason: `${personName(p)} can’t work right now` };
   if (p.e < d.jobs[k][1]) return { ok: false, reason: `Needs ${EDU[d.jobs[k][1]].toLowerCase()}` };
   if (p.j === i && p.jt === k && !p.oj) return { ok: false, reason: 'Already works there' };
@@ -1057,6 +1107,7 @@ export function recruitCost(s, i, k) { return RECRUIT_COST[B[s.grid[i]]?.jobs?.[
 export function recruit(s, i, k, rng = Math.random) {
   const d = B[s.grid[i]];
   if (!d?.jobs?.[k] || !active(s, i)) return { ok: false, reason: 'No such job' };
+  if (s.lease?.[i]?.k === 'civ') return { ok: false, reason: 'Leased: its operator hires its own staff' };
   if (openSlot(s, i, k) <= 0) return { ok: false, reason: 'No open job there' };
   const cost = recruitCost(s, i, k);
   if (s.money < cost) return { ok: false, reason: `Needs $${cost}` };
@@ -1082,7 +1133,8 @@ export function autoFill(s, i = null, { dry = false } = {}) {
   if (s.status !== 'alive') return { ok: false, reason: 'This city has fallen.' };
   const uc = underConstruction(s);
   if (i != null && !B[s.grid[i]]?.jobs) return { ok: false, reason: 'No jobs here' };
-  const buildings = i != null ? [i] : (() => { const out = []; for (let j = 0; j < N; j++) if (B[s.grid[j]]?.jobs && active(s, j, uc)) out.push(j); return out; })();
+  if (i != null && s.lease?.[i]?.k === 'civ') return { ok: false, reason: 'Leased: its operator hires its own staff' };
+  const buildings = i != null ? [i] : (() => { const out = []; for (let j = 0; j < N; j++) if (B[s.grid[j]]?.jobs && active(s, j, uc) && s.lease?.[j]?.k !== 'civ') out.push(j); return out; })();
   const slots = [];
   for (const j of buildings) { const d = B[s.grid[j]]; for (let k = 0; k < d.jobs.length; k++) for (let n = 0; n < openSlot(s, j, k); n++) slots.push({ j, k, need: d.jobs[k][1] }); }
   slots.sort((a, b) => b.need - a.need);
@@ -1129,7 +1181,7 @@ export function totals(s, uc = underConstruction(s)) {
     t.counts[type] = (t.counts[type] || 0) + 1;
     if (!d.cat && type !== T.HALL) { t.upkeep += d.upkeep; t.upkeepBy[type] = (t.upkeepBy[type] || 0) + d.upkeep; if (type === T.ROAD) t.roads++; continue; }
     if (condFactor(s, i) === 0) continue;
-    const up = s.zone?.[i] ? 0 : d.upkeep * LEVEL.upkeep[level(s, i)];
+    const up = s.zone?.[i] || s.lease?.[i]?.k === 'civ' ? 0 : d.upkeep * LEVEL.upkeep[level(s, i)];
     t.upkeep += up;
     t.upkeepBy[type] = (t.upkeepBy[type] || 0) + up;
     t.homes += homeCap(s, i);
@@ -1660,6 +1712,7 @@ export function place(s, i, type) {
   s.money -= cost;
   const took = { ...(price.wood ? takeKind(s, 'wood', price.wood) : {}), ...(price.metal ? takeKind(s, 'metal', price.metal) : {}) };
   if (s.zone) s.zone[i] = 0;   // your own buildings are public: you pay their upkeep
+  if (s.lease) delete s.lease[i];
   s.grid[i] = type;
   s.cond[i] = 0;
   s.lv[i] = 1;
@@ -1693,6 +1746,7 @@ export function canUpgrade(s, i) {
   const t = s.grid[i];
   if (s.status !== 'alive') return { ok: false, reason: 'This city has fallen.' };
   if (!UPGRADABLE.includes(t)) return { ok: false, reason: 'This can’t be upgraded.' };
+  if (s.lease?.[i]) return { ok: false, reason: 'Leased: take it back first.' };
   if (s.queue.some((q) => q.i === i)) return { ok: false, reason: 'Builders are already working here.' };
   if (level(s, i) >= MAX_LEVEL) return { ok: false, reason: 'Already at the top level.' };
   if (s.cond[i] < 60) return { ok: false, reason: 'Repair it first: condition must be 60% or more.' };
@@ -1747,6 +1801,7 @@ export function bulldoze(s, i) {
   if (s.zone) s.zone[i] = 0;
   if (s.bday) s.bday[i] = -1;
   if (s.batches) delete s.batches[i];
+  if (s.lease) delete s.lease[i];
   s._plan = null;
   if (wasHistoric) { for (const p of s.people) p.m = clamp(p.m - 0.03); note(s, 'warn', `The old ${B[t].name.toLowerCase()} was pulled down. Some residents mourn a piece of the town’s history.`); }
   return { ok: true, refund, historic: wasHistoric };
@@ -1774,6 +1829,7 @@ export function moveBuilding(s, from, to) {
   s.grid[from] = T.EMPTY;
   if (s.bday) { s.bday[to] = s.day; s.bday[from] = -1; }   // a moved building starts its history again
   if (s.batches?.[from]) { s.batches[to] = s.batches[from]; delete s.batches[from]; }
+  if (s.lease?.[from]) { s.lease[to] = s.lease[from]; delete s.lease[from]; }
   for (const p of s.people) for (const k of ['h', 'j', 'sc', 'tu', 'fun']) if (p[k] === from) p[k] = to;
   s.counters.moved++;
   s._plan = null;
@@ -1982,12 +2038,14 @@ function daily(s, plan, rng) {
 
   // Money: tax from working people, scaled by mood, against upkeep that doesn't shrink.
   const moodK = clamp((s.happiness - 0.1) / 0.6) * (s.policy?.tax || 1);
-  const by = { basic: 0, skilled: 0, degree: 0, benefits: 0, trade: 0 };
+  const by = { basic: 0, skilled: 0, degree: 0, benefits: 0, trade: 0, leased: 0 };
   for (const p of s.people) {
     if (p.j >= 0 && !p.ill && p.oj) by[p.oj === 'rail' ? 'skilled' : 'basic'] += WAGE[p.oj === 'rail' ? 1 : 0] * moodK;
     else if (p.j >= 0 && !p.ill && B[s.grid[p.j]]?.jobs) {
-      const req = B[s.grid[p.j]].jobs[p.jt][1];
-      by[req >= 3 ? 'degree' : req >= 1 ? 'skilled' : 'basic'] += (req >= 3 ? WAGE[2] : req >= 1 ? WAGE[1] : WAGE[0]) * moodK;
+      const req = B[s.grid[p.j]].jobs[p.jt][1], w = (req >= 3 ? WAGE[2] : req >= 1 ? WAGE[1] : WAGE[0]) * moodK;
+      // A leased job pays its tax to whoever runs it: the mayor only collects a smaller cut, not the full wage.
+      if (s.lease?.[p.j]?.k === 'civ') by.leased += w * LEASE_TAX_SHARE;
+      else by[req >= 3 ? 'degree' : req >= 1 ? 'skilled' : 'basic'] += w;
     } else if (p.j < 0 && canWork(p)) by.benefits += 0.5 * moodK;
   }
   by.trade = TRADE_PER_LINK * Math.min(MAX_LINKS * 2, (s.links || 0) + 2 * (s.railLinks || 0)) * Math.min(1, pop / 30)
@@ -2027,14 +2085,14 @@ function daily(s, plan, rng) {
   for (const k in by) by[k] = Math.round(by[k]);
   st.byClass = by;
   st.upkeepBy = Object.fromEntries(Object.entries(tot.upkeepBy).map(([k, v]) => [k, Math.round(v)]));
-  if (s.flags.strike > 0) { for (const k of ['basic', 'skilled', 'degree']) by[k] = Math.round(by[k] * 0.7); s.flags.strike--; }
-  if (s.flags.fourday > 0) for (const k of ['basic', 'skilled', 'degree']) by[k] = Math.round(by[k] * 0.9);
+  if (s.flags.strike > 0) { for (const k of ['basic', 'skilled', 'degree', 'leased']) by[k] = Math.round(by[k] * 0.7); s.flags.strike--; }
+  if (s.flags.fourday > 0) for (const k of ['basic', 'skilled', 'degree', 'leased']) by[k] = Math.round(by[k] * 0.9);
   st.income = Object.values(by).reduce((a, b) => a + b, 0);
   const riders = (plan.riders?.bus || 0) + (plan.riders?.train || 0) + (plan.riders?.metro || 0);
   const service = Object.entries(tot.upkeepBy).reduce((a, [t, v]) => a + (B[t]?.cat && B[t].cat !== 'homes' && B[t].cat !== 'work' ? v : 0), 0);
   st.upkeep = Math.round(tot.upkeep + service * ((s.policy?.funding || 1) - 1) + (s.policy?.freeTransit ? riders * 0.5 : 0));
   if (s.policy?.insured) {
-    const n = s.grid.reduce((a, t, i) => a + (B[t]?.cat && s.cond[i] > 0 ? 1 : 0), 0), prem = Math.round(n * INSURANCE.premium);
+    const n = s.grid.reduce((a, t, i) => a + (B[t]?.cat && s.cond[i] > 0 && s.lease?.[i]?.k !== 'civ' ? 1 : 0), 0), prem = Math.round(n * INSURANCE.premium);
     st.upkeepBy = { ...st.upkeepBy, insurance: prem }; st.upkeep += prem;
   }
   if (s.bond?.left > 0) {
@@ -2059,12 +2117,14 @@ function daily(s, plan, rng) {
   }
   s.money += st.income - st.upkeep;
 
-  // Maintenance.
-  const buildings = [];
+  // Maintenance. A leased building always keeps itself in repair - that's part of what leasing buys you.
+  const buildings = [], leased = [];
   for (let i = 0; i < N; i++) {
     const t = s.grid[i];
-    if (B[t]?.cat && t !== T.HALL && !uc.has(i) && s.cond[i] > 0) buildings.push(i);
+    if (!B[t]?.cat || t === T.HALL || uc.has(i) || s.cond[i] <= 0) continue;
+    (s.lease?.[i]?.k === 'civ' ? leased : buildings).push(i);
   }
+  for (const i of leased) s.cond[i] = Math.min(100, s.cond[i] + 5);
   // A one-time lifeline: the first time a small town can't pay its bills, the region helps out.
   if (s.money < 0 && !s.flags.bailout && s.people.length < 80 && s.day >= GRACE_DAYS) {
     s.flags.bailout = s.day;
@@ -2420,7 +2480,7 @@ export function collapse(s, outcome = 'collapsed') {
     if (s.grid[i] !== T.EMPTY) { s.grid[i] = T.RUBBLE; s.cond[i] = 0; }
     s.lv[i] = 1;
   }
-  Object.assign(s, { queue: [], people: [], status: 'ruins', happiness: 0, cases: 0, _plan: null, batches: {} });
+  Object.assign(s, { queue: [], people: [], status: 'ruins', happiness: 0, cases: 0, _plan: null, batches: {}, lease: {} });
   return record;
 }
 
@@ -2428,7 +2488,7 @@ export function rebuild(s, name, money = REBUILD_MONEY) {
   s.grid[HALL_INDEX] = T.HALL;
   s.cond[HALL_INDEX] = 100;
   Object.assign(s, {
-    name: name || s.name, queue: [], money, res: { ...STARTING_RES }, history: [], log: [], flags: {}, people: [], nextId: 1, graves: 0, cases: 0, batches: {},
+    name: name || s.name, queue: [], money, res: { ...STARTING_RES }, history: [], log: [], flags: {}, people: [], nextId: 1, graves: 0, cases: 0, batches: {}, lease: {},
     happiness: 0.65, hour: 0, day: 0, peakPop: 6, unpaidDays: 0, waterShortDays: 0, trafficBadDays: 0, debtDays: 0, cityNo: s.cityNo + 1, status: 'alive', goalsDone: [],
   });
   settle(s, Math.random);

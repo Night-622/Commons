@@ -577,3 +577,8 @@ export const ELECTION_EVERY = 20;   // days between elections
 // Zones, SimCity-style: paint them and private developers build when there's demand. Zoned buildings cost you no upkeep.
 export const ZONES = { 1: { key: 'homes', name: 'Homes zone', col: 'rgba(63,167,103,0.30)' }, 2: { key: 'shops', name: 'Shops zone', col: 'rgba(59,125,221,0.28)' }, 3: { key: 'industry', name: 'Industry zone', col: 'rgba(240,150,58,0.30)' } };
 export const ZONE_COST = 2;   // per tile painted
+// Leasing one of your own buildings to local operators: you stop paying its upkeep, and it keeps itself in
+// repair even when the city is broke, but you only collect this share of the tax its workers pay - the rest is
+// the operator's margin for running it. Worth it when you can't staff or afford a building, not one already
+// earning its keep. LEASE_MIN_DAYS is how long before you can take it back.
+export const LEASE_TAX_SHARE = 0.5, LEASE_MIN_DAYS = 5, LEASE_CATS = ['work', 'fun'];

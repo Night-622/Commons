@@ -804,6 +804,39 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(!sim.batchAt(s, empty), 'bulldozing clears the batch');
   console.log('batches ok: banked', cap, 'loads, a spent greenhouse seed, cancel refunds, move and bulldoze both tidy up');
 }
+// ---- leasing a building to local operators: no upkeep, a smaller cut of the tax, self-repairs, can't be
+// managed directly, and can't be taken back before LEASE_MIN_DAYS
+{
+  seed = 121;
+  const s = sim.newCity('Landlord', rng); s.money = 20000; s.land.fill(1);
+  for (let x = 2; x <= 12; x++) put(s, x, c + 1, T.ROAD);
+  [T.HOUSE, T.HOUSE, T.HOUSE, T.HOUSE, T.SHOP].forEach((t, k) => put(s, 3 + k * 2, c + 2, t));
+  finishAll(s);
+  for (let k = 0; k < 20; k++) s.people.push({ ...s.people[0], i: 900 + k, j: -1 });
+  const shop = sim.idx(11, c + 2);
+  sim.plan(s, rng);
+  assert(sim.staffing(s, shop) > 0, 'the shop is staffed');
+  assert(!sim.canLease(s, sim.HALL_INDEX).ok, 'the town hall can’t be leased');
+  assert(sim.canLease(s, shop).ok, 'a staffed shop can be leased');
+  const q = sim.leaseQuote(s, shop);
+  assert(q.taxNow > 0 && q.taxLeased === Math.round(q.taxNow * 0.5), 'leasing halves the tax you collect');
+  assert(sim.lease(s, shop).ok, 'lease it');
+  assert(!sim.canLease(s, shop).ok, 'can’t lease it twice');
+  assert(!sim.hire(s, s.people[0].i, shop, 0).ok, 'hiring is refused once leased');
+  assert(!sim.canUpgrade(s, shop).ok, 'upgrading is refused once leased');
+  assert(!sim.autoFill(s, shop).ok, 'auto-fill skips a leased building');
+  assert(!sim.canUnlease(s, shop).ok, 'can’t take it back straight away');
+  s.cond[shop] = 20;
+  for (let h = 0; h < 24; h++) sim.tick(s, rng);
+  assert(s.cond[shop] > 20, 'a leased building repairs itself even though it pays no upkeep');
+  const before = s.stats.upkeepBy[T.SHOP] || 0;
+  assert(!before, 'no upkeep is charged for a leased shop');
+  s.day += 10;   // past LEASE_MIN_DAYS
+  assert(sim.canUnlease(s, shop).ok, 'can take it back after the wait');
+  assert(sim.unlease(s, shop).ok);
+  assert(sim.canLease(s, shop).ok, 'and lease it again once taken back');
+  console.log('leasing ok: half the tax, no upkeep, self-repairs, blocked from direct management, a minimum term');
+}
 // ---- every tradeable resource has a real price and a scarcity weight, or the exchange divides by zero
 {
   for (const k of TRADE_RES) {

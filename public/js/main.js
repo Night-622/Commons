@@ -4,7 +4,7 @@ import {
   REBUILD_MONEY, MOVE_KEEP, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome, DECISIONS, ZONES, ZONE_COST,
   LOAN_DAYS, HISTORIC_DAYS, BADGES, REGIONAL, REGIONAL_SHARE, ALLIANCE_TRADE, DAILY, DAILY_REWARD, WEEKLY, WEEKLY_REWARD, GIFT_LIMITS, REACTIONS,
   RES, FOOD, TRADE_RES, PRODUCTS, PRODUCT_IDS, RAW_GOODS, USE, HARVEST, MARKET, STOCK, HALL_LEVELS, TECH, STYLES, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
-  PICKS, BATCH_CAP,
+  PICKS, BATCH_CAP, LEASE_MIN_DAYS,
 } from './constants.js';
 import { Renderer, STRIDE, thumbnail, modelHeight } from './render.js';
 import { loadPrefs, savePrefs, applyPrefs, resolvedTheme, palette, PALETTES } from './prefs.js';
@@ -2700,6 +2700,26 @@ function inspectorAction(what, arg) {
     if (!r.ok) { notify(r.reason + '.', 'act'); return; }
     afterChange();
   }
+  else if (what === 'lease') {
+    const q = sim.leaseQuote(state, i);
+    openModal(`${closeX}<h2 id="modal-title">Lease this ${esc(B[state.grid[i]].name.toLowerCase())}?</h2>
+      <p>Residents will staff and run it themselves. You'll collect about ${money(q.taxLeased)} a day instead of ${money(q.taxNow)}, but pay no upkeep (was ${money(q.upkeep)}). You can't hire, upgrade or pick what it makes there while it's leased, and you can't take it back for ${LEASE_MIN_DAYS} days.</p>
+      <div class="mfoot"><button class="btn" data-close>Not now</button><button class="btn primary" id="lease-go">Lease it</button></div>`);
+    $('lease-go').onclick = () => {
+      checkpoint('leasing');
+      const r = sim.lease(state, i);
+      closeModal();
+      if (!r.ok) { notify(r.reason + '.', 'act'); play('error'); return; }
+      play('level'); notify('Leased to local operators.', 'act'); afterChange();
+    };
+    return;
+  }
+  else if (what === 'unlease') {
+    checkpoint('taking back control');
+    const r = sim.unlease(state, i);
+    if (!r.ok) { notify(r.reason + '.', 'act'); return; }
+    play('level'); notify('Back under your control.', 'act'); afterChange();
+  }
   else if (what === 'recruit') {
     const r = sim.recruit(state, i, +arg);
     if (!r.ok) { notify(r.reason + '.', 'act'); play('error'); return; }
@@ -2806,21 +2826,35 @@ function ownTile(i) {
   }
   const cond = t === T.HALL ? 100 : state.cond[i];
   const people = state.people;
+  const leased = sim.leaseOf(state, i);
   let body = `<p class="soft small">${esc(d.blurb || '')}</p>${state.zone[i] ? '<p class="good-t small">Built by developers in a zone: you pay no upkeep.</p>' : ''}`;
+  if (leased) body += `<p class="good-t small">Leased to local operators since day ${leased.d}: they staff it, run it and keep it in repair. You collect a share of their workers' tax instead of paying its upkeep.</p>`;
   if (d.jobs) {
     const slots = sim.jobSlots(state, i), staff = people.filter((p) => p.j === i && !p.oj);
     body += `<div class="kv"><span>Staff</span><b class="num">${staff.length} of ${slots.reduce((a, b) => a + b, 0)}</b></div>`;
-    const fillHere = sim.autoFill(state, i, { dry: true });
-    if (fillHere.ok && fillHere.filled) body += `<div class="actions"><button class="btn primary" type="button" data-do="autofill" data-arg="here">Fill ${fillHere.filled} job${fillHere.filled > 1 ? 's' : ''} from people who need work</button></div>
-      <p class="soft small">Only residents without a job, best-qualified fit first. Same as pressing Hire for each.</p>`;
-    d.jobs.forEach(([title, e], k) => {
-      const n = staff.filter((p) => p.jt === k).length;
-      if (n < slots[k]) body += `<div class="vacancy"><p class="soft small">${slots[k] - n} ${title.toLowerCase()} job${slots[k] - n > 1 ? 's' : ''} open${e ? `, needs ${EDU[e].toLowerCase()}` : ''}.</p>
-        <div class="actions"><button class="btn" type="button" data-do="hire" data-arg="${k}">Hire someone</button><button class="btn" type="button" data-do="recruit" data-arg="${k}">Recruit from outside, ${money(sim.recruitCost(state, i, k))}</button></div></div>`;
-    });
-    if (staff.length && t !== T.HALL) body += `<details class="staff"><summary>Manage staff</summary><ul>${staff.map((p) => `<li><span>${esc(sim.personName(p))} <small class="soft">${esc(d.jobs[p.jt][0].toLowerCase())}, ${EDU[p.e].toLowerCase()}</small></span><button class="btn small" type="button" data-do="fire" data-arg="${p.i}">Let go</button></li>`).join('')}</ul></details>`;
+    if (!leased) {
+      const fillHere = sim.autoFill(state, i, { dry: true });
+      if (fillHere.ok && fillHere.filled) body += `<div class="actions"><button class="btn primary" type="button" data-do="autofill" data-arg="here">Fill ${fillHere.filled} job${fillHere.filled > 1 ? 's' : ''} from people who need work</button></div>
+        <p class="soft small">Only residents without a job, best-qualified fit first. Same as pressing Hire for each.</p>`;
+      d.jobs.forEach(([title, e], k) => {
+        const n = staff.filter((p) => p.jt === k).length;
+        if (n < slots[k]) body += `<div class="vacancy"><p class="soft small">${slots[k] - n} ${title.toLowerCase()} job${slots[k] - n > 1 ? 's' : ''} open${e ? `, needs ${EDU[e].toLowerCase()}` : ''}.</p>
+          <div class="actions"><button class="btn" type="button" data-do="hire" data-arg="${k}">Hire someone</button><button class="btn" type="button" data-do="recruit" data-arg="${k}">Recruit from outside, ${money(sim.recruitCost(state, i, k))}</button></div></div>`;
+      });
+      if (staff.length && t !== T.HALL) body += `<details class="staff"><summary>Manage staff</summary><ul>${staff.map((p) => `<li><span>${esc(sim.personName(p))} <small class="soft">${esc(d.jobs[p.jt][0].toLowerCase())}, ${EDU[p.e].toLowerCase()}</small></span><button class="btn small" type="button" data-do="fire" data-arg="${p.i}">Let go</button></li>`).join('')}</ul></details>`;
+    }
     if (!staff.length && (d.school || d.care || d.visits || d.radius || d.cases)) body += '<p class="warn">Closed: nobody works here yet. It needs staff with the right education.</p>';
     body += faces(staff, 'Staff');
+  }
+  if (t !== T.HALL) {
+    if (leased) {
+      const un = sim.canUnlease(state, i);
+      body += `<div class="actions"><button class="btn" type="button" data-do="unlease" ${un.ok ? '' : 'disabled'}>Take back control</button></div>${un.ok ? '' : `<p class="soft small">${esc(un.reason)}.</p>`}`;
+    } else if (sim.canLease(state, i).ok) {
+      const q = sim.leaseQuote(state, i);
+      body += `<details><summary>Lease to local operators</summary><p class="soft small">Today it earns you about ${money(q.taxNow)} in tax and costs ${money(q.upkeep)} upkeep. Leased, residents run it themselves: you'd collect about ${money(q.taxLeased)} and pay nothing, and it repairs itself even when the city is broke - but you can't hire, upgrade or pick what it makes there, and you can't take it back for ${LEASE_MIN_DAYS} days. Worth it when you can't staff or afford it.</p>
+        <div class="actions"><button class="btn ${q.delta > 0 ? 'primary' : ''}" type="button" data-do="lease">Lease it${q.delta > 0 ? ` (+${money(q.delta)} a day)` : q.delta < 0 ? ` (${money(q.delta)} a day)` : ''}</button></div></details>`;
+    }
   }
   if (isHome(t)) body += row('Homes', `${people.filter((p) => p.h === i).length} of ${sim.homeCap(state, i)}`) + faces(people.filter((p) => p.h === i), 'Residents');
   if (d.school) body += row(d.school.stage === 'daycare' ? 'Places' : 'Seats', `${people.filter((p) => p.sc === i || p.tu === i).length} of ${sim.capacity(state, i, 'seats')}`) + faces(people.filter((p) => p.sc === i || p.tu === i), 'Pupils');
