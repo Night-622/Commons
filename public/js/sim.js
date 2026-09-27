@@ -9,7 +9,7 @@ import {
   SEASONS, SEASON_DAYS, YEAR_DAYS, UTILITY_POP, DECISIONS, ELECTION_EVERY, ZONES, ZONE_COST,
   HALL_LEVELS, FEATURE_NEEDS, MAT_PER_COST, MAT_BUY, HARVEST, EXCHANGE, PER_CAPITA, STOCK, TRADE_RES, MARKET, RES, FOOD, USE, STORE_BASE, SURPLUS_SALE, MATERIALS_BOOST, MATERIALS_PER_WORK, PLOT_BUY_PARCELS, PLOT_BUY_STEP, PLOT_BUY_MIN, BUILD_SPEED, RECRUIT_COST, FIRED_DAYS, ADULT_STUDY_YEARS, TRAINING_YEARS, EDU, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
   PRODUCTS, PRODUCT_IDS, FACTORY_BATCHES, STORE_SALE_SHARE, RAW_GOODS, STARTING_RES, BRICK_DISCOUNT,
-  kindOf, KIND_IDS, PICKS, BATCH_CAP, LEASE_TAX_SHARE, LEASE_MIN_DAYS, LEASE_CATS, RENT_MAX_DAYS, RENT_MAX_TOTAL,
+  kindOf, KIND_IDS, PICKS, BATCH_CAP, LEASE_TAX_MIN, LEASE_TAX_MAX, LEASE_TAX_DEFAULT, LEASE_SAVE_MAX, LEASE_MIN_DAYS, LEASE_CATS, RENT_MAX_DAYS, RENT_MAX_TOTAL,
 } from './constants.js';
 // Products (and raw resources) can be posted or taken on the player-to-player Market; only raw resources trade
 // instantly on the world Exchange (worldPrices/buyResource/sellResource below).
@@ -185,6 +185,7 @@ export function migrate(s, rng = Math.random) {
   if (!s.zone) s.zone = new Array(N).fill(0);
   if (!s.wants) s.wants = [];
   if (!s.batches || typeof s.batches !== 'object' || Array.isArray(s.batches)) s.batches = {};
+  if (!(s.savings >= 0)) s.savings = 0;
   if (!s.lease || typeof s.lease !== 'object' || Array.isArray(s.lease)) s.lease = {};
   if (!Array.isArray(s.leasesIn)) s.leasesIn = [];
   if (!Array.isArray(s.leasesOut)) s.leasesOut = [];
@@ -489,14 +490,26 @@ export function canLease(s, i) {
   if (s.lease?.[i]) return { ok: false, reason: 'Already leased' };
   return { ok: true };
 }
+const clampLeaseTerms = (share, save) => ({
+  share: clamp(share ?? LEASE_TAX_DEFAULT, LEASE_TAX_MIN, LEASE_TAX_MAX),
+  save: clamp(save ?? 0, 0, LEASE_SAVE_MAX),
+});
 // Lease it to residents: they staff and run it themselves, and you collect a smaller cut of its wage tax
-// instead of paying its upkeep.
-export function lease(s, i) {
+// instead of paying its upkeep. share is what fraction of that tax is yours (0..LEASE_TAX_MAX); save is what
+// fraction of your cut goes straight into the ring-fenced upgrade fund (s.savings) instead of ordinary money.
+export function lease(s, i, share = LEASE_TAX_DEFAULT, save = 0) {
   const check = canLease(s, i);
   if (!check.ok) return check;
   s.lease ||= {};
-  s.lease[i] = { k: 'civ', d: s.day };
+  s.lease[i] = { k: 'civ', d: s.day, ...clampLeaseTerms(share, save) };
   s._plan = null;
+  return { ok: true };
+}
+// Change the split on a lease already running - this isn't "taking it back", so LEASE_MIN_DAYS doesn't apply.
+export function setLeaseTerms(s, i, share, save) {
+  const l = s.lease?.[i];
+  if (!l || l.k !== 'civ') return { ok: false, reason: 'Not leased' };
+  Object.assign(l, clampLeaseTerms(share, save));
   return { ok: true };
 }
 export function canUnlease(s, i) {
@@ -540,15 +553,17 @@ function processRentals(s) {
     return false;
   });
 }
-// What leasing (or taking back) this building actually changes day to day, for the confirmation modal.
-export function leaseQuote(s, i) {
+// What leasing (or taking back) this building actually changes day to day, for the confirmation modal - share
+// defaults to the current lease's (or LEASE_TAX_DEFAULT for a new one) so the UI can preview other values live.
+export function leaseQuote(s, i, share) {
   const d = B[s.grid[i]], moodK = clamp((s.happiness - 0.1) / 0.6) * (s.policy?.tax || 1);
   const wageOf = (req) => (req >= 3 ? WAGE[2] : req >= 1 ? WAGE[1] : WAGE[0]);
+  const useShare = clamp(share ?? s.lease?.[i]?.share ?? LEASE_TAX_DEFAULT, LEASE_TAX_MIN, LEASE_TAX_MAX);
   let taxNow = 0;
   for (const p of s.people) if (p.j === i && !p.ill && !p.oj) taxNow += wageOf(d.jobs[p.jt][1]) * moodK;
   taxNow = Math.round(taxNow);
-  const taxLeased = Math.round(taxNow * LEASE_TAX_SHARE), upkeep = Math.round(d.upkeep * LEVEL.upkeep[level(s, i)]);
-  return { taxNow, taxLeased, upkeep, delta: taxLeased - taxNow + upkeep };
+  const taxLeased = Math.round(taxNow * useShare), upkeep = Math.round(d.upkeep * LEVEL.upkeep[level(s, i)]);
+  return { taxNow, taxLeased, upkeep, share: useShare, delta: taxLeased - taxNow + upkeep };
 }
 // ---------- the town hall: how big the city is ----------
 // How each objective is checked. `x` has what the city can't know by itself: its alliance and how many cities
@@ -730,6 +745,7 @@ export function reserve(s, offer, kind, res, qty, price, extra = {}) {
     const i = extra.tile, check = canRentOut(s, i), picks = picksAt(s, i);
     if (!check.ok) return check;
     if (!picks?.[res]) return { ok: false, reason: 'Pick something this building actually makes' };
+    if (picks[res].tech && !hasTech(s, picks[res].tech)) return { ok: false, reason: `Research ${TECH.find((t) => t.id === picks[res].tech)?.name} first` };
     if (!(Number.isInteger(qty) && qty >= 1 && qty <= RENT_MAX_DAYS)) return { ok: false, reason: `Between 1 and ${RENT_MAX_DAYS} days` };
     if (!(price > 0 && price <= RENT_MAX_TOTAL)) return { ok: false, reason: `Up to $${RENT_MAX_TOTAL} total` };
     const nominal = Math.round((picks[res].makes[res] / picks[res].hours) * 24 * 100) / 100;
@@ -1801,15 +1817,18 @@ export function canUpgrade(s, i) {
   if (level(s, i) >= MAX_LEVEL) return { ok: false, reason: 'Already at the top level.' };
   if (s.cond[i] < 60) return { ok: false, reason: 'Repair it first: condition must be 60% or more.' };
   const cost = upgradeCost(s, i);
-  if (s.money < cost) return { ok: false, reason: `Needs $${cost}.` };
+  if (s.money + (s.savings || 0) < cost) return { ok: false, reason: `Needs $${cost}.` };
   return { ok: true, cost };
 }
+// The ring-fenced upgrade fund (see lease's `save` share) pays first, ordinary money covers the rest.
 export function upgrade(s, i) {
   const check = canUpgrade(s, i);
   if (!check.ok) return check;
-  s.money -= check.cost;
+  const fromSavings = Math.min(s.savings || 0, check.cost);
+  s.savings = Math.round(((s.savings || 0) - fromSavings) * 100) / 100;
+  s.money -= check.cost - fromSavings;
   s.queue.push({ i, left: Math.round(B[s.grid[i]].work * 1.2), up: true, tap: 0 });
-  return { ok: true, cost: check.cost };
+  return { ok: true, cost: check.cost, fromSavings };
 }
 
 export function tapHelp(s, i) {
@@ -2089,12 +2108,15 @@ function daily(s, plan, rng) {
   // Money: tax from working people, scaled by mood, against upkeep that doesn't shrink.
   const moodK = clamp((s.happiness - 0.1) / 0.6) * (s.policy?.tax || 1);
   const by = { basic: 0, skilled: 0, degree: 0, benefits: 0, trade: 0, leased: 0 };
+  let savingsGain = 0;
   for (const p of s.people) {
     if (p.j >= 0 && !p.ill && p.oj) by[p.oj === 'rail' ? 'skilled' : 'basic'] += WAGE[p.oj === 'rail' ? 1 : 0] * moodK;
     else if (p.j >= 0 && !p.ill && B[s.grid[p.j]]?.jobs) {
       const req = B[s.grid[p.j]].jobs[p.jt][1], w = (req >= 3 ? WAGE[2] : req >= 1 ? WAGE[1] : WAGE[0]) * moodK;
-      // A leased job pays its tax to whoever runs it: the mayor only collects a smaller cut, not the full wage.
-      if (s.lease?.[p.j]?.k === 'civ') by.leased += w * LEASE_TAX_SHARE;
+      // A leased job pays its tax to whoever runs it: the mayor only collects the share they set, not the full
+      // wage, and can route part of that share straight into the upgrade fund instead of ordinary money.
+      const L = s.lease?.[p.j];
+      if (L?.k === 'civ') { const cut = w * (L.share ?? LEASE_TAX_DEFAULT); by.leased += cut * (1 - (L.save ?? 0)); savingsGain += cut * (L.save ?? 0); }
       else by[req >= 3 ? 'degree' : req >= 1 ? 'skilled' : 'basic'] += w;
     } else if (p.j < 0 && canWork(p)) by.benefits += 0.5 * moodK;
   }
@@ -2166,6 +2188,8 @@ function daily(s, plan, rng) {
     else { s.loan.left -= due; if (s.loan.left <= 0) { s.loan = null; s.flags.repaid = 1; note(s, 'good', 'The loan is paid off.'); } }
   }
   s.money += st.income - st.upkeep;
+  st.savingsGain = Math.round(savingsGain);
+  if (st.savingsGain) s.savings = Math.round(((s.savings || 0) + st.savingsGain) * 100) / 100;
 
   // Maintenance. A leased building always keeps itself in repair - that's part of what leasing buys you.
   const buildings = [], leased = [];
@@ -2531,7 +2555,7 @@ export function collapse(s, outcome = 'collapsed') {
     if (s.grid[i] !== T.EMPTY) { s.grid[i] = T.RUBBLE; s.cond[i] = 0; }
     s.lv[i] = 1;
   }
-  Object.assign(s, { queue: [], people: [], status: 'ruins', happiness: 0, cases: 0, _plan: null, batches: {}, lease: {}, leasesIn: [], leasesOut: [] });
+  Object.assign(s, { queue: [], people: [], status: 'ruins', happiness: 0, cases: 0, _plan: null, batches: {}, lease: {}, leasesIn: [], leasesOut: [], savings: 0 });
   return record;
 }
 
@@ -2539,7 +2563,7 @@ export function rebuild(s, name, money = REBUILD_MONEY) {
   s.grid[HALL_INDEX] = T.HALL;
   s.cond[HALL_INDEX] = 100;
   Object.assign(s, {
-    name: name || s.name, queue: [], money, res: { ...STARTING_RES }, history: [], log: [], flags: {}, people: [], nextId: 1, graves: 0, cases: 0, batches: {}, lease: {}, leasesIn: [], leasesOut: [],
+    name: name || s.name, queue: [], money, res: { ...STARTING_RES }, history: [], log: [], flags: {}, people: [], nextId: 1, graves: 0, cases: 0, batches: {}, lease: {}, leasesIn: [], leasesOut: [], savings: 0,
     happiness: 0.65, hour: 0, day: 0, peakPop: 6, unpaidDays: 0, waterShortDays: 0, trafficBadDays: 0, debtDays: 0, cityNo: s.cityNo + 1, status: 'alive', goalsDone: [],
   });
   settle(s, Math.random);

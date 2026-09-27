@@ -4,7 +4,7 @@ import {
   REBUILD_MONEY, MOVE_KEEP, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome, DECISIONS, ZONES, ZONE_COST,
   LOAN_DAYS, HISTORIC_DAYS, BADGES, REGIONAL, REGIONAL_SHARE, ALLIANCE_TRADE, DAILY, DAILY_REWARD, WEEKLY, WEEKLY_REWARD, GIFT_LIMITS, REACTIONS,
   RES, FOOD, TRADE_RES, PRODUCTS, PRODUCT_IDS, RAW_GOODS, USE, HARVEST, MARKET, STOCK, HALL_LEVELS, TECH, STYLES, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
-  PICKS, BATCH_CAP, LEASE_MIN_DAYS, RENT_MAX_DAYS, RENT_MAX_TOTAL,
+  PICKS, BATCH_CAP, LEASE_MIN_DAYS, LEASE_TAX_MAX, LEASE_TAX_DEFAULT, RENT_MAX_DAYS, RENT_MAX_TOTAL,
 } from './constants.js';
 import { Renderer, STRIDE, thumbnail, modelHeight } from './render.js';
 import { loadPrefs, savePrefs, applyPrefs, resolvedTheme, palette, PALETTES } from './prefs.js';
@@ -34,8 +34,8 @@ let world = { id: WORLD_ID, name: OPEN_WORLDS[WORLD_ID] }, worlds = [];
 // 1.18, 1.2, 1.3 and 1.8 each started every world afresh: everyone begins in the new open world once.
 try {
   const saved = localStorage.getItem('commons-world');
-  if (saved && localStorage.getItem('commons-world-v8')) world = { id: saved, name: OPEN_WORLDS[saved] || 'World' };
-  localStorage.setItem('commons-world-v8', '1');
+  if (saved && localStorage.getItem('commons-world-v9')) world = { id: saved, name: OPEN_WORLDS[saved] || 'World' };
+  localStorage.setItem('commons-world-v9', '1');
 } catch { /* private mode */ }
 let plan = null, totalsNow = null, lastStep = null;
 let zoneKind = 1;
@@ -2527,6 +2527,16 @@ function wireDrawer(box) {
     postRent(tile, fd.get('res'), Math.round(+fd.get('days')), Math.round(+fd.get('price')))
       .catch((err) => notify(err.message, 'act'));
   };
+  const leaseForm = box.querySelector('#lease-form');
+  if (leaseForm) leaseForm.onsubmit = (e) => {
+    e.preventDefault();
+    const tile = +leaseForm.dataset.tile, fd = new FormData(leaseForm), share = +fd.get('share') / 100, save = +fd.get('save') / 100;
+    const already = sim.leaseOf(state, tile);
+    checkpoint(already ? 'changing the lease' : 'leasing');
+    const r = already ? sim.setLeaseTerms(state, tile, share, save) : sim.lease(state, tile, share, save);
+    if (!r.ok) { notify(r.reason + '.', 'act'); play('error'); return; }
+    play('level'); notify(already ? 'Lease terms updated.' : 'Leased to local operators.', 'act'); afterChange();
+  };
   box.querySelectorAll('[data-filter]').forEach((b) => { b.onclick = () => { peopleFilter = b.dataset.filter; renderDrawer(); }; });
   box.querySelectorAll('[data-stats-tab]').forEach((b) => { b.onclick = () => { statsTab = b.dataset.statsTab; renderDrawer(); }; });
   if (drawer === 'region') wireRegion(box);
@@ -2725,20 +2735,6 @@ function inspectorAction(what, arg) {
     if (!r.ok) { notify(r.reason + '.', 'act'); return; }
     afterChange();
   }
-  else if (what === 'lease') {
-    const q = sim.leaseQuote(state, i);
-    openModal(`${closeX}<h2 id="modal-title">Lease this ${esc(B[state.grid[i]].name.toLowerCase())}?</h2>
-      <p>Residents will staff and run it themselves. You'll collect about ${money(q.taxLeased)} a day instead of ${money(q.taxNow)}, but pay no upkeep (was ${money(q.upkeep)}). You can't hire, upgrade or pick what it makes there while it's leased, and you can't take it back for ${LEASE_MIN_DAYS} days.</p>
-      <div class="mfoot"><button class="btn" data-close>Not now</button><button class="btn primary" id="lease-go">Lease it</button></div>`);
-    $('lease-go').onclick = () => {
-      checkpoint('leasing');
-      const r = sim.lease(state, i);
-      closeModal();
-      if (!r.ok) { notify(r.reason + '.', 'act'); play('error'); return; }
-      play('level'); notify('Leased to local operators.', 'act'); afterChange();
-    };
-    return;
-  }
   else if (what === 'unlease') {
     checkpoint('taking back control');
     const r = sim.unlease(state, i);
@@ -2872,13 +2868,26 @@ function ownTile(i) {
     body += faces(staff, 'Staff');
   }
   if (t !== T.HALL) {
+    const pc = (v) => `${Math.round(v * 100)}%`;
     if (leased) {
-      const un = sim.canUnlease(state, i);
-      body += `<div class="actions"><button class="btn" type="button" data-do="unlease" ${un.ok ? '' : 'disabled'}>Take back control</button></div>${un.ok ? '' : `<p class="soft small">${esc(un.reason)}.</p>`}`;
+      const share = leased.share ?? LEASE_TAX_DEFAULT, save = leased.save ?? 0, q = sim.leaseQuote(state, i, share), un = sim.canUnlease(state, i);
+      body += `<p class="good-t small">You collect ${pc(share)} of their workers' tax (about ${money(q.taxLeased)} today)${save ? `, saving ${pc(save)} of that towards upgrades` : ''}.</p>
+        <details><summary>Change the split</summary>
+          <form id="lease-form" data-tile="${i}" class="mk-form">
+            <label class="field"><span>Your share of the tax (0-${Math.round(LEASE_TAX_MAX * 100)}%)</span><input name="share" type="number" min="0" max="${Math.round(LEASE_TAX_MAX * 100)}" value="${Math.round(share * 100)}" required></label>
+            <label class="field"><span>Of that, save towards upgrades (0-100%)</span><input name="save" type="number" min="0" max="100" value="${Math.round(save * 100)}" required></label>
+            <div class="actions"><button class="btn primary" type="submit">Update</button></div>
+          </form>
+        </details>
+        <div class="actions"><button class="btn" type="button" data-do="unlease" ${un.ok ? '' : 'disabled'}>Take back control</button></div>${un.ok ? '' : `<p class="soft small">${esc(un.reason)}.</p>`}`;
     } else if (sim.canLease(state, i).ok) {
       const q = sim.leaseQuote(state, i);
-      body += `<details><summary>Lease to local operators</summary><p class="soft small">Today it earns you about ${money(q.taxNow)} in tax and costs ${money(q.upkeep)} upkeep. Leased, residents run it themselves: you'd collect about ${money(q.taxLeased)} and pay nothing, and it repairs itself even when the city is broke - but you can't hire, upgrade or pick what it makes there, and you can't take it back for ${LEASE_MIN_DAYS} days. Worth it when you can't staff or afford it.</p>
-        <div class="actions"><button class="btn ${q.delta > 0 ? 'primary' : ''}" type="button" data-do="lease">Lease it${q.delta > 0 ? ` (+${money(q.delta)} a day)` : q.delta < 0 ? ` (${money(q.delta)} a day)` : ''}</button></div></details>`;
+      body += `<details><summary>Lease to local operators</summary><p class="soft small">Today it earns you about ${money(q.taxNow)} in tax and costs ${money(q.upkeep)} upkeep. Leased, residents staff it and pay its own upkeep - you only collect the share you set below, up to ${Math.round(LEASE_TAX_MAX * 100)}%, and can route part of that straight into a ring-fenced upgrade fund instead of ordinary money. You can't hire, upgrade or pick what it makes there while it's leased, and can't take it back for ${LEASE_MIN_DAYS} days.</p>
+        <form id="lease-form" data-tile="${i}" class="mk-form">
+          <label class="field"><span>Your share of the tax (0-${Math.round(LEASE_TAX_MAX * 100)}%)</span><input name="share" type="number" min="0" max="${Math.round(LEASE_TAX_MAX * 100)}" value="50" required></label>
+          <label class="field"><span>Of that, save towards upgrades (0-100%)</span><input name="save" type="number" min="0" max="100" value="0" required></label>
+          <div class="actions"><button class="btn primary" type="submit">Lease it</button></div>
+        </form></details>`;
     }
     if (!leased && sim.canRentOut(state, i).ok && sim.unlocked(state, 'market')) {
       body += `<details><summary>Rent to another mayor</summary>
@@ -3173,8 +3182,13 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 2.0';
+const VERSION = 'Commons 2.1';
 const CHANGELOG = [
+  ['2.1', [
+    'Oak and cedar (Sawmill) and iron, gold and diamonds (Quarry) now need their own research first - Forestry and Prospecting.',
+    'Leasing a building now lets you set your own share of its workers’ tax, up to 60% - not a fixed 50/50 - and change it any time. Part of your share can go straight into a new ring-fenced upgrade fund instead of ordinary money, which the Upgrade button spends from first.',
+    'A fresh start: every world begins again.',
+  ]],
   ['2.0', [
     'Sawmills, quarries, farms and the rest now make nothing on their own: pick what to cut, dig or grow, wait, and collect it. The Quarry can dig metal or stone, or prospect for iron, gold or diamonds; the Sawmill cuts pine, oak or cedar; the Farm grows carrots, tomatoes or potatoes. A new Greenhouse grows herbs, peppers or strawberries from a bought seed. Any wood or vegetable still counts as wood or vegetables for building costs and town hall requirements, whichever kind you have.',
     'Goals explains itself: click any goal or town hall step for a plain-English "how", and the ones that are naturally a count (roads laid, homes built, population, days survived) show live progress like "3 of 10".',

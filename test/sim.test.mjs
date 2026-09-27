@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import * as sim from '../public/js/sim.js';
-import { T, PLOT, B, START_MONEY, START_CHUNKS, STARTING_RES, BRICK_DISCOUNT, COLLAPSE_POP, COLLAPSE_WATER_DAYS, COLLAPSE_DEBT, COLLAPSE_DEBT_DAYS, BATCH_CAP, TRADE_RES, RES, PER_CAPITA } from '../public/js/constants.js';
+import { T, PLOT, B, START_MONEY, START_CHUNKS, STARTING_RES, BRICK_DISCOUNT, COLLAPSE_POP, COLLAPSE_WATER_DAYS, COLLAPSE_DEBT, COLLAPSE_DEBT_DAYS, BATCH_CAP, TRADE_RES, RES, PER_CAPITA, LEASE_TAX_MAX } from '../public/js/constants.js';
 
 // sim.tick() never reads the real clock, but sim.newCity() sets the city's *starting* hour of day from
 // Date.now() - left alone, that makes every run start at a different hour, which can shift a long test's exact
@@ -723,8 +723,10 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   const cs = sim.collectBatch(s, quarry), cc = sim.collectBatch(s, mine);
   assert(cs.ok && cs.got.stone > 0, 'the quarry gives stone: ' + JSON.stringify(cs.got));
   assert(cc.ok && cc.got.coal > 0, 'the coal mine gives coal: ' + JSON.stringify(cc.got));
-  // Switching to a mineral pick works too, and metal from prospecting for iron still counts as metal.
-  assert(sim.startBatch(s, quarry, 'iron').ok, 'switch the quarry to prospect for iron');
+  // Prospecting for minerals needs its own research.
+  assert(!sim.startBatch(s, quarry, 'iron').ok, 'prospecting needs the prospecting research');
+  s.tech = [...(s.tech || []), 'logistics', 'prospecting'];
+  assert(sim.startBatch(s, quarry, 'iron').ok, 'switch the quarry to prospect for iron, now researched');
   assert.equal(sim.picksAt(s, quarry).iron.group, 'Prospect');
   assert(sim.reserve(s, 'st1', 'sell', 'stone', 1, 1).ok && sim.reserve(s, 'co1', 'sell', 'coal', 1, 1).ok, 'stone and coal can be posted on the Market');
   sim.release(s, 'st1'); sim.release(s, 'co1');
@@ -837,6 +839,39 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(sim.canLease(s, shop).ok, 'and lease it again once taken back');
   console.log('leasing ok: half the tax, no upkeep, self-repairs, blocked from direct management, a minimum term');
 }
+// ---- adjustable lease terms: a chosen share (clamped to LEASE_TAX_MAX), part of it ring-fenced for upgrades
+{
+  seed = 141;
+  const s = sim.newCity('Saver', rng); s.money = 20000; s.land.fill(1);
+  for (let x = 2; x <= 14; x++) put(s, x, c + 1, T.ROAD);
+  [T.HOUSE, T.HOUSE, T.HOUSE, T.HOUSE, T.SHOP, T.SHOP].forEach((t, k) => put(s, 3 + k * 2, c + 2, t));
+  finishAll(s);
+  for (let k = 0; k < 20; k++) s.people.push({ ...s.people[0], i: 900 + k, j: -1 });
+  const shop = sim.idx(11, c + 2), shop2 = sim.idx(13, c + 2), house = sim.idx(3, c + 2);
+  sim.plan(s, rng);
+  assert(sim.staffing(s, shop) > 0 && sim.staffing(s, shop2) > 0, 'both shops are staffed');
+  assert(sim.lease(s, shop, 0.9, 2).ok, 'out-of-range share/save are clamped, not refused');
+  assert.equal(sim.leaseOf(s, shop).share, LEASE_TAX_MAX, 'share clamps to the max');
+  assert.equal(sim.leaseOf(s, shop).save, 1, 'save clamps to 100%');
+  assert(sim.setLeaseTerms(s, shop, 0.3, 0.5).ok, 'terms can be changed any time, no minimum-days wait');
+  assert.equal(sim.leaseOf(s, shop).share, 0.3);
+  assert(sim.lease(s, shop2, 0.4, 0).ok, 'a second lease with nothing saved');
+  const beforeMoney = s.money;
+  for (let h = 0; h < 24; h++) sim.tick(s, rng);
+  assert(s.savings > 0, 'half of the first shop’s cut went to savings: ' + s.savings);
+  assert(s.money > beforeMoney, 'the rest, plus the second shop’s full cut, went to ordinary money');
+  assert(s.stats.byClass.leased > 0 && s.stats.savingsGain > 0, 'the budget shows both the spendable cut and the savings gain');
+  // Savings pay for an upgrade before ordinary money does.
+  s.cond[house] = 100;
+  const bank = s.savings, cost = sim.upgradeCost(s, house);
+  s.money = cost - 1;   // not quite enough on its own, but savings cover at least $1 of the gap
+  assert(sim.canUpgrade(s, house).ok, 'money plus savings together are enough');
+  const moneyBeforeUpgrade = s.money, up = sim.upgrade(s, house);
+  assert(up.ok && up.fromSavings > 0, 'the upgrade drew from savings first: ' + JSON.stringify(up));
+  assert.equal(s.savings, Math.round((bank - up.fromSavings) * 100) / 100, 'savings went down by exactly what it contributed');
+  assert.equal(s.money, Math.round((moneyBeforeUpgrade - (cost - up.fromSavings)) * 100) / 100, 'ordinary money covered only the rest');
+  console.log('lease terms ok: adjustable share (clamped to the max), a ring-fenced savings cut, savings pay for upgrades first');
+}
 // ---- renting a building to another mayor: paid up front, settled locally on each side, no ongoing messages
 {
   seed = 131;
@@ -848,6 +883,8 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   const quarry = sim.idx(11, c + 2), ownerMoneyAfterBuild = owner.money;
   assert(sim.canRentOut(owner, quarry).ok, 'a finished producer can be rented out');
   assert(!sim.canRentOut(owner, sim.HALL_INDEX).ok, 'the town hall has nothing to pick, so it can’t be rented');
+  assert(!sim.reserve(owner, 'rentX', 'rent', 'iron', 5, 200, { tile: quarry }).ok, 'can’t promise iron without prospecting researched');
+  owner.tech = ['logistics', 'prospecting'];
   // Post: rent the quarry's iron, 5 days, $200 total.
   const r1 = sim.reserve(owner, 'rent1', 'rent', 'iron', 5, 200, { tile: quarry });
   assert(r1.ok && r1.nominal > 0, 'posting a rental works: ' + JSON.stringify(r1));

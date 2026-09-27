@@ -1,9 +1,9 @@
 // All tunable numbers live here so balancing never means hunting through logic.
 
-// The shared world everyone starts in. 2.0 started every world afresh again (production is now pick-and-collect,
-// buildings can be leased or rented out): the open world is 's7', and private worlds made before RESET_AT are no
-// longer listed. Earlier worlds are still in the database, just not shown.
-export const WORLD_ID = 's7';
+// The shared world everyone starts in. 2.1 started every world afresh again (wood/mineral research gates,
+// adjustable lease terms): the open world is 's1', and private worlds made before RESET_AT are no longer listed.
+// Earlier worlds are still in the database, just not shown.
+export const WORLD_ID = 's1';
 // Start of today in UTC, not the user's local calendar date (the world clock, day/night and this cutoff all run
 // on UTC - a local "tomorrow" can still be UTC "today", so bumping this by a calendar day too early would hide
 // worlds made only hours ago). Check the actual UTC date before changing this on a reset.
@@ -15,7 +15,7 @@ export const CLASSIC_WORLD = 'public';
 // The desk frees up when its holder has been idle this long, or their game stops checking in.
 export const MAX_CO = 3, DESK_IDLE_MS = 120000, DESK_STALE_MS = 60000, DESK_BEAT_MS = 20000;
 export const PLOT_BUY_PARCELS = 4, PLOT_BUY_STEP = 1.6, PLOT_BUY_MIN = 1000, MAX_CITIES = 9;
-export const OPEN_WORLDS = { s7: 'The world' };
+export const OPEN_WORLDS = { s1: 'The world' };
 export const PLOT = 24;          // tiles per side of a plot
 export const GAP = 0;            // tiles between neighbouring plots on the master map: none, so the world is one piece
 export const CHUNK = 4;          // land is bought in 4×4 parcels
@@ -309,6 +309,8 @@ export const TECH = [
   { id: 'poultry', branch: 'farming', name: 'Poultry', cost: 25, text: 'Unlocks poultry farms: eggs.' },
   { id: 'vertical', branch: 'farming', name: 'Vertical farming', cost: 70, needs: 'orchards', text: 'Urban farms feed twice as many people and grow twice as much.' },
   { id: 'logistics', branch: 'industry', name: 'Logistics', cost: 40, text: 'Unlocks warehouses: store more to use later or sell.' },
+  { id: 'forestry', branch: 'industry', name: 'Forestry', cost: 30, text: 'Unlocks oak and cedar at the sawmill: better timber, slower to cut.' },
+  { id: 'prospecting', branch: 'industry', name: 'Prospecting', cost: 45, needs: 'logistics', text: 'Unlocks iron, gold and diamonds at the quarry.' },
   { id: 'greenconcrete', branch: 'industry', name: 'Green concrete', cost: 40, needs: 'logistics', text: 'Everything costs 10% less to build.' },
   { id: 'carpentry', branch: 'industry', name: 'Carpentry', cost: 50, needs: 'logistics', text: 'Unlocks Furniture: a factory recipe that turns wood and metal into a product that makes homes comfier.' },
   { id: 'toolmaking', branch: 'industry', name: 'Toolmaking', cost: 65, needs: 'carpentry', text: 'Unlocks Tools: a factory recipe that turns metal and wood into a product that makes builders faster.' },
@@ -426,15 +428,15 @@ export const BATCH_CAP = 4;
 export const PICKS = {
   [T.MATERIALS]: {
     pine: { name: 'Pine', makes: { pine: 6 }, hours: 3 },
-    oak: { name: 'Oak', makes: { oak: 10 }, hours: 6 },
-    cedar: { name: 'Cedar', makes: { cedar: 15 }, hours: 10 },
+    oak: { name: 'Oak', makes: { oak: 10 }, hours: 6, tech: 'forestry' },
+    cedar: { name: 'Cedar', makes: { cedar: 15 }, hours: 10, tech: 'forestry' },
   },
   [T.QUARRY]: {
     metal: { name: 'Metal', makes: { metal: 6 }, hours: 4 },
     stone: { name: 'Stone', makes: { stone: 6 }, hours: 3 },
-    iron: { name: 'Iron', makes: { iron: 8 }, hours: 6, group: 'Prospect' },
-    gold: { name: 'Gold', makes: { gold: 3 }, hours: 10, group: 'Prospect' },
-    diamond: { name: 'Diamonds', makes: { diamond: 1 }, hours: 16, group: 'Prospect' },
+    iron: { name: 'Iron', makes: { iron: 8 }, hours: 6, group: 'Prospect', tech: 'prospecting' },
+    gold: { name: 'Gold', makes: { gold: 3 }, hours: 10, group: 'Prospect', tech: 'prospecting' },
+    diamond: { name: 'Diamonds', makes: { diamond: 1 }, hours: 16, group: 'Prospect', tech: 'prospecting' },
   },
   [T.FARM]: {
     carrots: { name: 'Carrots', makes: { carrots: 6 }, hours: 3 },
@@ -578,10 +580,15 @@ export const ELECTION_EVERY = 20;   // days between elections
 export const ZONES = { 1: { key: 'homes', name: 'Homes zone', col: 'rgba(63,167,103,0.30)' }, 2: { key: 'shops', name: 'Shops zone', col: 'rgba(59,125,221,0.28)' }, 3: { key: 'industry', name: 'Industry zone', col: 'rgba(240,150,58,0.30)' } };
 export const ZONE_COST = 2;   // per tile painted
 // Leasing one of your own buildings to local operators: you stop paying its upkeep, and it keeps itself in
-// repair even when the city is broke, but you only collect this share of the tax its workers pay - the rest is
-// the operator's margin for running it. Worth it when you can't staff or afford a building, not one already
-// earning its keep. LEASE_MIN_DAYS is how long before you can take it back.
-export const LEASE_TAX_SHARE = 0.5, LEASE_MIN_DAYS = 5, LEASE_CATS = ['work', 'fun'];
+// repair even when the city is broke, but you only collect a share of the tax its workers pay - the rest is the
+// operator's margin for running it. You choose that share yourself, up to LEASE_TAX_MAX, when you lease it (and
+// can change it later); LEASE_TAX_DEFAULT is what the slider starts at. Worth it when you can't staff or afford
+// a building, not one already earning its keep. LEASE_MIN_DAYS is how long before you can take it back.
+export const LEASE_TAX_MIN = 0, LEASE_TAX_MAX = 0.6, LEASE_TAX_DEFAULT = 0.5, LEASE_MIN_DAYS = 5, LEASE_CATS = ['work', 'fun'];
+// Of your share of a lease's tax, how much of it can instead go straight into a ring-fenced upgrade fund
+// (s.savings) rather than ordinary spending money - only the Upgrade button can draw on it. 100% is allowed:
+// bank the whole lease for upgrades and take no spending money from it at all.
+export const LEASE_SAVE_MAX = 1;
 // Renting a producing building to another mayor: they pay the whole term up front (like any Market offer), and
 // in return their own city gets a fixed daily amount of whatever it was renting - settled locally on each side,
 // once, rather than a running exchange between two cities that might not even be online at the same time. The

@@ -98,3 +98,9 @@ main"):
          firestore.rules (a new 'rent' Market offer kind) - deploy the
          rules first, as above, before pushing. Another fresh start
          (WORLD_ID is now s7).
+   2.1   Oak/cedar and iron/gold/diamonds now need their own research
+         (Forestry, Prospecting) before you can pick them. Leasing now
+         lets you set your own tax share (up to 60%, was a fixed 50%)
+         and save part of it into a ring-fenced fund that only pays for
+         upgrades. No firestore.rules change. Another fresh start
+         (WORLD_ID is now s1).
