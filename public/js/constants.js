@@ -1,13 +1,13 @@
 // All tunable numbers live here so balancing never means hunting through logic.
 
-// The shared world everyone starts in. 1.8 started every world afresh again for the new ways a city can fall:
-// the open world is 's5', and private worlds made before RESET_AT are no longer listed. Earlier worlds are still
+// The shared world everyone starts in. 1.9 started every world afresh again (lower starting money, no tutorial):
+// the open world is 's6', and private worlds made before RESET_AT are no longer listed. Earlier worlds are still
 // in the database, just not shown.
-export const WORLD_ID = 's5';
+export const WORLD_ID = 's6';
 // Start of today in UTC, not the user's local calendar date (the world clock, day/night and this cutoff all run
 // on UTC - a local "tomorrow" can still be UTC "today", so bumping this by a calendar day too early would hide
 // worlds made only hours ago). Check the actual UTC date before changing this on a reset.
-export const RESET_AT = Date.UTC(2026, 8, 26);
+export const RESET_AT = Date.UTC(2026, 8, 27);
 export const CLASSIC_WORLD = 'public';
 // A council can own several cities: buy the plot next to one of yours. Priced like land: this many parcels at your
 // current land price, times PLOT_BUY_STEP for each city you already have, and never less than PLOT_BUY_MIN.
@@ -15,7 +15,7 @@ export const CLASSIC_WORLD = 'public';
 // The desk frees up when its holder has been idle this long, or their game stops checking in.
 export const MAX_CO = 3, DESK_IDLE_MS = 120000, DESK_STALE_MS = 60000, DESK_BEAT_MS = 20000;
 export const PLOT_BUY_PARCELS = 4, PLOT_BUY_STEP = 1.6, PLOT_BUY_MIN = 1000, MAX_CITIES = 9;
-export const OPEN_WORLDS = { s5: 'The world' };
+export const OPEN_WORLDS = { s6: 'The world' };
 export const PLOT = 24;          // tiles per side of a plot
 export const GAP = 0;            // tiles between neighbouring plots on the master map: none, so the world is one piece
 export const CHUNK = 4;          // land is bought in 4×4 parcels
@@ -34,7 +34,7 @@ export const MAX_OFFLINE_DAYS = 48;   // city days simulated while you're away (
 export const BUILD_SPEED = 30;
 export const SAVE_EVERY_MS = 12000;   // others see your city update this often (and straight after you build)
 
-export const START_MONEY = 3000;
+export const START_MONEY = 2500;
 export const REBUILD_MONEY = 1500;
 export const GRACE_DAYS = 3;
 export const VOLUNTEER_RATE = 0.25;
@@ -76,7 +76,6 @@ export const MAX_LINKS = 4;
 export const HISTORY_DAYS = 30;
 export const LOG_SIZE = 60;
 export const EVENT_CHANCE = 0.25;
-export const TUTORIAL_REWARD = 300;
 export const MOVE_KEEP = 0.5;
 
 export const T = {
@@ -399,19 +398,19 @@ export const isRoad = (t) => t === T.ROAD || t === T.XING || t === T.LIGHTS || t
 export const isRail = (t) => t === T.RAIL || t === T.XING;
 
 export const GOALS = [
-  { id: 'roads10', text: 'Lay 10 road tiles', reward: 100 },
-  { id: 'houses3', text: 'Build 3 homes', reward: 150 },
-  { id: 'work1', text: 'Open an office or factory', reward: 150 },
-  { id: 'shop1', text: 'Open a grocer', reward: 150 },
-  { id: 'school1', text: 'Open a primary school', reward: 250 },
+  { id: 'roads10', text: 'Lay 10 road tiles', reward: 100, t: 1 },
+  { id: 'houses3', text: 'Build 3 homes', reward: 150, t: 2 },
+  { id: 'work1', text: 'Open an office or factory', reward: 150, t: 3 },
+  { id: 'shop1', text: 'Open a grocer', reward: 150, t: 4 },
+  { id: 'school1', text: 'Open a primary school', reward: 250, t: 5 },
   { id: 'pop25', text: 'Reach 25 people', reward: 250 },
-  { id: 'clinic1', text: 'Open a clinic', reward: 250 },
+  { id: 'clinic1', text: 'Open a clinic', reward: 250, t: 19 },
   { id: 'land1', text: 'Buy a parcel of land', reward: 150 },
   { id: 'baby1', text: 'Welcome a baby', reward: 200 },
   { id: 'upgrade1', text: 'Upgrade a building', reward: 300 },
-  { id: 'fun3', text: 'Open 3 leisure places', reward: 300 },
-  { id: 'police1', text: 'Open a police station', reward: 300 },
-  { id: 'transit1', text: 'Get people riding a bus or train', reward: 400 },
+  { id: 'fun3', text: 'Open 3 leisure places', reward: 300, t: 6 },
+  { id: 'police1', text: 'Open a police station', reward: 300, t: 21 },
+  { id: 'transit1', text: 'Get people riding a bus or train', reward: 400, t: 34 },
   { id: 'happy75', text: 'Keep 30+ people at 75% mood', reward: 400 },
   { id: 'grad1', text: 'See a university graduate', reward: 500 },
   { id: 'days10', text: 'Keep your city running 10 days', reward: 500 },

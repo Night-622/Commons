@@ -1,7 +1,7 @@
 import * as sim from './sim.js';
 import {
   T, B, PLOT, TICK_MS, MAX_OFFLINE_DAYS, HOURS_PER_DAY, SAVE_EVERY_MS, RUBBLE_CLEAR_COST, MAX_LEVEL, LEVEL, UPGRADABLE,
-  REBUILD_MONEY, MOVE_KEEP, TUTORIAL_REWARD, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome, DECISIONS, ZONES, ZONE_COST,
+  REBUILD_MONEY, MOVE_KEEP, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome, DECISIONS, ZONES, ZONE_COST,
   LOAN_DAYS, HISTORIC_DAYS, BADGES, REGIONAL, REGIONAL_SHARE, ALLIANCE_TRADE, DAILY, DAILY_REWARD, WEEKLY, WEEKLY_REWARD, GIFT_LIMITS, REACTIONS,
   RES, FOOD, TRADE_RES, PRODUCTS, PRODUCT_IDS, RAW_GOODS, USE, HARVEST, MARKET, STOCK, HALL_LEVELS, TECH, STYLES, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
 } from './constants.js';
@@ -10,7 +10,6 @@ import { loadPrefs, savePrefs, applyPrefs, resolvedTheme, palette, PALETTES } fr
 import { play, setSound, ambient, setHidden, music } from './sound.js';
 import { firebaseConfig } from './config.js';
 import { TripSim, whereabouts } from './trips.js';
-import { createTutorial } from './tutorial.js';
 import { ROLES, roleOf, jobText } from './people.js';
 import * as panels from './panels.js';
 import * as acct from './account.js';
@@ -34,8 +33,8 @@ let world = { id: WORLD_ID, name: OPEN_WORLDS[WORLD_ID] }, worlds = [];
 // 1.18, 1.2, 1.3 and 1.8 each started every world afresh: everyone begins in the new open world once.
 try {
   const saved = localStorage.getItem('commons-world');
-  if (saved && localStorage.getItem('commons-world-v6')) world = { id: saved, name: OPEN_WORLDS[saved] || 'World' };
-  localStorage.setItem('commons-world-v6', '1');
+  if (saved && localStorage.getItem('commons-world-v7')) world = { id: saved, name: OPEN_WORLDS[saved] || 'World' };
+  localStorage.setItem('commons-world-v7', '1');
 } catch { /* private mode */ }
 let plan = null, totalsNow = null, lastStep = null;
 let zoneKind = 1;
@@ -289,7 +288,6 @@ async function enter(u, openId = null) {
   marketUnsub?.(); myOffersUnsub?.(); dealsUnsub?.(); stocksUnsub?.(); marketUnsub = myOffersUnsub = dealsUnsub = stocksUnsub = null; offers = []; myOffers = []; stocks = new Map();
   threadsUnsub?.(); dmUnsub?.(); threadsUnsub = dmUnsub = null; threads = []; dmWith = null;
   clearTimeout(liveTimer); clearTimeout(saveTimer); clearTimeout(retryTimer);
-  tut.stop();
   closeDrawer(); closeCatalog();
   state = null; me = null;
   show('boot');
@@ -326,7 +324,7 @@ fb.onAuth((u) => {
   const same = u && user && u.uid === user.uid && state;
   user = u;
   $('boot-actions').classList.add('hidden');
-  if (!u) { stopLoops(); chatUnsub?.(); worldUnsub?.(); movesUnsub?.(); giftsUnsub?.(); worldUnsub = movesUnsub = chatUnsub = giftsUnsub = null; state = null; plotId = null; closeModal(); tut.stop(); show('auth'); return; }
+  if (!u) { stopLoops(); chatUnsub?.(); worldUnsub?.(); movesUnsub?.(); giftsUnsub?.(); worldUnsub = movesUnsub = chatUnsub = giftsUnsub = null; state = null; plotId = null; closeModal(); show('auth'); return; }
   if (same) return;   // linking a guest to an account keeps the same player: no need to reload the city
   enter(u);
 });
@@ -374,7 +372,6 @@ async function startGame(doc) {
   if (state.status === 'ruins') showRuins();
   else if (report) showAway(report);
   else if (!localStorage.getItem('commons-seen-help')) showWelcome();
-  else tut.resume();
 }
 
 // ---------- plots ----------
@@ -1216,7 +1213,7 @@ function showTimelapse() {
 
 function onNewDay(st) {
   tlSnap();
-  if (!tut.active()) firstTimeTips(st);   // don't pile one-off tips on top of the guided tour
+  firstTimeTips(st);
   const hall = sim.xy(sim.HALL_INDEX);
   if (st.income > 0) { addPop(hall.x, hall.y, 1.8, `+${money(st.income)}`, '#ffd24a'); play('coin'); }
   // Floating feedback when mood visibly improves: only when it crosses into a better mood band (as moodWord()
@@ -1387,7 +1384,7 @@ const NUDGE_IDLE_MS = 60 * 1000, NUDGE_COOLDOWN_MS = 4 * 60 * 1000;
 let lastNudgeInput = Date.now(), lastNudge = 0;
 for (const ev of ['pointerdown', 'keydown', 'wheel']) addEventListener(ev, () => { lastNudgeInput = Date.now(); }, { passive: true });
 function maybeNudge() {
-  if (!state || state.status !== 'alive' || tut.active() || modal.open || catalog || drawer) return;
+  if (!state || state.status !== 'alive' || modal.open || catalog || drawer) return;
   if (Date.now() - lastNudgeInput < NUDGE_IDLE_MS || Date.now() - lastNudge < NUDGE_COOLDOWN_MS) return;
   if (!lastStep || !lastStep.text) return;
   lastNudge = Date.now();
@@ -1591,7 +1588,6 @@ function renderModebar() {
   for (const c of bar.querySelectorAll('canvas.thumb')) thumbnail(c, +c.dataset.type, palette(prefs), resolvedTheme(prefs));
   $('move-cancel')?.addEventListener('click', () => { moveFrom = -1; renderModebar(); dirty = true; });
   $('tool-tip').textContent = '';
-  tut.refresh();
 }
 
 // Undo: a snapshot before each change. Restoring keeps the clock, news and history moving forward.
@@ -2290,6 +2286,7 @@ function updateHud() {
   $('v-money').textContent = money(state.money);
   $('v-net').textContent = `${net >= 0 ? '+' : '−'}$${Math.abs(net)} a day`;
   $('v-net').classList.toggle('neg', net < 0);
+  $('v-net').classList.toggle('pos', net > 0);
   $('v-pop').textContent = pop;
   $('v-homes').textContent = `${tot.homes} homes`;
   $('v-build').textContent = c.builders;
@@ -2971,26 +2968,6 @@ function confirmMove(targetId) {
   }, $('move-msg'));
 }
 
-// ---------- tutorial ----------
-const tut = createTutorial({
-  state: () => state, mode: () => mode, brush: () => brush, panel: () => drawer, overlay: () => overlay,
-  tool: () => mode, selected: () => selected, selectedMine: () => isMine(selected), taps: () => taps,
-  camKey: () => `${renderer.cam.x.toFixed(1)},${renderer.cam.y.toFixed(1)},${renderer.cam.z.toFixed(1)}`,
-  hallTile: () => ({ px: me.px, py: me.py, tx: PLOT >> 1, ty: PLOT >> 1 }),
-  setPulseTile: (t) => { pulseTile = t; dirty = true; },
-  play, announce,
-  reward: () => {
-    if (state.flags.tutorial) { notify('Tour finished. You can replay it any time from Help.', 'act'); return; }
-    state.flags.tutorial = true;
-    state.money += TUTORIAL_REWARD;
-    const hall = sim.xy(sim.HALL_INDEX);
-    addPop(hall.x, hall.y, 2, `+${money(TUTORIAL_REWARD)}`, '#ffd24a');
-    play('goal');
-    notify(`Tour complete. ${money(TUTORIAL_REWARD)} added to your city.`, 'good');
-    afterChange();
-  },
-});
-
 // ---------- modals ----------
 const modal = $('modal');
 function openModal(html, cls = '') {
@@ -3008,20 +2985,17 @@ const closeX = `<button class="iconbtn mclose" type="button" data-close aria-lab
 function showWelcome() {
   try { localStorage.setItem('commons-seen-help', '1'); } catch { /* private mode */ }
   openModal(`<h2 id="modal-title">Welcome to ${esc(state.name)}</h2>
-    <p>You're the mayor. Six settlers live above the town hall. Give them homes, jobs, schools and somewhere to go at night, and your city grows up around them. It keeps living when you close the game.</p>
-    <div class="welcome-choices">
-      <button class="choice" type="button" id="w-tour">${icon('i-book')}<b>Take the tour</b><small>About 4 minutes. You build as you learn, and earn $${TUTORIAL_REWARD}.</small></button>
-      <button class="choice" type="button" id="w-skip">${icon('i-look')}<b>I'll explore</b><small>You can start the tour any time from Help.</small></button>
-    </div>`);
-  $('w-tour').onclick = () => { closeModal(); tut.start(0); };
-  $('w-skip').onclick = () => { closeModal(); openPanel('goals'); };
-  $('w-tour').focus();
+    <p>You're the mayor. Six settlers live above the town hall.</p>
+    <p><b>The goal:</b> give your people homes, jobs, schools and somewhere to go, and keep them happy - the town hall grows itself as the city does. Goals always shows exactly what's next.</p>
+    <p><b>Keep it alive:</b> it keeps running while you're away, but neglect it and it can fall into ruins.</p>
+    <div class="mfoot"><button class="btn primary wide" type="button" id="w-go">${icon('i-target')}See what to do first</button></div>`);
+  $('w-go').onclick = () => { closeModal(); openPanel('goals'); };
+  $('w-go').focus();
 }
 
 function showHelp() {
   openModal(`${closeX}<h2 id="modal-title">How Commons works</h2>
     <div class="help-actions"><button class="btn" type="button" id="h-news">${icon('i-spark')}What’s new</button><button class="btn" type="button" id="h-support">${icon('i-help')}Questions and support</button><button class="btn" type="button" id="h-feedback">${icon('i-chat')}Send feedback</button></div>
-    <button class="choice wide-choice" type="button" id="h-tour">${icon('i-book')}<b>${tut.active() ? 'Restart the tour' : 'Take the interactive tour'}</b><small>Learn by building, step by step.</small></button>
     <div class="help">
       <section><h3>${icon('i-hammer')}Build, Select, Move</h3><p>Build: tap empty land for a menu of everything you can afford, or pick a road brush and drag. Select: tap anything for details and options. Move: pick up a building and put it elsewhere.</p></section>
       <section><h3>${icon('i-grid')}Zones</h3><p>Paint homes, shops or industry zones. When the demand bars say so, developers build there for free and you pay no upkeep.</p></section>
@@ -3036,14 +3010,20 @@ function showHelp() {
     </div>
     <h3 class="keys-h">Keys</h3>
     <p class="keys"><kbd>B</kbd> build, <kbd>E</kbd> select, <kbd>R</kbd> move, <kbd>1</kbd>–<kbd>7</kbd> road, footpath, railway, traffic lights, roundabout, zones (press again to switch type), clear (in Build), <kbd>Ctrl</kbd> <kbd>Z</kbd> undo, <kbd>V</kbd> 3D or 2D, <kbd>H</kbd> home, <kbd>0</kbd> whole map, <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> pan, <kbd>+</kbd> <kbd>−</kbd> zoom, <kbd>O</kbd> goals, <kbd>P</kbd> people, <kbd>C</kbd> stats, <kbd>N</kbd> news, <kbd>K</kbd> chat, <kbd>J</kbd> world, <kbd>Y</kbd> region, <kbd>F</kbd> photo mode, <kbd>T</kbd> info views, <kbd>Esc</kbd> cancel. Click the map, then use the arrow keys and <kbd>Enter</kbd> to play without a mouse.</p>`, 'wide');
-  $('h-tour').onclick = () => { closeModal(); tut.start(0); };
   $('h-support').onclick = showSupport;
   $('h-news').onclick = showChangelog;
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 1.8';
+const VERSION = 'Commons 1.9';
 const CHANGELOG = [
+  ['1.9', [
+    'The guided tour is gone. In its place, Goals is a proper how-to guide: it explains what to do, and every step now has a "Show me" button that jumps straight to the right tool.',
+    'A new city starts with a plain-English welcome explaining the goal, instead of a tour/skip choice.',
+    'Starting money is now $2,500, down from $3,000.',
+    'Clearer money: the top bar now shows gains in green as well as losses in red. A staffed harbour now does what its description always promised and boosts trade, alongside the airport.',
+    'A fresh start: every world begins again.',
+  ]],
   ['1.8', [
     'Founding a city now explains what you’re playing for: keep it fed, housed and happy, and grow it - and what can end it.',
     'A city can now fall for more reasons: no water at all, gridlocked traffic, or deep debt, each for a few days running. Every one gives clear warnings first, resets the moment it’s fixed, and (like any collapse) leaves ruins anyone can rebuild.',
@@ -3259,8 +3239,7 @@ const FAQ = [
 function showSupport() {
   openModal(`${closeX}<h2 id="modal-title">Help and support</h2>
     <div class="faq">${FAQ.map(([q, a]) => `<details><summary>${q}</summary><p>${a}</p></details>`).join('')}</div>
-    <div class="mfoot"><button class="btn" id="sup-tour">${icon('i-book')}Take the tour</button><button class="btn primary" id="sup-contact">Still stuck? Contact us</button></div>`, 'wide');
-  $('sup-tour').onclick = () => { closeModal(); tut.start(0); };
+    <div class="mfoot"><button class="btn primary" id="sup-contact">Still stuck? Contact us</button></div>`, 'wide');
   $('sup-contact').onclick = () => showFeedback('Question');
 }
 function showFeedback(kind = 'Bug') {

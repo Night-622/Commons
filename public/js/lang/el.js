@@ -71,7 +71,14 @@ const dict = {
   // Account
   'Profile': 'Προφίλ', 'Achievements': 'Επιτεύγματα', 'Mayor name': 'Όνομα δημάρχου', 'Save': 'Αποθήκευση', 'Download a copy of my city': 'Κατεβάστε ένα αντίγραφο της πόλης μου', 'Delete account': 'Διαγραφή λογαριασμού', 'Delete my account': 'Διαγραφή του λογαριασμού μου',
   // Help and modals
-  'What’s new': 'Τι νέο υπάρχει', 'Questions and support': 'Ερωτήσεις και υποστήριξη', 'Take the interactive tour': 'Κάντε τη διαδραστική περιήγηση', 'Restart the tour': 'Ξεκινήστε ξανά την περιήγηση',
+  'What’s new': 'Τι νέο υπάρχει', 'Questions and support': 'Ερωτήσεις και υποστήριξη',
+  "You're the mayor. Six settlers live above the town hall.": 'Είστε ο δήμαρχος. Έξι άποικοι ζουν πάνω από το δημαρχείο.',
+  'The goal:': 'Ο στόχος:',
+  "give your people homes, jobs, schools and somewhere to go, and keep them happy - the town hall grows itself as the city does. Goals always shows exactly what's next.":
+    'δώστε στους κατοίκους σας σπίτια, δουλειές, σχολεία και μέρη να πηγαίνουν, και κρατήστε τους ευχαριστημένους - το δημαρχείο μεγαλώνει μόνο του καθώς μεγαλώνει η πόλη. Οι Στόχοι δείχνουν πάντα τι ακολουθεί.',
+  'Keep it alive:': 'Κρατήστε τη ζωντανή:',
+  "it keeps running while you're away, but neglect it and it can fall into ruins.": 'συνεχίζει να λειτουργεί όσο λείπετε, αλλά αν την παραμελήσετε μπορεί να καταρρεύσει σε ερείπια.',
+  'See what to do first': 'Δείτε τι να κάνετε πρώτα',
   'Not now': 'Όχι τώρα', 'Keep it': 'Κρατήστε το', 'Back to the city': 'Πίσω στην πόλη', 'Save picture': 'Αποθήκευση εικόνας', 'Done': 'Τέλος', 'Stop': 'Διακοπή', 'Pause': 'Παύση', 'Play': 'Αναπαραγωγή',
   'Slow': 'Αργά', 'Fast': 'Γρήγορα', 'Save as video': 'Αποθήκευση ως βίντεο', 'Watch your city grow': 'Δείτε την πόλη σας να μεγαλώνει', 'Undo history': 'Ιστορικό αναιρέσεων', 'Undo to here': 'Αναίρεση ως εδώ',
   'Biggest ever': 'Η μεγαλύτερη όλων', 'Longest running': 'Η μακροβιότερη', 'Fallen cities': 'Πόλεις που έπεσαν', 'Happiest': 'Η πιο ευτυχισμένη', 'Greenest': 'Η πιο πράσινη', 'Best transit': 'Καλύτερες συγκοινωνίες',

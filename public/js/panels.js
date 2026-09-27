@@ -109,20 +109,23 @@ const personRow = (s, plan, p) => `<button type="button" class="person" data-per
   <small>${p.a}, ${esc(jobText(s, p))}</small><em>“${esc(thought(s, plan, p))}”</em></span>${bar(`Mood`, p.m, 'tiny')}</button>`;
 
 // ---------- goals ----------
+// Hall-path goal ids that map to a building you can jump straight to in the catalogue.
+const HALL_GOAL_TYPE = { roads: T.ROAD, homes: T.HOUSE, work: T.WORK, shop: T.SHOP, school: T.SCHOOL, farm: T.FARM, utilities: T.WATER, materials: T.MATERIALS, clinic: T.CLINIC, highschool: T.HIGH, uni: T.UNI, monument: T.MONUMENT };
+const showMe = (t) => t != null ? `<button class="btn small" type="button" data-build-type="${t}">Show me</button>` : '';
 // The town hall: how big the city is, what the next level needs, and what it brings.
 export function hallHtml(hs) {
   const cur = HALL_LEVELS[hs.level];
   const strip = `<ol class="chapters" aria-label="Town hall levels">${HALL_LEVELS.map((l, i) => `<li class="${i < hs.level ? 'done' : i === hs.level ? 'now' : ''}">${esc(l.name)}</li>`).join('')}</ol>`;
   if (hs.complete) return `<div class="path"><h3 class="sub">${icon('i-trophy')}Town hall: ${esc(cur.name)}</h3><p>The biggest there is. Everything is open to you: explore.</p>${strip}</div>`;
   const n = hs.next, all = [hs.pop.done, ...hs.goals.map((g) => g.done), ...hs.res.map((r) => r.done)], k = all.filter(Boolean).length;
-  const mark = (done) => `<span aria-hidden="true">${done ? '✓' : '○'}</span>`;
+  const mark = (done) => `<span class="mark" aria-hidden="true">${done ? '✓' : '○'}</span>`;
   return `<div class="path"><h3 class="sub">${icon('i-flag')}Town hall: ${esc(cur.name)}</h3>
     <p>Next it grows into a <b>${esc(n.name.toLowerCase())}</b>. It upgrades by itself when all of this is done:</p>
     ${bar(`${n.name} progress`, k / all.length)}
     <ul class="pathgoals">
-      <li class="${hs.pop.done ? 'done' : ''}">${mark(hs.pop.done)} Reach ${n.pop} people <span class="soft">(${hs.pop.have})</span></li>
-      ${hs.goals.map((g) => `<li class="${g.done ? 'done' : ''}">${mark(g.done)} ${esc(g.text)}</li>`).join('')}
-      ${hs.res.map((r) => `<li class="${r.done ? 'done' : ''}">${mark(r.done)} Have ${r.need} ${esc(RES[r.k].name.toLowerCase())} in store <span class="soft">(${r.have})</span></li>`).join('')}
+      <li class="${hs.pop.done ? 'done' : ''}">${mark(hs.pop.done)}<span class="glabel">Reach ${n.pop} people <span class="soft">(${hs.pop.have})</span></span></li>
+      ${hs.goals.map((g) => `<li class="${g.done ? 'done' : ''}">${mark(g.done)}<span class="glabel">${esc(g.text)}</span>${g.done ? '' : showMe(HALL_GOAL_TYPE[g.id])}</li>`).join('')}
+      ${hs.res.map((r) => `<li class="${r.done ? 'done' : ''}">${mark(r.done)}<span class="glabel">Have ${r.need} ${esc(RES[r.k].name.toLowerCase())} in store <span class="soft">(${r.have})</span></span></li>`).join('')}
     </ul>
     <p class="small">A ${esc(n.name.toLowerCase())} can buy up to ${n.land} parcels of land (now ${cur.land}), stores ${n.store - cur.store} more of everything, earns ${n.rp} research a day and has a bigger hall with more builders.${n.res && Object.keys(n.res).length ? ' The upgrade uses the resources.' : ''}</p>
     ${strip}</div>`;
@@ -131,9 +134,10 @@ export function goalsPanel(state, daily, hs, needs = []) {
   const done = state.goalsDone.length;
   const wants = (state.wants || []).map((w) => ({ ...w, p: state.people.find((x) => x.i === w.p) })).filter((w) => w.p);
   return `${head('Goals', `<span class="soft num fill">${done} of ${GOALS.length}</span>`)}
+    <p class="soft small">This panel is your guide: it always shows exactly what to do next. Open Build (the dock at the bottom) to place roads and buildings on empty land next to what you already have; tap a building to see or change what it does.</p>
     ${hs ? hallHtml(hs) : ''}
     <h3 class="sub">${icon('i-alert')}What your city needs</h3>
-    ${needs.length ? `<ul class="needlist">${needs.map((n) => `<li><span>${esc(n.text)}</span>${n.type != null ? `<button class="btn small" type="button" data-build-type="${n.type}">Show me</button>` : ''}</li>`).join('')}</ul>`
+    ${needs.length ? `<ul class="needlist">${needs.map((n) => `<li><span>${esc(n.text)}</span>${showMe(n.type)}</li>`).join('')}</ul>`
       : '<p class="soft small">Nothing pressing. Keep growing.</p>'}
     <p class="soft small">Check any time: the bars under Mood show each need (hover or tap for what fixes it), and City stats, Services shows every building’s reach.</p>
     ${daily ? `<div class="weekly"><h3 class="sub">${icon('i-flag')}Today’s challenge</h3><p><b>${esc(daily.text)}</b></p>
@@ -145,10 +149,11 @@ export function goalsPanel(state, daily, hs, needs = []) {
       <b class="num reward">${money(w.reward)}</b><button class="btn" type="button" data-home="${w.p.h}">Show</button></li>`).join('')}</ul>`
       : '<p class="empty small">No requests right now. Residents ask for things as the city grows.</p>'}
     <h3 class="sub">${icon('i-flag')}Milestones</h3>
+    <p class="soft small">Each one pays a one-off reward in cash, the moment you do it.</p>
     <div class="progress"><i style="width:${(done / GOALS.length) * 100}%"></i></div>
     <ul class="goal-list">${GOALS.map((g) => {
       const ok = state.goalsDone.includes(g.id);
-      return `<li class="${ok ? 'done' : ''}"><span class="tick">${ok ? icon('i-check') : ''}</span><span>${g.text}${ok ? '<span class="sr-only"> (done)</span>' : ''}</span><b class="num">${money(g.reward)}</b></li>`;
+      return `<li class="${ok ? 'done' : ''}"><span class="tick">${ok ? icon('i-check') : ''}</span><span>${g.text}${ok ? '<span class="sr-only"> (done)</span>' : ''}</span>${ok ? '' : showMe(g.t)}<b class="num">${money(g.reward)}</b></li>`;
     }).join('')}</ul>`;
 }
 
@@ -257,7 +262,7 @@ export function statsPanel(ctx, tab) {
   } else if (tab === 'budget') {
     const st = s.stats, by = st.byClass || {}, up = st.upkeepBy || {};
     const inRows = [['Basic jobs', by.basic, `$${WAGE[0]} a worker`], ['Skilled jobs', by.skilled, `$${WAGE[1]} a worker`], ['Degree jobs', by.degree, `$${WAGE[2]} a worker`],
-      ['Unemployed', by.benefits, ''], ['Trade with neighbours', by.trade, `$${TRADE_PER_LINK} a road link, double for rail`],
+      ['Unemployed', by.benefits, ''], ['Trade with neighbours', by.trade, `$${TRADE_PER_LINK} a road link, double for rail; a staffed harbour or airport adds more`],
       ['Visitors from neighbours', by.visitors, 'Evenings out, doctors, shopping, school and holidays'],
       ['Produce sold', by.produce, 'Surplus resources and products beyond your storage, sold automatically; a staffed Store sells products to residents too'],
       ['Tourism', by.tourism, `${st.tourists || 0} tourists. Museums and stadiums draw them; hotels let them stay the night`]];

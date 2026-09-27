@@ -1846,6 +1846,9 @@ function daily(s, plan, rng) {
   // Factories used to make an abstract "goods" export; 1.2 replaced that with real recipes (productsDay, below),
   // sold through a Store or the Market instead of counted here.
   if (s.grid.some((t, i) => t === T.AIRPORT && active(s, i, uc) && staffing(s, i) > 0)) by.trade = Math.round(by.trade + 40 + pop * 0.2);
+  // A staffed harbour is "the best place to trade with the rest of the world" (its blurb) - a smaller trade
+  // bonus than the airport's, since it's cheaper and opens far earlier (minPop 30 vs 150).
+  if (s.grid.some((t, i) => t === T.HARBOUR && active(s, i, uc) && staffing(s, i) > 0)) by.trade = Math.round(by.trade + 20 + pop * 0.1);
   by.visitors = (inc.fun || 0) * 2 + (inc.care || 0) * 4 + (inc.shop || 0) * 1 + (inc.school || 0) * 2 + (inc.tourists || 0) * 8;
   // Tourism: attractions draw visitors, more when the city is pleasant and linked. Hotels turn day trips into stays.
   let draw = 0, rooms = 0;

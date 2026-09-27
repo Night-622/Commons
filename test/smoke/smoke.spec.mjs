@@ -278,7 +278,7 @@ test('world: neighbours touch, with borders', async ({ browser }) => {
   await b.waitForTimeout(800);
   if (process.env.SHOTS) await b.screenshot({ path: `${process.env.SHOTS}/world-borders.png` });
   const plots = await b.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('fakefb')).docs).filter((k) => k.startsWith('plots/')));
-  expect(plots).toEqual(expect.arrayContaining([expect.stringMatching(/^plots\/s5_/)]));
+  expect(plots).toEqual(expect.arrayContaining([expect.stringMatching(/^plots\/s6_/)]));
   expect(plots.length).toBe(2);
   expect(clean(errors)).toEqual([]);
   await ctx.close();
@@ -424,7 +424,7 @@ test('market: one mayor sells vegetables, another buys them, and a loan request 
   await b.locator('#drawer [data-mtab="yours"]').click();
   await expect(b.locator('#drawer')).toContainText('$550 to Testhaven');
   await expect(b.locator('#drawer')).not.toContainText('$500 to Testhaven');   // the loan arrives once, not twice
-  await expect(b.locator('#v-money')).toContainText('$3,750');   // 3,000 - 50 for vegetables + 500 lent + 300 for the "trade with another mayor" goal
+  await expect(b.locator('#v-money')).toContainText('$3,250');   // 2,500 - 50 for vegetables + 500 lent + 300 for the "trade with another mayor" goal
   if (process.env.SHOTS) await b.screenshot({ path: `${process.env.SHOTS}/market.png` });
   expect(clean(errors)).toEqual([]);
   await ctx.close();

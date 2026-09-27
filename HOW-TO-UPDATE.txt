@@ -82,3 +82,9 @@ main"):
          or deep debt (each after a few days running, with warnings
          first). Another fresh start (WORLD_ID is now s5). No new
          deploy steps.
+   1.9   No more guided tour; the Goals panel explains itself instead,
+         with "Show me" buttons on more of its steps. New cities start
+         with $2,500 (was $3,000). The top bar shows money gains in
+         green, not just losses in red, and a staffed Harbour now
+         boosts trade like its description always said. Another fresh
+         start (WORLD_ID is now s6). No new deploy steps.
