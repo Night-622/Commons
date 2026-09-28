@@ -130,3 +130,9 @@ main"):
          Patterned tiles and Ornamental pavers, both worth more than
          plain bricks and sellable in a Store or on the Market like any
          other product. No firestore.rules change, no world reset.
+   2.5   Fixed a real gap: upgrading a Quarry, Coal mine, Sawmill, farm,
+         orchard, dairy, ranch, poultry farm or Greenhouse only ever
+         bought more job slots, never actually sped up the work - unlike
+         a factory recipe or a power/water plant, which already worked
+         faster per level too. Now they all do. No firestore.rules
+         change, no world reset.

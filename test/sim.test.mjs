@@ -774,6 +774,38 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(!sim.setRecipe(s, factory, 'pavers').ok, 'pavers stay Brickworks-only even once researched');
   console.log(`brickworks ok: factory+brickworks made ${madeWithBoth} bricks between them, then ${s.res.pavers} pavers`);
 }
+// ---- a higher-level workplace produces faster, not just with more job slots. A factory recipe (productsDay)
+// and a power/water plant's daily yield (production) already multiplied by LEVEL.capacity; advanceBatches -
+// the pick-a-target-and-collect production a Quarry, Coal mine, Sawmill or farm uses - didn't, so upgrading
+// one of those bought more workers but never actually sped up the work itself. Fixed to match.
+{
+  seed = 93;
+  const s = sim.newCity('Upgrader', rng); s.money = 50000; s.land.fill(1);
+  for (let x = 2; x <= 16; x++) put(s, x, c + 1, T.ROAD);
+  put(s, 11, c + 2, T.QUARRY);
+  finishAll(s);
+  for (let k = 0; k < 20; k++) s.people.push({ ...s.people[0], i: 900 + k, j: -1 });
+  const quarry = sim.idx(11, c + 2);
+  assert(sim.startBatch(s, quarry, 'stone').ok, 'pick stone at the quarry');
+  for (let h = 0; h < 48; h++) sim.tick(s, rng);   // let hiring settle at level 1
+  assert.equal(sim.staffing(s, quarry), 1, 'fully staffed at level 1');
+  sim.collectBatch(s, quarry);   // empty the bank - a full one pauses advanceBatches, which would read as no progress
+  s.batches[quarry].p = 0;   // a clean, known starting point so one tick's progress is easy to read
+  sim.tick(s, rng);
+  const rateL1 = s.batches[quarry].p;
+  assert(rateL1 > 0.9 && rateL1 < 1.1, `level 1: about 1 hour of progress per hour: ${rateL1}`);
+  assert(sim.upgrade(s, quarry).ok, 'upgrade the quarry to level 2');
+  for (let h = 0; h < Math.round(B[T.QUARRY].work * 1.2); h++) sim.tick(s, rng);
+  assert.equal(s.lv[quarry], 2, 'quarry reached level 2');
+  for (let h = 0; h < 48; h++) sim.tick(s, rng);   // let hiring catch up to the bigger level-2 slot count
+  assert.equal(sim.staffing(s, quarry), 1, 'fully staffed at level 2 too');
+  sim.collectBatch(s, quarry);
+  s.batches[quarry].p = 0;
+  sim.tick(s, rng);
+  const rateL2 = s.batches[quarry].p;
+  assert(rateL2 > rateL1 * 1.5, `level 2 batches fill faster: level 1 ${rateL1}/hour, level 2 ${rateL2}/hour`);
+  console.log(`workplace levels ok: quarry batch progress went from ${rateL1}/hour at level 1 to ${rateL2}/hour at level 2`);
+}
 // ---- more ways a city can fall: no water or deep debt, each only after a run of bad days, and each resets
 // the moment the problem is gone. (Gridlock uses the exact same pattern in sim.js - traffic.needs.commute in
 // place of the water/debt checks below - and is exercised for real by test/balance.mjs across many seeds.)

@@ -3200,8 +3200,11 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 2.4';
+const VERSION = 'Commons 2.5';
 const CHANGELOG = [
+  ['2.5', [
+    'Upgrading a Quarry, Coal mine, Sawmill, farm, orchard, dairy, ranch, poultry farm or Greenhouse now actually speeds up the work, the same bonus a factory recipe or a power/water plant already got from levelling up - not just more job slots for more workers.',
+  ]],
   ['2.4', [
     'A new building, the Brickworks: turns stone (and coal) into bricks on its own, so a Factory is free to run a different recipe at the same time - needs the new Bricklaying research, once you have Masonry.',
     'Two fancier designs to make there once researched: Patterned tiles and Ornamental pavers, both worth more than plain bricks and sellable in a Store or on the Market like any other product.',

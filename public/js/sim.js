@@ -479,7 +479,9 @@ function advanceBatches(s, uc = underConstruction(s)) {
     if (b.ready >= cap || !active(s, i, uc)) continue;
     const r = staffing(s, i);
     if (r <= 0) continue;
-    b.p += r;
+    // A higher-level building works through its target faster too, same as a factory's LEVEL.capacity bonus
+    // on its recipe output (productsDay) or a power/water plant's on its daily yield (production).
+    b.p += r * LEVEL.capacity[level(s, i)];
     while (b.p >= b.h && b.ready < cap) { b.p -= b.h; b.ready++; }
     if (b.ready >= cap) b.p = Math.min(b.p, b.h);
   }
