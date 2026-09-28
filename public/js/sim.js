@@ -381,6 +381,7 @@ export function productsDay(s, uc) {
     if (!B[s.grid[i]]?.makesProducts || !active(s, i, uc)) continue;
     const id = rec[i], p = id && PRODUCTS[id];
     if (!p || !hasTech(s, p.tech)) continue;
+    if (p.buildings && !p.buildings.includes(s.grid[i])) continue;
     const k = staffing(s, i) * LEVEL.capacity[level(s, i)];
     if (k <= 0) continue;
     let batches = k * FACTORY_BATCHES * factoryK;
@@ -407,10 +408,11 @@ export function productsDay(s, uc) {
 }
 // Assign (or clear, with id null) the recipe a factory runs.
 export function setRecipe(s, i, id) {
-  if (s.grid[i] !== T.FACTORY) return { ok: false, reason: 'That’s not a factory' };
+  if (!B[s.grid[i]]?.makesProducts) return { ok: false, reason: 'That can’t make products' };
   if (s.lease?.[i]?.k === 'civ') return { ok: false, reason: 'Leased: its operator picks its own recipe' };
   if (id !== null) {
     if (!PRODUCTS[id]) return { ok: false, reason: 'Unknown product' };
+    if (PRODUCTS[id].buildings && !PRODUCTS[id].buildings.includes(s.grid[i])) return { ok: false, reason: 'Not made here' };
     if (!hasTech(s, PRODUCTS[id].tech)) return { ok: false, reason: 'Research that first' };
   }
   s.rec ||= {};
@@ -937,10 +939,10 @@ export function takeKind(s, kind, n) {
 // Materials a building needs, and what it costs: the price includes buying them in, less MAT_BUY for each load
 // from your store. Wood is used first, then metal, for whatever's short.
 export const matCost = (type) => (B[type]?.cost ? Math.max(1, Math.round(B[type].cost * MAT_PER_COST)) : 0);
-// Wood and bricks are real, required ingredients (canPlace), not just a price discount - except these four:
+// Wood and bricks are real, required ingredients (canPlace), not just a price discount - except these five:
 // the ones you'd need to build in order to ever get more wood or bricks in the first place. Requiring materials
 // to build the things that make materials would be a dead end with no way out.
-const BUILD_MAT_EXEMPT = [T.MATERIALS, T.QUARRY, T.COALMINE, T.FACTORY];
+const BUILD_MAT_EXEMPT = [T.MATERIALS, T.QUARRY, T.COALMINE, T.FACTORY, T.BRICKWORKS];
 export function buildPrice(s, i, type) {
   const mat = matCost(type);
   const wood = Math.min(mat, Math.floor(stockOf(s, 'wood'))), metal = Math.min(mat - wood, Math.floor(stockOf(s, 'metal')));

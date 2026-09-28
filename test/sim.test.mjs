@@ -743,6 +743,37 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(s.res.bricks > 0, 'the factory turned stone and coal into bricks: ' + JSON.stringify(s.stats.products));
   console.log('more resources ok: quarry stone/iron, coal mine, bricks recipe');
 }
+// ---- the Brickworks: a dedicated stone-to-bricks building, alongside the Factory rather than instead of it,
+// that also unlocks two fancier (and more valuable) brick designs the Factory can't make
+{
+  seed = 92;
+  const s = sim.newCity('Kiln', rng); s.money = 20000; s.land.fill(1);
+  s.tech = [...(s.tech || []), 'logistics', 'masonry'];
+  for (let x = 2; x <= 16; x++) put(s, x, c + 1, T.ROAD);
+  put(s, 4, c + 2, T.FACTORY);
+  assert(!sim.canPlace(s, sim.idx(6, c + 2), T.BRICKWORKS).ok, 'Brickworks needs the bricklaying research to place');
+  // A Factory keeps making plain bricks; only a Brickworks can pick the fancier designs.
+  finishAll(s);
+  for (let k = 0; k < 20; k++) s.people.push({ ...s.people[0], i: 900 + k, j: -1 });
+  const factory = sim.idx(4, c + 2);
+  assert(sim.setRecipe(s, factory, 'bricks').ok, 'the Factory can still make plain bricks');
+  assert(!sim.setRecipe(s, factory, 'tiles').ok, 'tiles are Brickworks-only, not a Factory recipe');
+  s.tech = [...(s.tech || []), 'bricklaying'];
+  assert(sim.canPlace(s, sim.idx(6, c + 2), T.BRICKWORKS).ok, 'Brickworks unlocked by the Bricklaying research');
+  put(s, 6, c + 2, T.BRICKWORKS);
+  finishAll(s);
+  const works = sim.idx(6, c + 2);
+  assert(sim.setRecipe(s, works, 'bricks').ok, 'a Brickworks can also just make plain bricks');
+  s.res.stone = 200; s.res.coal = 200;
+  for (let h = 0; h < 24; h++) sim.tick(s, rng);
+  assert(s.res.bricks > 0, 'both the Factory and the Brickworks turned stone and coal into bricks');
+  const madeWithBoth = s.res.bricks;
+  assert(sim.setRecipe(s, works, 'pavers').ok, 'switch the Brickworks to ornamental pavers, now bricks are in stock');
+  for (let h = 0; h < 24; h++) sim.tick(s, rng);
+  assert(s.res.pavers > 0, 'the Brickworks turned bricks into pavers: ' + JSON.stringify(s.stats.products));
+  assert(!sim.setRecipe(s, factory, 'pavers').ok, 'pavers stay Brickworks-only even once researched');
+  console.log(`brickworks ok: factory+brickworks made ${madeWithBoth} bricks between them, then ${s.res.pavers} pavers`);
+}
 // ---- more ways a city can fall: no water or deep debt, each only after a run of bad days, and each resets
 // the moment the problem is gone. (Gridlock uses the exact same pattern in sim.js - traffic.needs.commute in
 // place of the water/debt checks below - and is exercised for real by test/balance.mjs across many seeds.)
@@ -786,23 +817,24 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
 {
   seed = 131;
   const s = sim.newCity('Lumberless', rng); s.money = 50000; s.land.fill(1);
+  s.tech = [...(s.tech || []), 'logistics', 'masonry', 'bricklaying'];   // so the Brickworks below is actually placeable, not just exempt
   s.res.wood = 0;
   assert(!sim.canPlace(s, sim.idx(8, c), T.SHOP).ok, 'no wood in stock, so no building it');
   assert.equal(sim.place(s, sim.idx(8, c), T.SHOP).ok, false, 'place refuses it too');
-  // The Sawmill, Quarry, Coal mine and Factory are exempt - you can always build your way out of a shortage.
-  for (const t of [T.MATERIALS, T.QUARRY, T.COALMINE, T.FACTORY]) assert(sim.canPlace(s, sim.idx(8, c), t).ok, `${B[t].name} can still go up with no wood on hand`);
+  // The Sawmill, Quarry, Coal mine, Factory and Brickworks are exempt - you can always build your way out of a shortage.
+  for (const t of [T.MATERIALS, T.QUARRY, T.COALMINE, T.FACTORY, T.BRICKWORKS]) assert(sim.canPlace(s, sim.idx(8, c), t).ok, `${B[t].name} can still go up with no wood on hand`);
   // Buying a little wood on the Exchange unblocks ordinary building again.
   assert(sim.buyResource(s, 'pine', 5).ok, 'buy some wood');
   assert(sim.canPlace(s, sim.idx(8, c), T.SHOP).ok, 'wood is back, and the starting bricks are still there, so building unblocks again');
   s.res.bricks = 0;
   assert(!sim.canPlace(s, sim.idx(8, c), T.SHOP).ok, 'no bricks in stock, so still no building it');
-  for (const t of [T.MATERIALS, T.QUARRY, T.COALMINE, T.FACTORY]) assert(sim.canPlace(s, sim.idx(8, c), t).ok, `${B[t].name} is exempt from the brick requirement too`);
+  for (const t of [T.MATERIALS, T.QUARRY, T.COALMINE, T.FACTORY, T.BRICKWORKS]) assert(sim.canPlace(s, sim.idx(8, c), t).ok, `${B[t].name} is exempt from the brick requirement too`);
   s.res.bricks = 5;
   const r = sim.place(s, sim.idx(8, c), T.SHOP);
   assert(r.ok, r.reason);
   assert(r.wood > 0 && r.brick > 0, 'the build actually spent some of each: ' + JSON.stringify(r));
   assert(s.res.bricks < 5, 'bricks in the bank went down');
-  console.log('wood and brick requirement ok: no stock of either blocks building (except the four exempt buildings)');
+  console.log('wood and brick requirement ok: no stock of either blocks building (except the five exempt buildings)');
 }
 // ---- the HUD's "$X a day" reflects a new, staffed building straight away, without waiting for daily() to
 // next settle the day (matches the real game loop: any action that changes staffing clears s._plan, and the

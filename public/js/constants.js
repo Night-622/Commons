@@ -86,6 +86,7 @@ export const T = {
   SOLAR: 42, WIND: 43, MUSEUM: 44, STADIUM: 45, HOTEL: 46, FARM: 47, HARBOUR: 48, AIRPORT: 49, LANDFILL: 50, RECYCLE: 51, SEWAGE: 52, VET: 53, METRO: 54, MONUMENT: 55,
   ORCHARD: 56, DAIRY: 57, RANCH: 58, MATERIALS: 59, WAREHOUSE: 60,
   QUARRY: 61, POULTRY: 62, STORE: 63, COALMINE: 64, GREENHOUSE: 65,
+  BRICKWORKS: 66,
 };
 
 export const CATS = [
@@ -162,6 +163,7 @@ export const B = {
   [T.QUARRY]: { key: 'quarry', name: 'Quarry', cat: 'work', col: 'work', cost: 320, work: 34, upkeep: 5, jobs: [['Quarry worker', 0, 6], ['Engineer', 2, 1]], pollution: 2, smog: 0.03, blurb: 'Dig metal or stone, or prospect for iron, gold or diamonds. Metal in stock also speeds up builders 50%.' },
   [T.POULTRY]: { key: 'poultry', name: 'Poultry farm', cat: 'work', col: 'park', cost: 240, work: 22, upkeep: 2, jobs: [['Poultry keeper', 0, 4]], pollution: 1, research: 'poultry', blurb: 'Collect eggs when they\'re ready.' },
   [T.COALMINE]: { key: 'coalmine', name: 'Coal mine', cat: 'work', col: 'work', cost: 300, work: 32, upkeep: 5, jobs: [['Miner', 0, 6], ['Engineer', 2, 1]], pollution: 2, smog: 0.03, blurb: 'Dig coal, for trade or for turning into bricks once you have the Masonry research.' },
+  [T.BRICKWORKS]: { key: 'brickworks', name: 'Brickworks', cat: 'work', col: 'work', cost: 340, work: 34, upkeep: 5, jobs: [['Brickmaker', 0, 6], ['Engineer', 2, 1]], pollution: 2, smog: 0.03, research: 'bricklaying', makesProducts: true, blurb: 'A dedicated line for stone and coal: plain bricks, or (once researched) fancier tiles and pavers that sell for more - without tying up a factory that could be making something else.' },
   [T.WAREHOUSE]: { key: 'warehouse', name: 'Storage yard', cat: 'work', col: 'work', cost: 200, work: 20, upkeep: 2, jobs: [['Storekeeper', 0, 2]], store: 600, research: 'logistics', blurb: 'Stores 600 more of every resource and product, to use later or sell.' },
   [T.STORE]: { key: 'store', name: 'Store', cat: 'work', col: 'shop', cost: 260, work: 26, upkeep: 3, jobs: [['Shopkeeper', 0, 3]], sellsProducts: true, research: 'retail', blurb: 'Sells the products your factories make straight to your own residents, at a better price than the Market pays.' },
   [T.GREENHOUSE]: { key: 'greenhouse', name: 'Greenhouse', cat: 'work', col: 'park', cost: 260, work: 26, upkeep: 3, jobs: [['Gardener', 0, 3]], fresh: 0.01, blurb: 'Buy a seed and grow herbs, peppers or strawberries under glass, in any season. Collect them when they\'re ripe.' },
@@ -315,6 +317,7 @@ export const TECH = [
   { id: 'carpentry', branch: 'industry', name: 'Carpentry', cost: 50, needs: 'logistics', text: 'Unlocks Furniture: a factory recipe that turns wood and metal into a product that makes homes comfier.' },
   { id: 'toolmaking', branch: 'industry', name: 'Toolmaking', cost: 65, needs: 'carpentry', text: 'Unlocks Tools: a factory recipe that turns metal and wood into a product that makes builders faster.' },
   { id: 'masonry', branch: 'industry', name: 'Masonry', cost: 60, needs: 'logistics', text: 'Unlocks Bricks: a factory recipe that turns stone and coal into a product that makes building cheaper.' },
+  { id: 'bricklaying', branch: 'industry', name: 'Bricklaying', cost: 50, needs: 'masonry', text: 'Unlocks the Brickworks (bricks without tying up a factory) and two fancier brick designs to sell: patterned tiles and ornamental pavers.' },
   { id: 'bakery', branch: 'farming', name: 'Bakery', cost: 55, needs: 'poultry', text: 'Unlocks Baked goods: a factory recipe that turns vegetables and eggs into a product that feeds people faster and cheaper.' },
   { id: 'smartgrid', branch: 'energy', name: 'Smart grid', cost: 70, text: 'Power and water reach 3 tiles further.' },
   { id: 'trafficai', branch: 'energy', name: 'Smart traffic lights', cost: 80, needs: 'smartgrid', text: 'Roads carry 20% more traffic.' },
@@ -387,12 +390,17 @@ export const PER_CAPITA = {
 // Products: factories turn raw resources into these once you've researched the recipe. A factory with a recipe
 // assigned consumes `recipe` from store each day (scaled by staffing, capped by what's there) and adds `makes` of
 // the product. Sell them in a Store for cash, or trade them on the Market like any resource. `benefit` is what
-// having some in store does for the city.
+// having some in store does for the city. `buildings`, where given, is which building types can pick that recipe
+// (setRecipe/productsDay check it); left out, any makesProducts building can.
 export const PRODUCTS = {
-  furniture: { name: 'Furniture', recipe: { wood: 2, metal: 1 }, makes: 1, tech: 'carpentry', import: 4.5, benefit: 'Homes with furniture in store are a little happier.' },
-  tools: { name: 'Tools', recipe: { metal: 2, wood: 1 }, makes: 1, tech: 'toolmaking', import: 5, benefit: 'Builders work faster while tools are in store.' },
-  baked: { name: 'Baked goods', recipe: { vegetables: 2, eggs: 1 }, makes: 1, tech: 'bakery', import: 3, benefit: 'Feeds people faster and cheaper than raw ingredients.' },
-  bricks: { name: 'Bricks', recipe: { stone: 2, coal: 1 }, makes: 1, tech: 'masonry', import: 4, benefit: 'Everything costs a little less to build while bricks are in store.' },
+  furniture: { name: 'Furniture', recipe: { wood: 2, metal: 1 }, makes: 1, tech: 'carpentry', import: 4.5, benefit: 'Homes with furniture in store are a little happier.', buildings: [T.FACTORY] },
+  tools: { name: 'Tools', recipe: { metal: 2, wood: 1 }, makes: 1, tech: 'toolmaking', import: 5, benefit: 'Builders work faster while tools are in store.', buildings: [T.FACTORY] },
+  baked: { name: 'Baked goods', recipe: { vegetables: 2, eggs: 1 }, makes: 1, tech: 'bakery', import: 3, benefit: 'Feeds people faster and cheaper than raw ingredients.', buildings: [T.FACTORY] },
+  bricks: { name: 'Bricks', recipe: { stone: 2, coal: 1 }, makes: 1, tech: 'masonry', import: 4, benefit: 'Everything costs a little less to build while bricks are in store.', buildings: [T.FACTORY, T.BRICKWORKS] },
+  // Brickworks-only designs, built from bricks themselves rather than raw stone: a step up in value, the way
+  // Furniture and Tools are a step up from raw wood and metal.
+  tiles: { name: 'Patterned tiles', recipe: { bricks: 2, metal: 1 }, makes: 1, tech: 'bricklaying', import: 7, benefit: 'Homes with tiles in store look sharper and are a little happier.', buildings: [T.BRICKWORKS] },
+  pavers: { name: 'Ornamental pavers', recipe: { bricks: 3 }, makes: 1, tech: 'bricklaying', import: 6, benefit: 'Paved streets and plazas in store draw a few more visitors.', buildings: [T.BRICKWORKS] },
 };
 export const PRODUCT_IDS = Object.keys(PRODUCTS);
 export const STORE_SALE_SHARE = 0.85;    // a Store sells products for this share of the import price (vs SURPLUS_SALE on the open market)

@@ -123,3 +123,10 @@ main"):
          the instant a job, lease or building changes, instead of
          waiting for the next day to settle. No firestore.rules change,
          no world reset.
+   2.4   A new Brickworks building turns stone into bricks on its own
+         (needs Bricklaying research, once you have Masonry), so a
+         Factory is free to run a different recipe at the same time.
+         Two fancier designs to make there too, once researched:
+         Patterned tiles and Ornamental pavers, both worth more than
+         plain bricks and sellable in a Store or on the Market like any
+         other product. No firestore.rules change, no world reset.

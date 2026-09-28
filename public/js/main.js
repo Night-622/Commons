@@ -614,6 +614,9 @@ function localTips() {
   if ((spareWood || spareMetal) && !state.grid.some((t, i) => t === T.FACTORY && sim.staffing(state, i) > 0 && state.rec?.[i])) {
     add(3, `You have plenty of ${spareWood && spareMetal ? 'wood and metal' : spareWood ? 'wood' : 'metal'} in store. Build a factory and pick a recipe to turn it into furniture, tools or baked goods.`, T.FACTORY);
   }
+  if (stock.stone >= 60 && sim.hasTech(state, 'bricklaying') && !state.grid.some((t, i) => t === T.BRICKWORKS && sim.staffing(state, i) > 0 && state.rec?.[i])) {
+    add(3, 'You have plenty of stone in store. Build a Brickworks and pick a recipe: plain bricks, or the fancier tiles and pavers.', T.BRICKWORKS);
+  }
   if (hasFactory && state.grid.some((t, i) => t === T.STORE && sim.staffing(state, i) > 0) && !PRODUCT_IDS.some((k) => stock[k] > 0)) {
     add(2.5, 'Your Store has nothing to sell. Assign a recipe to a factory, or bring in products from the Market.', T.STORE);
   }
@@ -657,7 +660,7 @@ function renderResbar() {
   const chip = (iconId, label, v, bad, title) => `<span class="rchip ${bad ? 'bad' : ''}" title="${esc(title)}">${icon(iconId)}<b class="num">${v}</b><span class="sr">${label}</span></span>`;
   const wood = sim.stockOf(state, 'wood');
   const woodTitle = `Wood: ${KIND_IDS.wood.map((k) => `${n(st[k])} ${RES[k].name.toLowerCase()}`).join(', ')}. Every building needs at least 1 in stock - a Sawmill (or the Exchange) always gets you more.`;
-  const brickTitle = `Bricks: ${n(st.bricks)} in store. Every building needs at least 1 in stock, and a little in store takes 5% off the price of everything - make more at a Factory once you have Masonry.`;
+  const brickTitle = `Bricks: ${n(st.bricks)} in store. Every building needs at least 1 in stock, and a little in store takes 5% off the price of everything - make more at a Factory or Brickworks once you have Masonry.`;
   const pop = state.people.length, shopsNeed = plan?.needs?.shops ?? 1, fed = Math.round(shopsNeed * pop);
   const fedTitle = `People fed: ${fed} of ${pop} have a grocer (or the hall’s little shop) with room to serve them.`;
   // Bricks are technically a factory product (recipe: stone+coal), but they get their own chip above now, so
@@ -2959,12 +2962,12 @@ function ownTile(i) {
       ? row('Recipe', rec.name) + row('Made yesterday', `${state.stats?.products?.made?.[recId] || 0} ${rec.name.toLowerCase()}`)
         + row('Uses a day', Object.entries(rec.recipe).map(([r, rn]) => `${rn} ${RES[r].name.toLowerCase()}`).join(', '))
       : '<p class="soft small">Pick a recipe to turn resources into a product to sell.</p>';
-    body += `<ul class="tech">${PRODUCT_IDS.map((id) => {
+    body += `<ul class="tech">${PRODUCT_IDS.filter((id) => !PRODUCTS[id].buildings || PRODUCTS[id].buildings.includes(t)).map((id) => {
       const p = PRODUCTS[id], has = sim.hasTech(state, p.tech), picked = recId === id;
       return `<li class="${picked ? 'done' : has ? '' : 'blocked'}"><span class="pmain"><b>${p.name}</b>
         <small>${Object.entries(p.recipe).map(([r, rn]) => `${rn} ${RES[r].name.toLowerCase()}`).join(' and ')} makes ${p.makes}. ${p.benefit}${has ? '' : ` Needs the ${TECH.find((x) => x.id === p.tech).name} research.`}</small></span>
         ${picked ? '<span class="tag">Picked</span>' : `<button class="btn ${has ? 'primary' : ''}" type="button" data-do="set-recipe" data-arg="${id}" ${has ? '' : 'disabled'}>Pick</button>`}</li>`;
-    }).join('')}${recId ? `<li><span class="pmain"><b>None</b><small>Leave the factory idle.</small></span><button class="btn" type="button" data-do="set-recipe" data-arg="none">Stop</button></li>` : ''}</ul>`;
+    }).join('')}${recId ? `<li><span class="pmain"><b>None</b><small>Leave it idle.</small></span><button class="btn" type="button" data-do="set-recipe" data-arg="none">Stop</button></li>` : ''}</ul>`;
   }
   if (d.sellsProducts) {
     const held = PRODUCT_IDS.filter((k) => (state.res?.[k] || 0) > 0);
@@ -3197,8 +3200,12 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 2.3';
+const VERSION = 'Commons 2.4';
 const CHANGELOG = [
+  ['2.4', [
+    'A new building, the Brickworks: turns stone (and coal) into bricks on its own, so a Factory is free to run a different recipe at the same time - needs the new Bricklaying research, once you have Masonry.',
+    'Two fancier designs to make there once researched: Patterned tiles and Ornamental pavers, both worth more than plain bricks and sellable in a Store or on the Market like any other product.',
+  ]],
   ['2.3', [
     'Building now needs bricks in stock too, not just wood - except the Sawmill, Quarry, Coal mine and Factory, so you can always build your way to more of either.',
     'The top bar is reordered and split: water, power, bricks, wood, then people fed - metal, stone and coal are still tracked in full in the Resources panel.',
