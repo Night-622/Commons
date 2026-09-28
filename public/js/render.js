@@ -629,7 +629,9 @@ export class Renderer {
   }
 
   car(g, P, car) {
-    const along = Math.abs(car.dx || 1) >= Math.abs(car.dy || 0);
+    // dx/dy is exactly 0 along one axis for any grid-aligned move (roads never run diagonally) - that 0 is
+    // real, not "no data yet", so it must not fall back to 1 the way an unset dx legitimately would.
+    const along = Math.abs(car.dx ?? 1) >= Math.abs(car.dy ?? 0);
     const L = 0.17, W = 0.1, x = car.lx, y = car.ly;
     const hx = along ? L : W, hy = along ? W : L;
     const col = car.follow ? '#ffc933' : CAR_COLS[car.c % CAR_COLS.length];
@@ -681,7 +683,8 @@ export class Renderer {
   }
 
   vehicle(g, P, a) {
-    const along = Math.abs(a.dx || 1) >= Math.abs(a.dy || 0), x = a.lx, y = a.ly;
+    // See car() above: dx/dy is exactly 0 (not unset) along one axis for any grid-aligned move, so ?? not ||.
+    const along = Math.abs(a.dx ?? 1) >= Math.abs(a.dy ?? 0), x = a.lx, y = a.ly;
     if (a.mode === 'bus') {
       const L = 0.34, W = 0.13, hx = along ? L : W, hy = along ? W : L;
       this.box(g, P, x - hx, y - hy, x + hx, y + hy, 0.03, 0.22, '#f2b233');
@@ -703,7 +706,7 @@ export class Renderer {
     const z = this.cam.z, u = Math.max(1.5, z * 0.05);
     if (a.mode === 'bike') {
       g.strokeStyle = '#2f3a40'; g.lineWidth = Math.max(1, u * 0.5);
-      const along = Math.abs(a.dx || 1) >= Math.abs(a.dy || 0), sx = along ? u * 1.6 : -u * 1.6, sy = u * 0.8;
+      const along = Math.abs(a.dx ?? 1) >= Math.abs(a.dy ?? 0), sx = along ? u * 1.6 : -u * 1.6, sy = u * 0.8;
       g.beginPath(); g.arc(x - sx, y - sy * (along ? 1 : -1) * 0.5, u * 0.9, 0, Math.PI * 2); g.arc(x + sx, y + sy * (along ? 1 : -1) * 0.5, u * 0.9, 0, Math.PI * 2); g.stroke();
       g.fillStyle = a.shirt; g.fillRect(x - u * 0.7, y - u * 4.2, u * 1.4, u * 2.6);
       g.fillStyle = '#e8c4a0'; g.beginPath(); g.arc(x, y - u * 4.9, u * 0.9, 0, Math.PI * 2); g.fill();
@@ -1285,7 +1288,7 @@ export class Renderer {
     const byTile = detailed ? this.scene.agentsByPlot?.get(plot.id) : null;
     if (byTile) for (const list of byTile.values()) for (const car of list) {
       const [cx, cy] = this.project(ox + car.lx, oy + car.ly);
-      const along = Math.abs(car.dx || 1) >= Math.abs(car.dy || 0);
+      const along = Math.abs(car.dx ?? 1) >= Math.abs(car.dy ?? 0);
       const k = car.mode === 'car' ? 1 : car.mode === 'bike' ? 0.55 : 0.4;
       g.fillStyle = car.follow ? '#ffc933' : car.mode === 'car' ? CAR_COLS[car.c % CAR_COLS.length] : car.shirt;
       g.fillRect(cx - s * (along ? 0.17 : 0.1) * k, cy - s * (along ? 0.1 : 0.17) * k, s * (along ? 0.34 : 0.2) * k, s * (along ? 0.2 : 0.34) * k);

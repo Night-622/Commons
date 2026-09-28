@@ -3200,8 +3200,11 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 2.7';
+const VERSION = 'Commons 2.8';
 const CHANGELOG = [
+  ['2.8', [
+    'Fixed a real bug: cars, buses and bikes on a north-south road always rendered as if they were on an east-west one, sideways to the road they were actually driving on.',
+  ]],
   ['2.7', [
     'Building now needs metal and stone in stock too, alongside wood - three real ingredients, not just a price discount (except the Sawmill and Quarry, so you can always dig your way out of a shortage).',
     'Bricks moved off ordinary construction: they’re spent reinforcing a building when you upgrade it instead, on top of the usual money cost.',

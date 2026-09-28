@@ -153,3 +153,6 @@ main"):
          make a bit less and cost a bit more, and every person and
          staffed building draws more of both. No firestore.rules change,
          no world reset.
+   2.8   Fixed a real bug: cars, buses and bikes on a north-south road
+         always rendered sideways, as if they were on an east-west one.
+         No firestore.rules change, no world reset.
