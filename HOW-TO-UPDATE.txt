@@ -156,3 +156,10 @@ main"):
    2.8   Fixed a real bug: cars, buses and bikes on a north-south road
          always rendered sideways, as if they were on an east-west one.
          No firestore.rules change, no world reset.
+   2.9   Bricks are gone: every building now needs wood, metal and stone
+         to build, and the same three to upgrade - no separate material
+         for upgrading any more. Masonry research and the Brickworks
+         building are gone too, along with bricks, patterned tiles and
+         ornamental pavers. This changes the building roster, so it's
+         another fresh start (WORLD_ID is now s2). No firestore.rules
+         change.

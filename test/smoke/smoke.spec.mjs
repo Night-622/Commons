@@ -28,7 +28,7 @@ async function found(page, { mayor = 'Mona', city = 'Testhaven' } = {}) {
 }
 // Fast-forward every city in the fake world to a metropolis with every technology, so a test can use what they open.
 async function unlockAll(page) {
-  await page.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plotState/')) { const st = JSON.parse(v.state); st.hall = 6; st.hallDone = {}; st.tech = ['highschool', 'university', 'trade', 'finance', 'retail', 'diplomacy', 'orchards', 'dairy', 'ranching', 'poultry', 'logistics', 'carpentry', 'toolmaking', 'bakery', 'masonry']; v.state = JSON.stringify(st); } localStorage.setItem('fakefb', JSON.stringify(db)); });
+  await page.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plotState/')) { const st = JSON.parse(v.state); st.hall = 6; st.hallDone = {}; st.tech = ['highschool', 'university', 'trade', 'finance', 'retail', 'diplomacy', 'orchards', 'dairy', 'ranching', 'poultry', 'logistics', 'carpentry', 'toolmaking', 'bakery']; v.state = JSON.stringify(st); } localStorage.setItem('fakefb', JSON.stringify(db)); });
   await page.reload();
   await expect(page.locator('#game')).toBeVisible({ timeout: 30_000 });
   if (await page.locator('#modal[open]').count()) await page.keyboard.press('Escape');
@@ -278,7 +278,7 @@ test('world: neighbours touch, with borders', async ({ browser }) => {
   await b.waitForTimeout(800);
   if (process.env.SHOTS) await b.screenshot({ path: `${process.env.SHOTS}/world-borders.png` });
   const plots = await b.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('fakefb')).docs).filter((k) => k.startsWith('plots/')));
-  expect(plots).toEqual(expect.arrayContaining([expect.stringMatching(/^plots\/s1_/)]));
+  expect(plots).toEqual(expect.arrayContaining([expect.stringMatching(/^plots\/s2_/)]));
   expect(plots.length).toBe(2);
   expect(clean(errors)).toEqual([]);
   await ctx.close();
@@ -373,7 +373,7 @@ test('resources: the Resources tab and research tree after a day', async ({ page
   await closeModal(page);
   await page.locator('#rail [data-panel="stats"]').click();
   await page.locator('#drawer [role="tab"]', { hasText: 'Resources' }).click();
-  // Two tables now: resources, and products (a new city starts with some bricks, so the Products table already shows).
+  // The resources table always shows; a products table joins it once the city has ever made or held one.
   await expect(page.locator('#drawer .restable').first()).toBeVisible();
   await expect(page.locator('#drawer .restable').first()).toContainText('Vegetables');
   if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/resources.png` });
@@ -469,8 +469,8 @@ test('private messages: message a neighbour, who sees it and replies', async ({ 
 
 test('resources bar, materials in prices, and what buildings make', async ({ page }) => {
   const errors = await newGame(page);
-  // Water, energy, rock, wood and metal. Products (furniture/tools/baked/bricks) stays hidden until the city
-  // has actually made one - a new city's starting brick stock doesn't count on its own.
+  // Water, energy, rock, wood and metal. Products (furniture/tools/baked) stays hidden until the city has
+  // actually made one - a brand new city holds none of them yet.
   await expect(page.locator('#resbar .rchip')).toHaveCount(5);
   await page.locator('#map').focus();
   await page.keyboard.press('b');

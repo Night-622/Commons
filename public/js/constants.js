@@ -1,13 +1,14 @@
 // All tunable numbers live here so balancing never means hunting through logic.
 
-// The shared world everyone starts in. 2.1 started every world afresh again (wood/mineral research gates,
-// adjustable lease terms): the open world is 's1', and private worlds made before RESET_AT are no longer listed.
-// Earlier worlds are still in the database, just not shown.
-export const WORLD_ID = 's1';
+// The shared world everyone starts in. 2.9 started every world afresh again (bricks removed, so a city holding
+// a Brickworks or brick/tile/paver stock would otherwise be left with an undefined building type): the open
+// world is 's2', and private worlds made before RESET_AT are no longer listed. Earlier worlds are still in the
+// database, just not shown.
+export const WORLD_ID = 's2';
 // Start of today in UTC, not the user's local calendar date (the world clock, day/night and this cutoff all run
 // on UTC - a local "tomorrow" can still be UTC "today", so bumping this by a calendar day too early would hide
 // worlds made only hours ago). Check the actual UTC date before changing this on a reset.
-export const RESET_AT = Date.UTC(2026, 8, 27);
+export const RESET_AT = Date.UTC(2026, 8, 28);
 export const CLASSIC_WORLD = 'public';
 // A council can own several cities: buy the plot next to one of yours. Priced like land: this many parcels at your
 // current land price, times PLOT_BUY_STEP for each city you already have, and never less than PLOT_BUY_MIN.
@@ -15,7 +16,7 @@ export const CLASSIC_WORLD = 'public';
 // The desk frees up when its holder has been idle this long, or their game stops checking in.
 export const MAX_CO = 3, DESK_IDLE_MS = 120000, DESK_STALE_MS = 60000, DESK_BEAT_MS = 20000;
 export const PLOT_BUY_PARCELS = 4, PLOT_BUY_STEP = 1.6, PLOT_BUY_MIN = 1000, MAX_CITIES = 9;
-export const OPEN_WORLDS = { s1: 'The world' };
+export const OPEN_WORLDS = { s2: 'The world' };
 export const PLOT = 24;          // tiles per side of a plot
 export const GAP = 0;            // tiles between neighbouring plots on the master map: none, so the world is one piece
 export const CHUNK = 4;          // land is bought in 4×4 parcels
@@ -86,7 +87,6 @@ export const T = {
   SOLAR: 42, WIND: 43, MUSEUM: 44, STADIUM: 45, HOTEL: 46, FARM: 47, HARBOUR: 48, AIRPORT: 49, LANDFILL: 50, RECYCLE: 51, SEWAGE: 52, VET: 53, METRO: 54, MONUMENT: 55,
   ORCHARD: 56, DAIRY: 57, RANCH: 58, MATERIALS: 59, WAREHOUSE: 60,
   QUARRY: 61, POULTRY: 62, STORE: 63, COALMINE: 64, GREENHOUSE: 65,
-  BRICKWORKS: 66,
 };
 
 export const CATS = [
@@ -162,8 +162,7 @@ export const B = {
   [T.MATERIALS]: { key: 'sawmill', name: 'Sawmill', cat: 'work', col: 'work', cost: 280, work: 30, upkeep: 4, jobs: [['Sawyer', 0, 6], ['Engineer', 2, 1]], pollution: 2, smog: 0.02, blurb: 'Pick a wood to cut; any of them speeds up builders 50% while some is in stock. Better woods take longer.' },
   [T.QUARRY]: { key: 'quarry', name: 'Quarry', cat: 'work', col: 'work', cost: 320, work: 34, upkeep: 5, jobs: [['Quarry worker', 0, 6], ['Engineer', 2, 1]], pollution: 2, smog: 0.03, blurb: 'Dig metal or stone, or prospect for iron, gold or diamonds. Metal in stock also speeds up builders 50%.' },
   [T.POULTRY]: { key: 'poultry', name: 'Poultry farm', cat: 'work', col: 'park', cost: 240, work: 22, upkeep: 2, jobs: [['Poultry keeper', 0, 4]], pollution: 1, research: 'poultry', blurb: 'Collect eggs when they\'re ready.' },
-  [T.COALMINE]: { key: 'coalmine', name: 'Coal mine', cat: 'work', col: 'work', cost: 300, work: 32, upkeep: 5, jobs: [['Miner', 0, 6], ['Engineer', 2, 1]], pollution: 2, smog: 0.03, blurb: 'Dig coal, for trade or for turning into bricks once you have the Masonry research.' },
-  [T.BRICKWORKS]: { key: 'brickworks', name: 'Brickworks', cat: 'work', col: 'work', cost: 340, work: 34, upkeep: 5, jobs: [['Brickmaker', 0, 6], ['Engineer', 2, 1]], pollution: 2, smog: 0.03, research: 'bricklaying', makesProducts: true, blurb: 'A dedicated line for stone and coal: plain bricks, or (once researched) fancier tiles and pavers that sell for more - without tying up a factory that could be making something else.' },
+  [T.COALMINE]: { key: 'coalmine', name: 'Coal mine', cat: 'work', col: 'work', cost: 300, work: 32, upkeep: 5, jobs: [['Miner', 0, 6], ['Engineer', 2, 1]], pollution: 2, smog: 0.03, blurb: 'Dig coal, to trade for cash.' },
   [T.WAREHOUSE]: { key: 'warehouse', name: 'Storage yard', cat: 'work', col: 'work', cost: 200, work: 20, upkeep: 2, jobs: [['Storekeeper', 0, 2]], store: 600, research: 'logistics', blurb: 'Stores 600 more of every resource and product, to use later or sell.' },
   [T.STORE]: { key: 'store', name: 'Store', cat: 'work', col: 'shop', cost: 260, work: 26, upkeep: 3, jobs: [['Shopkeeper', 0, 3]], sellsProducts: true, research: 'retail', blurb: 'Sells the products your factories make straight to your own residents, at a better price than the Market pays.' },
   [T.GREENHOUSE]: { key: 'greenhouse', name: 'Greenhouse', cat: 'work', col: 'park', cost: 260, work: 26, upkeep: 3, jobs: [['Gardener', 0, 3]], fresh: 0.01, blurb: 'Buy a seed and grow herbs, peppers or strawberries under glass, in any season. Collect them when they\'re ripe.' },
@@ -316,8 +315,6 @@ export const TECH = [
   { id: 'greenconcrete', branch: 'industry', name: 'Green concrete', cost: 40, needs: 'logistics', text: 'Everything costs 10% less to build.' },
   { id: 'carpentry', branch: 'industry', name: 'Carpentry', cost: 50, needs: 'logistics', text: 'Unlocks Furniture: a factory recipe that turns wood and metal into a product that makes homes comfier.' },
   { id: 'toolmaking', branch: 'industry', name: 'Toolmaking', cost: 65, needs: 'carpentry', text: 'Unlocks Tools: a factory recipe that turns metal and wood into a product that makes builders faster.' },
-  { id: 'masonry', branch: 'industry', name: 'Masonry', cost: 60, needs: 'logistics', text: 'Unlocks Bricks: a factory recipe that turns stone and coal into a product that makes building cheaper.' },
-  { id: 'bricklaying', branch: 'industry', name: 'Bricklaying', cost: 50, needs: 'masonry', text: 'Unlocks the Brickworks (bricks without tying up a factory) and two fancier brick designs to sell: patterned tiles and ornamental pavers.' },
   { id: 'bakery', branch: 'farming', name: 'Bakery', cost: 55, needs: 'poultry', text: 'Unlocks Baked goods: a factory recipe that turns vegetables and eggs into a product that feeds people faster and cheaper.' },
   { id: 'smartgrid', branch: 'energy', name: 'Smart grid', cost: 70, text: 'Power and water reach 3 tiles further.' },
   { id: 'trafficai', branch: 'energy', name: 'Smart traffic lights', cost: 80, needs: 'smartgrid', text: 'Roads carry 20% more traffic.' },
@@ -363,8 +360,8 @@ export const RES = {
   strawberries: { name: 'Strawberries', food: true, import: 0.45, kind: 'fruit' },
 };
 export const FOOD = Object.keys(RES).filter((k) => RES[k].food);
-// Raw materials: wood and metal (and their specific kinds) feed straight into building costs (buildPrice); stone
-// and coal don't, they're traded and turned into Bricks instead.
+// Raw materials: wood, metal and stone (and wood/metal's specific kinds) feed straight into building and
+// upgrade costs (buildPrice, upgradeMatPrice); coal is trade-only.
 export const RAW_GOODS = Object.keys(RES).filter((k) => !RES[k].food && RES[k].import !== undefined);
 // The market: offers to sell or buy resources, and loan requests, open to every mayor in the world.
 export const TRADE_RES = [...RAW_GOODS, ...FOOD];
@@ -396,21 +393,13 @@ export const PRODUCTS = {
   furniture: { name: 'Furniture', recipe: { wood: 2, metal: 1 }, makes: 1, tech: 'carpentry', import: 4.5, benefit: 'Homes with furniture in store are a little happier.', buildings: [T.FACTORY] },
   tools: { name: 'Tools', recipe: { metal: 2, wood: 1 }, makes: 1, tech: 'toolmaking', import: 5, benefit: 'Builders work faster while tools are in store.', buildings: [T.FACTORY] },
   baked: { name: 'Baked goods', recipe: { vegetables: 2, eggs: 1 }, makes: 1, tech: 'bakery', import: 3, benefit: 'Feeds people faster and cheaper than raw ingredients.', buildings: [T.FACTORY] },
-  bricks: { name: 'Bricks', recipe: { stone: 2, coal: 1 }, makes: 1, tech: 'masonry', import: 4, benefit: 'Everything costs a little less to build while bricks are in store.', buildings: [T.FACTORY, T.BRICKWORKS] },
-  // Brickworks-only designs, built from bricks themselves rather than raw stone: a step up in value, the way
-  // Furniture and Tools are a step up from raw wood and metal.
-  tiles: { name: 'Patterned tiles', recipe: { bricks: 2, metal: 1 }, makes: 1, tech: 'bricklaying', import: 7, benefit: 'Homes with tiles in store look sharper and are a little happier.', buildings: [T.BRICKWORKS] },
-  pavers: { name: 'Ornamental pavers', recipe: { bricks: 3 }, makes: 1, tech: 'bricklaying', import: 6, benefit: 'Paved streets and plazas in store draw a few more visitors.', buildings: [T.BRICKWORKS] },
 };
 export const PRODUCT_IDS = Object.keys(PRODUCTS);
 export const STORE_SALE_SHARE = 0.85;    // a Store sells products for this share of the import price (vs SURPLUS_SALE on the open market)
 export const FACTORY_BATCHES = 6;        // batches of a recipe a fully-staffed, fully-levelled factory can run a day
 // What a brand new city starts with: enough to build straight away and try a trade, without waiting on
-// production. Metal and stone are deliberately tighter than wood - a Quarry needs building soon. Bricks are
-// only for reinforcing (upgrading) now, not for ordinary construction, so a small taste is enough to try it.
-export const STARTING_RES = { water: 100, power: 200, wood: 200, metal: 90, stone: 110, bricks: 20 };
-// Bricks in store take this share off every build, on top of whatever wood or metal load discount applies.
-export const BRICK_DISCOUNT = 0.95;
+// production. Metal and stone are deliberately tighter than wood - a Quarry needs building soon.
+export const STARTING_RES = { water: 100, power: 200, wood: 200, metal: 90, stone: 110 };
 // City shares. Every city is worth what its public figures say (people, money, buildings, resources, growth,
 // mood) and has `shares` shares. A mayor can list between listMin and listMax of them once the city has minPop
 // people, and is paid for them at once (less ipoDiscount); others then buy and sell them on the exchange.

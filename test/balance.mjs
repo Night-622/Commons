@@ -4,7 +4,7 @@
 // Runs are reproducible: the world clock starts on launch day and moves one hour per tick, and
 // Math.random (used in a few places in sim.js) is replaced by the seeded generator.
 import * as sim from '../public/js/sim.js';
-import { T, B, PLOT, TICK_MS, TECH, kindOf } from '../public/js/constants.js';
+import { T, B, PLOT, TICK_MS, TECH, kindOf, PRODUCTS, PRODUCT_IDS } from '../public/js/constants.js';
 
 const START = Date.UTC(2026, 8, 25);
 let clock = START, seed = 1;
@@ -41,9 +41,8 @@ function run(startSeed, verbose) {
     if (s.status !== 'alive') { fellOn = day; break; }
     for (const i of roads) if (sim.owns(s, i) && s.grid[i] === T.EMPTY && s.money > 60) sim.place(s, i, T.ROAD);
     // Like a player, research whatever it can afford (cheapest first) and collect any harvests that are ready.
-    // Wood, metal and stone are the hard building requirements now (bricks moved to reinforcing, a nice-to-have
-    // rather than something growth depends on), and none of the three need research - so there's no need to
-    // beeline anything here any more, unlike the old bricks-blocks-building days.
+    // Wood, metal and stone are the hard building requirements now, and none of the three need research, so
+    // there's no need to beeline anything here.
     for (const t of [...TECH].sort((a, b) => a.cost - b.cost)) if (sim.canResearch(s, t.id).ok) sim.research(s, t.id);
     for (let i = 0; i < PLOT * PLOT; i++) if (sim.harvestReady(s, i)) sim.harvest(s, i);
     // Since 2.0, a sawmill/quarry/farm/etc makes nothing until you pick a target: collect anything ready, and
@@ -79,14 +78,19 @@ function run(startSeed, verbose) {
     // there's no chicken-and-egg problem) and topped up from the Exchange if the pantry ever runs low regardless.
     else if (s.people.length >= 8 && !utils.counts[T.MATERIALS] && s.money > B[T.MATERIALS].cost + 150) tryBuild(T.MATERIALS);
     else if (s.people.length >= 8 && !utils.counts[T.QUARRY] && s.money > B[T.QUARRY].cost + 150) tryBuild(T.QUARRY);
-    // Coal and a Factory aren't needed to keep building any more (only bricks are, and only for reinforcing),
-    // so these stay a lower priority, same as before.
+    // Coal and a Factory aren't needed to keep building any more, so these stay a lower priority.
     else if (s.people.length >= 10 && !utils.counts[T.COALMINE] && s.money > B[T.COALMINE].cost + 150) tryBuild(T.COALMINE);
     else if (s.people.length >= 12 && !utils.counts[T.FACTORY] && s.money > B[T.FACTORY].cost + 150) tryBuild(T.FACTORY);
     if (sim.stockOf(s, 'wood') < 20 && s.money > 500) sim.buyResource(s, 'pine', 30);
     if (sim.stockOf(s, 'metal') < 20 && s.money > 500) sim.buyResource(s, 'metal', 20);
     if (sim.stockOf(s, 'stone') < 20 && s.money > 500) sim.buyResource(s, 'stone', 20);
-    if (sim.hasTech(s, 'masonry')) for (let i = 0; i < PLOT * PLOT; i++) if (s.grid[i] === T.FACTORY && !s.rec?.[i]) sim.setRecipe(s, i, 'bricks');
+    // A factory with no recipe assigned earns nothing at all (upkeep with no return) - a sensible mayor picks
+    // whatever's researched, same as the advisor's build tip already nudges toward.
+    for (let i = 0; i < PLOT * PLOT; i++) {
+      if (s.grid[i] !== T.FACTORY || s.rec?.[i]) continue;
+      const pick = PRODUCT_IDS.find((id) => sim.hasTech(s, PRODUCTS[id].tech));
+      if (pick) sim.setRecipe(s, i, pick);
+    }
     const p = s._plan || sim.plan(s, rng);
     const tips = sim.advice(s, p).filter((a) => a.type != null);
     // A sensible mayor saves up for the most urgent thing rather than spending on the rest.

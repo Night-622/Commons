@@ -614,9 +614,6 @@ function localTips() {
   if ((spareWood || spareMetal) && !state.grid.some((t, i) => t === T.FACTORY && sim.staffing(state, i) > 0 && state.rec?.[i])) {
     add(3, `You have plenty of ${spareWood && spareMetal ? 'wood and metal' : spareWood ? 'wood' : 'metal'} in store. Build a factory and pick a recipe to turn it into furniture, tools or baked goods.`, T.FACTORY);
   }
-  if (stock.stone >= 60 && sim.hasTech(state, 'bricklaying') && !state.grid.some((t, i) => t === T.BRICKWORKS && sim.staffing(state, i) > 0 && state.rec?.[i])) {
-    add(3, 'You have plenty of stone in store. Build a Brickworks and pick a recipe: plain bricks, or the fancier tiles and pavers.', T.BRICKWORKS);
-  }
   if (hasFactory && state.grid.some((t, i) => t === T.STORE && sim.staffing(state, i) > 0) && !PRODUCT_IDS.some((k) => stock[k] > 0)) {
     add(2.5, 'Your Store has nothing to sell. Assign a recipe to a factory, or bring in products from the Market.', T.STORE);
   }
@@ -651,8 +648,7 @@ function nextStep(tips) {
 // deliberately not easy (see USE in constants.js). Stone, wood and metal are the three ingredients building
 // actually requires (not just a discount), shown separately since running out of any one of them is what stops
 // you building. Coal stays tracked in full in the Resources panel, just not iconified up here. Products only
-// appear once the city has ever made or held one - bricks included, now that they're spent on reinforcing
-// (upgrading) a building rather than on building a new one.
+// appear once the city has ever made or held one.
 function renderResbar() {
   const bar = $('resbar');
   if (!bar || !state) return;
@@ -661,13 +657,8 @@ function renderResbar() {
   const wood = sim.stockOf(state, 'wood'), metal = sim.stockOf(state, 'metal');
   const woodTitle = `Wood: ${KIND_IDS.wood.map((k) => `${n(st[k])} ${RES[k].name.toLowerCase()}`).join(', ')}. Every building needs at least 1 in stock - a Sawmill (or the Exchange) always gets you more.`;
   const metalTitle = `Metal: ${KIND_IDS.metal.map((k) => `${n(st[k])} ${RES[k].name.toLowerCase()}`).join(', ')}. Every building needs at least 1 in stock - a Quarry (or the Exchange) always gets you more.`;
-  const stoneTitle = `Stone: ${n(st.stone)} in store. Every building needs at least 1 in stock - a Quarry (or the Exchange) always gets you more. Bricks (made from stone) reinforce a building when you upgrade it.`;
-  // Bricks are a factory/Brickworks product now spent on reinforcing (upgrading), not on ordinary construction,
-  // so - unlike wood, metal and stone - they don't need their own chip on a bar about what you can build right
-  // now; they're still fully tracked, with everything else a factory makes, in the Resources panel. A new city
-  // starts with a little brick stock (STARTING_RES) - that alone shouldn't flip the Products chip on; only
-  // ever actually having made some (or holding a non-brick product) should.
-  const hasProducts = PRODUCT_IDS.some((k) => (k !== 'bricks' && st[k] > 0) || ps?.made?.[k] > 0);
+  const stoneTitle = `Stone: ${n(st.stone)} in store. Every building needs at least 1 in stock - a Quarry (or the Exchange) always gets you more.`;
+  const hasProducts = PRODUCT_IDS.some((k) => st[k] > 0 || ps?.made?.[k] > 0);
   const products = PRODUCT_IDS.reduce((a, k) => a + (st[k] || 0), 0);
   const productsTitle = `Products: ${PRODUCT_IDS.map((k) => `${n(st[k])} ${PRODUCTS[k].name.toLowerCase()}`).join(', ')}`;
   bar.innerHTML = chip('i-water', 'water', n(st.water), r?.short.water > 0 && r?.prod.water > 0, `Water: ${n(st.water)} in store, ${n(r?.prod.water)} made and ${n(r?.need.water)} used a day`)
@@ -1656,7 +1647,7 @@ function upgradeAt(i) {
   const { x, y } = sim.xy(i);
   if (sim.canUpgrade(state, i).ok) checkpoint('upgrade');
   const r = sim.upgrade(state, i);
-  if (r.ok) { play('place'); addPop(x, y, 1.2, `−$${r.cost}`, '#ffffff'); announce(`Reinforcing for ${money(r.cost)} and ${r.brick} brick${r.brick === 1 ? '' : 's'}.`); afterChange(); }
+  if (r.ok) { play('place'); addPop(x, y, 1.2, `−$${r.cost}`, '#ffffff'); announce(`Upgrading for ${money(r.cost)}, ${r.wood} wood, ${r.metal} metal and ${r.stone} stone.`); afterChange(); }
   else { notify(r.reason, 'act'); play('error'); }
 }
 function buyChunk(c) {
@@ -2688,10 +2679,10 @@ function inspectorAction(what, arg) {
     const t = state.grid[i];
     const list = state.grid.map((g, j) => (g === t ? j : -1)).filter((j) => j >= 0 && sim.canUpgrade(state, j).ok).sort((a, b) => state.lv[a] - state.lv[b]);
     checkpoint(`${B[t].name} upgrades`);
-    let n = 0, spent = 0, bricks = 0;
-    for (const j of list) { if (!sim.canUpgrade(state, j).ok) continue; const r = sim.upgrade(state, j); if (r.ok) { n++; spent += r.cost; bricks += r.brick; } }
-    if (n) { play('level'); notify(`Reinforcing ${n} ${B[t].name.toLowerCase()}${n > 1 ? 's' : ''} for ${money(spent)} and ${bricks} brick${bricks === 1 ? '' : 's'}.`, 'act'); afterChange(); }
-    else notify('Not enough money or bricks to upgrade any.', 'act');
+    let n = 0, spent = 0, wood = 0, metal = 0, stone = 0;
+    for (const j of list) { if (!sim.canUpgrade(state, j).ok) continue; const r = sim.upgrade(state, j); if (r.ok) { n++; spent += r.cost; wood += r.wood; metal += r.metal; stone += r.stone; } }
+    if (n) { play('level'); notify(`Upgrading ${n} ${B[t].name.toLowerCase()}${n > 1 ? 's' : ''} for ${money(spent)}, ${wood} wood, ${metal} metal and ${stone} stone.`, 'act'); afterChange(); }
+    else notify('Not enough money, wood, metal or stone to upgrade any.', 'act');
   }
   else if (what === 'clear') {
     const t = state.grid[i];
@@ -3005,8 +2996,8 @@ function ownTile(i) {
       const total = Math.round(d.work * 1.2);
       actions += `<p class="soft">Upgrading to level ${lv + 1}: ${pct(1 - q.left / total)} done.</p>${q.tap < total * 0.25 - 1e-6 ? `<button class="btn primary" data-do="tap">${icon('i-hammer')}Help build</button>` : ''}`;
     } else if (lv < MAX_LEVEL) {
-      const c = sim.canUpgrade(state, i), cost = sim.upgradeCost(state, i), brick = sim.reinforceCost(state, i);
-      actions += `<button class="btn primary" data-do="upgrade" ${c.ok ? '' : 'disabled'}>${icon('i-up')}Reinforce for ${money(cost)} and ${brick} brick${brick === 1 ? '' : 's'}</button>
+      const c = sim.canUpgrade(state, i), cost = sim.upgradeCost(state, i), mat = sim.upgradeMatCost(state, i);
+      actions += `<button class="btn primary" data-do="upgrade" ${c.ok ? '' : 'disabled'}>${icon('i-up')}Upgrade for ${money(cost)} and ${mat} ${icon('i-materials')}</button>
         <p class="soft small">${c.ok ? `Level ${lv + 1} adds ${Math.round((LEVEL.capacity[lv + 1] / LEVEL.capacity[lv] - 1) * 100)}% capacity.` : esc(c.reason)}</p>`;
     } else actions += '<p class="soft small">Top level reached.</p>';
   }
@@ -3200,8 +3191,13 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 2.8';
+const VERSION = 'Commons 2.9';
 const CHANGELOG = [
+  ['2.9', [
+    'Bricks are gone: every building now needs wood, metal and stone to build, and the same three to upgrade - no separate material for upgrading any more.',
+    'The Masonry research (and the Brickworks building it used to unlock) is gone too, along with bricks, patterned tiles and ornamental pavers as things to make or sell.',
+    'A fresh start: this update changes the building roster, so the open world moved on (WORLD_ID s1 → s2).',
+  ]],
   ['2.8', [
     'Fixed a real bug: cars, buses and bikes on a north-south road always rendered as if they were on an east-west one, sideways to the road they were actually driving on.',
   ]],

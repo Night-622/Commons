@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import * as sim from '../public/js/sim.js';
-import { T, PLOT, B, START_MONEY, START_CHUNKS, STARTING_RES, BRICK_DISCOUNT, COLLAPSE_POP, COLLAPSE_WATER_DAYS, COLLAPSE_DEBT, COLLAPSE_DEBT_DAYS, BATCH_CAP, TRADE_RES, RES, PER_CAPITA, LEASE_TAX_MAX } from '../public/js/constants.js';
+import { T, PLOT, B, START_MONEY, START_CHUNKS, STARTING_RES, COLLAPSE_POP, COLLAPSE_WATER_DAYS, COLLAPSE_DEBT, COLLAPSE_DEBT_DAYS, BATCH_CAP, TRADE_RES, RES, PER_CAPITA, LEASE_TAX_MAX } from '../public/js/constants.js';
 
 // sim.tick() never reads the real clock, but sim.newCity() sets the city's *starting* hour of day from
 // Date.now() - left alone, that makes every run start at a different hour, which can shift a long test's exact
@@ -102,7 +102,7 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
 {
   seed = 11;
   const s = sim.newCity('Transit', rng);
-  s.money = 50000; s.res.wood = 5000; s.res.bricks = 5000; s.land.fill(1);
+  s.money = 50000; s.res.wood = 5000; s.res.metal = 5000; s.res.stone = 5000; s.land.fill(1);
   for (let x = 2; x <= 21; x++) put(s, x, c + 1, T.ROAD);
   for (let x = 2; x <= 21; x++) put(s, x, 3, T.RAIL);
   for (let y = 4; y <= c; y++) { put(s, 2, y, T.ROAD); put(s, 21, y, T.ROAD); }
@@ -578,10 +578,7 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   s.res = { wood: 3 };
   const cheaper = sim.buildPrice(s, sim.idx(5, c + 2), T.FARM);
   assert.equal(cheaper.money, B[T.FARM].cost - 3 * 2, 'each load of your own takes $2 off');
-  s.res = { bricks: 1 };
-  const bricked = sim.buildPrice(s, sim.idx(5, c + 2), T.FARM);
-  assert.equal(bricked.money, Math.round(B[T.FARM].cost * BRICK_DISCOUNT), 'any bricks in store take a little off everything (a discount only - bricks aren\'t spent building, just reinforcing)');
-  assert(!sim.canPlace(s, sim.idx(5, c + 2), T.FARM).ok, 'bricks alone don\'t satisfy the wood/metal/stone requirement');
+  assert(!sim.canPlace(s, sim.idx(5, c + 2), T.FARM).ok, 'wood alone doesn\'t satisfy the wood/metal/stone requirement');
   s.res = { wood: 3, metal: 3, stone: 2 };   // exactly matCost(T.FARM) (8) between them, and some of each in stock
   assert.equal(sim.matCost(T.FARM), 8, 'sanity check: this test\'s stock exactly covers the farm\'s material cost');
   const m0 = s.money, finalPrice = sim.buildPrice(s, sim.idx(5, c + 2), T.FARM).money;
@@ -710,8 +707,7 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(s.res.furniture < 500, 'a staffed Store sells product stock: ' + s.res.furniture);
   console.log('factories and products ok: store sold down to', s.res.furniture);
 }
-// ---- more raw resources: the quarry can dig metal, stone or prospect for minerals; coal mines make coal;
-// bricks turn stone and coal into a product
+// ---- more raw resources: the quarry can dig metal, stone or prospect for minerals; coal mines make coal
 {
   seed = 91;
   const s = sim.newCity('Digger', rng); s.money = 20000; s.land.fill(1);
@@ -737,44 +733,7 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert.equal(sim.picksAt(s, quarry).iron.group, 'Prospect');
   assert(sim.reserve(s, 'st1', 'sell', 'stone', 1, 1).ok && sim.reserve(s, 'co1', 'sell', 'coal', 1, 1).ok, 'stone and coal can be posted on the Market');
   sim.release(s, 'st1'); sim.release(s, 'co1');
-  assert(!sim.setRecipe(s, factory, 'bricks').ok, 'bricks need the masonry technology');
-  s.tech = [...(s.tech || []), 'logistics', 'masonry'];
-  assert(sim.setRecipe(s, factory, 'bricks').ok, 'recipe assigned once researched');
-  s.res.stone = 200; s.res.coal = 200;
-  for (let h = 0; h < 24; h++) sim.tick(s, rng);
-  assert(s.res.bricks > 0, 'the factory turned stone and coal into bricks: ' + JSON.stringify(s.stats.products));
-  console.log('more resources ok: quarry stone/iron, coal mine, bricks recipe');
-}
-// ---- the Brickworks: a dedicated stone-to-bricks building, alongside the Factory rather than instead of it,
-// that also unlocks two fancier (and more valuable) brick designs the Factory can't make
-{
-  seed = 92;
-  const s = sim.newCity('Kiln', rng); s.money = 20000; s.land.fill(1);
-  s.tech = [...(s.tech || []), 'logistics', 'masonry'];
-  for (let x = 2; x <= 16; x++) put(s, x, c + 1, T.ROAD);
-  put(s, 4, c + 2, T.FACTORY);
-  assert(!sim.canPlace(s, sim.idx(6, c + 2), T.BRICKWORKS).ok, 'Brickworks needs the bricklaying research to place');
-  // A Factory keeps making plain bricks; only a Brickworks can pick the fancier designs.
-  finishAll(s);
-  for (let k = 0; k < 20; k++) s.people.push({ ...s.people[0], i: 900 + k, j: -1 });
-  const factory = sim.idx(4, c + 2);
-  assert(sim.setRecipe(s, factory, 'bricks').ok, 'the Factory can still make plain bricks');
-  assert(!sim.setRecipe(s, factory, 'tiles').ok, 'tiles are Brickworks-only, not a Factory recipe');
-  s.tech = [...(s.tech || []), 'bricklaying'];
-  assert(sim.canPlace(s, sim.idx(6, c + 2), T.BRICKWORKS).ok, 'Brickworks unlocked by the Bricklaying research');
-  put(s, 6, c + 2, T.BRICKWORKS);
-  finishAll(s);
-  const works = sim.idx(6, c + 2);
-  assert(sim.setRecipe(s, works, 'bricks').ok, 'a Brickworks can also just make plain bricks');
-  s.res.stone = 200; s.res.coal = 200;
-  for (let h = 0; h < 24; h++) sim.tick(s, rng);
-  assert(s.res.bricks > 0, 'both the Factory and the Brickworks turned stone and coal into bricks');
-  const madeWithBoth = s.res.bricks;
-  assert(sim.setRecipe(s, works, 'pavers').ok, 'switch the Brickworks to ornamental pavers, now bricks are in stock');
-  for (let h = 0; h < 24; h++) sim.tick(s, rng);
-  assert(s.res.pavers > 0, 'the Brickworks turned bricks into pavers: ' + JSON.stringify(s.stats.products));
-  assert(!sim.setRecipe(s, factory, 'pavers').ok, 'pavers stay Brickworks-only even once researched');
-  console.log(`brickworks ok: factory+brickworks made ${madeWithBoth} bricks between them, then ${s.res.pavers} pavers`);
+  console.log('more resources ok: quarry stone/iron, coal mine, coal on the Market');
 }
 // ---- a higher-level workplace produces faster, not just with more job slots. A factory recipe (productsDay)
 // and a power/water plant's daily yield (production) already multiplied by LEVEL.capacity; advanceBatches -
@@ -808,22 +767,26 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(rateL2 > rateL1 * 1.5, `level 2 batches fill faster: level 1 ${rateL1}/hour, level 2 ${rateL2}/hour`);
   console.log(`workplace levels ok: quarry batch progress went from ${rateL1}/hour at level 1 to ${rateL2}/hour at level 2`);
 }
-// ---- reinforcing (upgrading) needs bricks in stock too, not just money - construction itself no longer does
+// ---- upgrading needs wood, metal and stone in stock too, not just money - the same three ingredients
+// construction itself needs, at the same rate (upgradeMatCost mirrors matCost)
 {
   seed = 95;
-  const s = sim.newCity('Reinforce', rng); s.money = 50000; s.land.fill(1);
+  const s = sim.newCity('Upgrader2', rng); s.money = 50000; s.land.fill(1);
   put(s, 8, c, T.SHOP);
   finishAll(s);
   const shop = sim.idx(8, c);
-  s.res.bricks = 0;
-  assert(!sim.canUpgrade(s, shop).ok, 'no bricks in stock, so no reinforcing it, even with plenty of money');
-  s.res.bricks = 50;
+  s.res.wood = 0; s.res.metal = 0; s.res.stone = 0;
+  assert(!sim.canUpgrade(s, shop).ok, 'no wood, metal or stone in stock, so no upgrading it, even with plenty of money');
+  // Small amounts (upgradeMatCost(shop) is 6), so wood alone can't cover it and the split draws on all three.
+  s.res.wood = 2; s.res.metal = 2; s.res.stone = 5;
   const check = sim.canUpgrade(s, shop);
-  assert(check.ok && check.brick > 0, 'bricks in stock: reinforcing unblocks, and it says how many bricks it needs: ' + JSON.stringify(check));
-  const before = s.res.bricks, r = sim.upgrade(s, shop);
-  assert(r.ok && r.brick > 0, 'reinforcing actually spends bricks: ' + JSON.stringify(r));
-  assert.equal(s.res.bricks, before - r.brick, 'bricks in the bank went down by exactly what was spent');
-  console.log('reinforcing ok: needs bricks in stock, spent', r.brick, 'of them');
+  assert(check.ok && check.wood > 0 && check.metal > 0 && check.stone > 0, 'wood, metal and stone in stock: upgrading unblocks, and it says how much of each it needs: ' + JSON.stringify(check));
+  const before = { wood: s.res.wood, metal: s.res.metal, stone: s.res.stone }, r = sim.upgrade(s, shop);
+  assert(r.ok && r.wood > 0 && r.metal > 0 && r.stone > 0, 'upgrading actually spends wood, metal and stone: ' + JSON.stringify(r));
+  assert.equal(s.res.wood, before.wood - r.wood, 'wood in the bank went down by exactly what was spent');
+  assert.equal(s.res.metal, before.metal - r.metal, 'metal in the bank went down by exactly what was spent');
+  assert.equal(s.res.stone, before.stone - r.stone, 'stone in the bank went down by exactly what was spent');
+  console.log('upgrading ok: needs wood, metal and stone in stock, spent', r.wood, r.metal, r.stone, 'of them');
 }
 // ---- more ways a city can fall: no water or deep debt, each only after a run of bad days, and each resets
 // the moment the problem is gone. (Gridlock uses the exact same pattern in sim.js - traffic.needs.commute in
