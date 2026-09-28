@@ -25,10 +25,10 @@ export const LAND_PRICE = 150;   // first extra parcel; each one after costs 18%
 export const LAND_STEP = 1.18;
 export const MOVE_FEE = 0.25;    // moving a building costs a quarter of its price
 
-export const TICK_MS = 75000;    // 1 tick = 1 in-game hour, so 1 in-game day = 30 real minutes
+export const TICK_MS = 25000;    // 1 tick = 1 in-game hour, so 1 in-game day = 10 real minutes
 export const HOURS_PER_DAY = 24;
-export const DAWN = 6, DUSK = 22;     // 16 hours of daylight and 8 of night: 20 real minutes of day, 10 of night
-export const MAX_OFFLINE_DAYS = 48;   // city days simulated while you're away (24 real hours); after that it waits for you
+export const DAWN = 6, DUSK = 20;     // 14 hours of daylight and 10 of night: ~5.8 real minutes of day, ~4.2 of night
+export const MAX_OFFLINE_DAYS = 144;  // city days simulated while you're away (24 real hours); after that it waits for you
 // Builders work this many times faster than one labour unit an hour, and progress in real time between hours,
 // so a house still goes up in seconds even though an hour now lasts 75 seconds.
 export const BUILD_SPEED = 30;

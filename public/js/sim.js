@@ -2241,6 +2241,11 @@ function daily(s, plan, rng) {
     else { s.loan.left -= due; if (s.loan.left <= 0) { s.loan = null; s.flags.repaid = 1; note(s, 'good', 'The loan is paid off.'); } }
   }
   s.money += st.income - st.upkeep;
+  // On top of that once-a-day settlement, a small trickle every hour for the rest of the next day - a tenth of
+  // today's net, so money visibly moves between days rather than only jumping once at the day boundary. Purely
+  // additive: it doesn't touch the settlement above, or anything that reads s.money right after it (debt/bailout
+  // checks below), so it can't be mistaken for the city being any less solvent than it already is.
+  s.hourlyPay = Math.round((st.income - st.upkeep) / 10);
   st.savingsGain = Math.round(savingsGain);
   if (st.savingsGain) s.savings = Math.round(((s.savings || 0) + st.savingsGain) * 100) / 100;
 
@@ -2423,7 +2428,10 @@ function daily(s, plan, rng) {
   homes = byHome();
   if (st.departures) note(s, 'warn', `${st.departures} ${st.departures > 1 ? 'people' : 'person'} left the city.`);
   if (s.happiness >= 0.55 && !st.departures) {
-    let budget = Math.max(1, Math.round(homesWithRoom(s, homes).reduce((a, h) => a + roomIn(s, h, homes), 0) * 0.25 * s.happiness));
+    // A faster-growing town: at least 2 arrivals a day (once there's room and mood for them), scaling up with
+    // free room and happiness same as before, just at a higher rate (was 0.25) so a city with room typically
+    // sees several a day rather than trickling in one at a time.
+    let budget = Math.max(2, Math.round(homesWithRoom(s, homes).reduce((a, h) => a + roomIn(s, h, homes), 0) * 0.3 * s.happiness));
     for (const h of homesWithRoom(s, homes, 2)) {
       if (budget <= 0) break;
       const room = roomIn(s, h, homes);
@@ -2742,6 +2750,7 @@ export function tick(s, rng = Math.random) {
   const avg = s.people.length ? s.people.reduce((a, x) => a + x.m, 0) / s.people.length : 0.65;
   s.happiness += (avg - s.happiness) * 0.25;
   s.hour++;
+  if (s.hourlyPay) s.money += s.hourlyPay;   // the trickle from yesterday's daily() settlement (see there)
   let collapsed = null, day = null;
   if (s.hour >= HOURS_PER_DAY) {
     s.hour = 0;

@@ -320,7 +320,8 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   for (const x of [3, 4, 5, 6]) put(s, x, c + 2, T.HOUSE);
   for (const x of [17, 18, 19, 20]) put(s, x, c + 2, T.WORK);
   put(s, 4, c, T.METRO); put(s, 19, c, T.METRO);
-  finishAll(s);
+  put(s, 10, c + 2, T.WATER);   // this scenario pushes population straight to COLLAPSE_POP (40); without a water
+  finishAll(s);                 // source it starts a real collapse countdown a few days later (see waterShortDays)
   for (let k = 0; k < 30; k++) s.people.push({ ...s.people[0], i: 4000 + k, h: sim.idx(3 + (k % 4), c + 2), j: -1, e: 2 });
   for (const [x, o] of [[4, 10], [19, 14]]) for (let k = 0; k < 2; k++) { const p = s.people[o + k]; p.j = sim.idx(x, c); p.jt = 0; }
   const plan = sim.plan(s, rng);

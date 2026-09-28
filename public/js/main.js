@@ -3200,8 +3200,13 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 2.5';
+const VERSION = 'Commons 2.6';
 const CHANGELOG = [
+  ['2.6', [
+    'A faster world clock: a day now lasts 10 minutes (about 6 of daylight, 4 of night), down from 30. Your city still keeps living for up to 24 real hours while you’re away.',
+    'On top of the usual once-a-day settlement, a tenth of that day’s net money now also trickles in every hour, so the bank balance visibly moves between days, not just at the day boundary.',
+    'New residents move in a bit faster: at least 2 arrivals a day once there’s room and the mood for them, up from 1.',
+  ]],
   ['2.5', [
     'Upgrading a Quarry, Coal mine, Sawmill, farm, orchard, dairy, ranch, poultry farm or Greenhouse now actually speeds up the work, the same bonus a factory recipe or a power/water plant already got from levelling up - not just more job slots for more workers.',
   ]],
@@ -3450,7 +3455,7 @@ const FAQ = [
   ['Why are people leaving?', 'Unhappy families move away. Open People and filter by Unhappy to see what’s on their minds, then fix the weakest need in the mood panel.'],
   ['My money keeps going down.', 'Upkeep is fixed even when people leave. In Stats, Budget shows where money goes. Lower service funding in Stats, Policy, or get more people into work.'],
   ['How do I connect to a neighbour?', 'Run a road or railway to your plot edge where the neighbour has one at the same spot. A bridge appears and the cities are linked.'],
-  ['Why is time different when I come back?', 'Every city shares one world clock: a day lasts 30 minutes (20 of daylight, 10 of night). While you’re away your city keeps living for up to 48 days (24 hours), then waits for you.'],
+  ['Why is time different when I come back?', 'Every city shares one world clock: a day lasts 10 minutes (about 6 of daylight, 4 of night). While you’re away your city keeps living for up to 144 days (24 hours), then waits for you.'],
   ['Can I get my guest city on another device?', 'Only if you save it as an account first: Account, then Account again, then Save as an account.'],
 ];
 function showSupport() {

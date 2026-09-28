@@ -136,3 +136,11 @@ main"):
          a factory recipe or a power/water plant, which already worked
          faster per level too. Now they all do. No firestore.rules
          change, no world reset.
+   2.6   A day now lasts 10 minutes (about 6 of daylight, 4 of night),
+         down from 30 - your city still keeps living for up to 24 real
+         hours while you're away. On top of the usual once-a-day
+         settlement, a tenth of that day's net money now also trickles
+         in every hour, so the balance visibly moves between days. New
+         residents arrive a bit faster too: at least 2 a day once there's
+         room and the mood for them, up from 1. No firestore.rules
+         change, no world reset.
