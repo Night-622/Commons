@@ -144,3 +144,12 @@ main"):
          residents arrive a bit faster too: at least 2 a day once there's
          room and the mood for them, up from 1. No firestore.rules
          change, no world reset.
+   2.7   Building now needs metal and stone in stock too, alongside wood
+         (except the Sawmill and Quarry, so you can always dig your way
+         out of a shortage). Bricks moved off ordinary construction: they
+         reinforce a building when you upgrade it instead, on top of the
+         usual money cost. The top bar is now water, energy, rock, wood
+         and metal. Power and water are harder to keep up with: plants
+         make a bit less and cost a bit more, and every person and
+         staffed building draws more of both. No firestore.rules change,
+         no world reset.

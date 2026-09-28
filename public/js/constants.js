@@ -101,10 +101,10 @@ export const B = {
   [T.XING]: { key: 'crossing', name: 'Level crossing', cost: 30, work: 2, upkeep: 0.5, blurb: 'Where a road and a railway meet. Cars wait while trains pass.' },
   [T.LIGHTS]: { key: 'lights', name: 'Traffic lights', cost: 80, work: 4, upkeep: 1, blurb: 'Put on a junction. Carries 50% more traffic than an uncontrolled junction.' },
   [T.ROUNDABOUT]: { key: 'roundabout', name: 'Roundabout', cost: 150, work: 8, upkeep: 1.5, blurb: 'Put on a junction. Keeps traffic flowing: 80% more than an uncontrolled junction.' },
-  [T.POWER]: { key: 'power', makes: { power: 120 }, name: 'Power station', cat: 'utility', col: 'work', cost: 700, work: 70, upkeep: 12, jobs: [['Engineer', 2, 3]], supply: 12, pollution: 2, power: true, fossil: true, smog: 0.12, blurb: 'Powers every building within 12 tiles, but burns fuel: dirty air and noise. Once the town has 25 people, unpowered buildings work at 60%.' },
-  [T.SOLAR]: { key: 'solar', makes: { power: 60 }, name: 'Solar farm', cat: 'utility', col: 'work', cost: 560, work: 50, upkeep: 4, jobs: [['Technician', 1, 1]], supply: 9, power: true, blurb: 'Clean power for everything within 9 tiles. No smoke, no noise.' },
-  [T.WIND]: { key: 'wind', makes: { power: 60 }, name: 'Wind turbine', cat: 'utility', col: 'work', cost: 480, work: 44, upkeep: 3, jobs: [['Technician', 1, 1]], supply: 11, power: true, pollution: 1, blurb: 'Clean power for everything within 11 tiles. A gentle hum: homes right beside it mind a little.' },
-  [T.WATER]: { key: 'water', name: 'Water tower', cat: 'utility', col: 'work', cost: 350, work: 36, upkeep: 5, jobs: [['Technician', 1, 1]], supply: 10, water: true, makes: { water: 80 }, blurb: 'Clean water for every building within 10 tiles. Without it, illness spreads faster.' },
+  [T.POWER]: { key: 'power', makes: { power: 95 }, name: 'Power station', cat: 'utility', col: 'work', cost: 780, work: 70, upkeep: 15, jobs: [['Engineer', 2, 3]], supply: 12, pollution: 2, power: true, fossil: true, smog: 0.12, blurb: 'Powers every building within 12 tiles, but burns fuel: dirty air and noise. Once the town has 25 people, unpowered buildings work at 60%.' },
+  [T.SOLAR]: { key: 'solar', makes: { power: 48 }, name: 'Solar farm', cat: 'utility', col: 'work', cost: 620, work: 50, upkeep: 5, jobs: [['Technician', 1, 1]], supply: 9, power: true, blurb: 'Clean power for everything within 9 tiles. No smoke, no noise.' },
+  [T.WIND]: { key: 'wind', makes: { power: 48 }, name: 'Wind turbine', cat: 'utility', col: 'work', cost: 540, work: 44, upkeep: 4, jobs: [['Technician', 1, 1]], supply: 11, power: true, pollution: 1, blurb: 'Clean power for everything within 11 tiles. A gentle hum: homes right beside it mind a little.' },
+  [T.WATER]: { key: 'water', name: 'Water tower', cat: 'utility', col: 'work', cost: 420, work: 36, upkeep: 7, jobs: [['Technician', 1, 1]], supply: 10, water: true, makes: { water: 65 }, blurb: 'Clean water for every building within 10 tiles. Without it, illness spreads faster.' },
   [T.LANDFILL]: { key: 'landfill', name: 'Landfill', cat: 'utility', col: 'work', cost: 240, work: 24, upkeep: 3, jobs: [['Refuse collector', 0, 2]], waste: 70, pollution: 2, smog: 0.02, blurb: 'Takes the rubbish of 70 people. Smelly: homes nearby are less happy.' },
   [T.RECYCLE]: { key: 'recycle', name: 'Recycling centre', cat: 'utility', col: 'work', cost: 520, work: 50, upkeep: 5, jobs: [['Sorter', 0, 3], ['Manager', 2, 1]], waste: 120, sells: 0.3, blurb: 'Takes the rubbish of 120 people with no smell, and sells what it sorts.' },
   [T.SEWAGE]: { key: 'sewage', name: 'Sewage works', cat: 'utility', col: 'work', cost: 620, work: 60, upkeep: 6, jobs: [['Technician', 1, 2]], sewage: 150, pollution: 1, blurb: 'Treats the sewage of 150 people. Without it, once the town passes 70, illness spreads.' },
@@ -405,8 +405,10 @@ export const PRODUCTS = {
 export const PRODUCT_IDS = Object.keys(PRODUCTS);
 export const STORE_SALE_SHARE = 0.85;    // a Store sells products for this share of the import price (vs SURPLUS_SALE on the open market)
 export const FACTORY_BATCHES = 6;        // batches of a recipe a fully-staffed, fully-levelled factory can run a day
-// What a brand new city starts with: enough to build straight away and try a trade, without waiting on production.
-export const STARTING_RES = { water: 100, power: 200, wood: 200, bricks: 200 };
+// What a brand new city starts with: enough to build straight away and try a trade, without waiting on
+// production. Metal and stone are deliberately tighter than wood - a Quarry needs building soon. Bricks are
+// only for reinforcing (upgrading) now, not for ordinary construction, so a small taste is enough to try it.
+export const STARTING_RES = { water: 100, power: 200, wood: 200, metal: 90, stone: 110, bricks: 20 };
 // Bricks in store take this share off every build, on top of whatever wood or metal load discount applies.
 export const BRICK_DISCOUNT = 0.95;
 // City shares. Every city is worth what its public figures say (people, money, buildings, resources, growth,
@@ -414,7 +416,10 @@ export const BRICK_DISCOUNT = 0.95;
 // people, and is paid for them at once (less ipoDiscount); others then buy and sell them on the exchange.
 export const STOCK = { shares: 1000, listMin: 50, listMax: 490, minPop: 40, ipoDiscount: 0.95, fee: 0.01 };
 export const MARKET = { maxQty: 5000, maxPrice: 50, maxLoan: 20000, maxLoanDays: 30, maxOpen: 6 };
-export const USE = { water: 1, power: 0.5, food: 1, powerPerBuilding: 1 };   // a day, per person (and per staffed building for power)
+// A day, per person - plus a per-staffed-building draw on top, since running a building takes water and power
+// too, not just housing people. Water and power are deliberately not easy: keeping both flowing takes real,
+// ongoing infrastructure as the city grows, not a plant or two put up once and forgotten.
+export const USE = { water: 1.3, power: 0.7, food: 1, powerPerBuilding: 1.5, waterPerBuilding: 0.6 };
 export const STORE_BASE = 200;          // of each resource, before warehouses
 export const SURPLUS_SALE = 0.5;        // surplus sells for this share of the import price
 // Building takes materials: a load per $25 of price. The price includes buying them in; every load you have in

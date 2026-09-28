@@ -580,13 +580,14 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert.equal(cheaper.money, B[T.FARM].cost - 3 * 2, 'each load of your own takes $2 off');
   s.res = { bricks: 1 };
   const bricked = sim.buildPrice(s, sim.idx(5, c + 2), T.FARM);
-  assert.equal(bricked.money, Math.round(B[T.FARM].cost * BRICK_DISCOUNT), 'any bricks in store take a little off everything');
-  s.res = { wood: 3, bricks: 5 };   // building now needs some of each in stock, not just wood
+  assert.equal(bricked.money, Math.round(B[T.FARM].cost * BRICK_DISCOUNT), 'any bricks in store take a little off everything (a discount only - bricks aren\'t spent building, just reinforcing)');
+  assert(!sim.canPlace(s, sim.idx(5, c + 2), T.FARM).ok, 'bricks alone don\'t satisfy the wood/metal/stone requirement');
+  s.res = { wood: 3, metal: 3, stone: 2 };   // exactly matCost(T.FARM) (8) between them, and some of each in stock
+  assert.equal(sim.matCost(T.FARM), 8, 'sanity check: this test\'s stock exactly covers the farm\'s material cost');
   const m0 = s.money, finalPrice = sim.buildPrice(s, sim.idx(5, c + 2), T.FARM).money;
   put(s, 5, c + 2, T.FARM);
   assert.equal(s.money, m0 - finalPrice);
-  assert.equal(s.res.wood, 0, 'the wood is used');
-  assert(s.res.bricks < 5, 'the bricks are used too');
+  assert.equal(s.res.wood + s.res.metal + s.res.stone, 0, 'wood, metal and stone are all used, drawing on each');
   for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = [];
   const farm = sim.idx(5, c + 2);
   const hand = s.people.find((p) => p.a >= 18 && p.a < 65 && !(p.j === sim.HALL_INDEX && p.jt === 0));
@@ -807,6 +808,23 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(rateL2 > rateL1 * 1.5, `level 2 batches fill faster: level 1 ${rateL1}/hour, level 2 ${rateL2}/hour`);
   console.log(`workplace levels ok: quarry batch progress went from ${rateL1}/hour at level 1 to ${rateL2}/hour at level 2`);
 }
+// ---- reinforcing (upgrading) needs bricks in stock too, not just money - construction itself no longer does
+{
+  seed = 95;
+  const s = sim.newCity('Reinforce', rng); s.money = 50000; s.land.fill(1);
+  put(s, 8, c, T.SHOP);
+  finishAll(s);
+  const shop = sim.idx(8, c);
+  s.res.bricks = 0;
+  assert(!sim.canUpgrade(s, shop).ok, 'no bricks in stock, so no reinforcing it, even with plenty of money');
+  s.res.bricks = 50;
+  const check = sim.canUpgrade(s, shop);
+  assert(check.ok && check.brick > 0, 'bricks in stock: reinforcing unblocks, and it says how many bricks it needs: ' + JSON.stringify(check));
+  const before = s.res.bricks, r = sim.upgrade(s, shop);
+  assert(r.ok && r.brick > 0, 'reinforcing actually spends bricks: ' + JSON.stringify(r));
+  assert.equal(s.res.bricks, before - r.brick, 'bricks in the bank went down by exactly what was spent');
+  console.log('reinforcing ok: needs bricks in stock, spent', r.brick, 'of them');
+}
 // ---- more ways a city can fall: no water or deep debt, each only after a run of bad days, and each resets
 // the moment the problem is gone. (Gridlock uses the exact same pattern in sim.js - traffic.needs.commute in
 // place of the water/debt checks below - and is exercised for real by test/balance.mjs across many seeds.)
@@ -846,28 +864,28 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(s.cond[shop] > 0, `a fully-decayed building repairs once solvent: cond ${s.cond[shop]}`);
   console.log('derelict repair ok: a building stuck at 0% condition climbed back to', s.cond[shop]);
 }
-// ---- wood and bricks are real construction ingredients, not just a discount on the price
+// ---- wood, metal and stone are all real construction ingredients, not just a discount on the price
 {
   seed = 131;
   const s = sim.newCity('Lumberless', rng); s.money = 50000; s.land.fill(1);
-  s.tech = [...(s.tech || []), 'logistics', 'masonry', 'bricklaying'];   // so the Brickworks below is actually placeable, not just exempt
-  s.res.wood = 0;
-  assert(!sim.canPlace(s, sim.idx(8, c), T.SHOP).ok, 'no wood in stock, so no building it');
+  s.res.wood = 0; s.res.metal = 0; s.res.stone = 0;
+  assert(!sim.canPlace(s, sim.idx(8, c), T.SHOP).ok, 'no wood, metal or stone in stock, so no building it');
   assert.equal(sim.place(s, sim.idx(8, c), T.SHOP).ok, false, 'place refuses it too');
-  // The Sawmill, Quarry, Coal mine, Factory and Brickworks are exempt - you can always build your way out of a shortage.
-  for (const t of [T.MATERIALS, T.QUARRY, T.COALMINE, T.FACTORY, T.BRICKWORKS]) assert(sim.canPlace(s, sim.idx(8, c), t).ok, `${B[t].name} can still go up with no wood on hand`);
-  // Buying a little wood on the Exchange unblocks ordinary building again.
-  assert(sim.buyResource(s, 'pine', 5).ok, 'buy some wood');
-  assert(sim.canPlace(s, sim.idx(8, c), T.SHOP).ok, 'wood is back, and the starting bricks are still there, so building unblocks again');
-  s.res.bricks = 0;
-  assert(!sim.canPlace(s, sim.idx(8, c), T.SHOP).ok, 'no bricks in stock, so still no building it');
-  for (const t of [T.MATERIALS, T.QUARRY, T.COALMINE, T.FACTORY, T.BRICKWORKS]) assert(sim.canPlace(s, sim.idx(8, c), t).ok, `${B[t].name} is exempt from the brick requirement too`);
-  s.res.bricks = 5;
+  // The Sawmill and the Quarry are exempt - you can always build your way out of a shortage: the Sawmill makes
+  // wood, the Quarry makes both metal and stone.
+  for (const t of [T.MATERIALS, T.QUARRY]) assert(sim.canPlace(s, sim.idx(8, c), t).ok, `${B[t].name} can still go up with none of the three on hand`);
+  // Buying wood alone still isn't enough - metal and stone are independently required too. Small amounts, so
+  // the build below (matCost(T.SHOP) is 6) draws on all three rather than wood alone covering it.
+  assert(sim.buyResource(s, 'pine', 2).ok, 'buy some wood');
+  assert(!sim.canPlace(s, sim.idx(8, c), T.SHOP).ok, 'wood alone doesn\'t unblock it - metal and stone are still missing');
+  assert(sim.buyResource(s, 'metal', 2).ok, 'buy some metal');
+  assert(!sim.canPlace(s, sim.idx(8, c), T.SHOP).ok, 'wood and metal alone doesn\'t unblock it either - stone is still missing');
+  assert(sim.buyResource(s, 'stone', 5).ok, 'buy some stone');
+  assert(sim.canPlace(s, sim.idx(8, c), T.SHOP).ok, 'all three in stock: building unblocks');
   const r = sim.place(s, sim.idx(8, c), T.SHOP);
   assert(r.ok, r.reason);
-  assert(r.wood > 0 && r.brick > 0, 'the build actually spent some of each: ' + JSON.stringify(r));
-  assert(s.res.bricks < 5, 'bricks in the bank went down');
-  console.log('wood and brick requirement ok: no stock of either blocks building (except the five exempt buildings)');
+  assert(r.wood > 0 && r.metal > 0 && r.stone > 0, 'the build actually spent some of each: ' + JSON.stringify(r));
+  console.log('wood/metal/stone requirement ok: no stock of any one of the three blocks building (except the Sawmill and Quarry)');
 }
 // ---- the HUD's "$X a day" reflects a new, staffed building straight away, without waiting for daily() to
 // next settle the day (matches the real game loop: any action that changes staffing clears s._plan, and the

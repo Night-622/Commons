@@ -345,7 +345,7 @@ function resourcesDay(s, uc) {
   const res = (s.res ||= {}), pop = s.people.length, prod = production(s, uc), cap = storeCap(s, uc);
   let staffed = 0;
   for (let i = 0; i < N; i++) { const d = B[s.grid[i]]; if (d?.jobs && d.cat && active(s, i, uc) && staffing(s, i) > 0) staffed++; }
-  const need = { water: pop * USE.water, power: pop * USE.power + staffed * USE.powerPerBuilding, food: pop * USE.food };
+  const need = { water: pop * USE.water + staffed * USE.waterPerBuilding, power: pop * USE.power + staffed * USE.powerPerBuilding, food: pop * USE.food };
   const short = { water: 0, power: 0 };
   for (const k of ['water', 'power']) {
     const have = (res[k] || 0) + prod[k], used = Math.min(have, need[k]);
@@ -939,22 +939,22 @@ export function takeKind(s, kind, n) {
 }
 
 // Materials a building needs, and what it costs: the price includes buying them in, less MAT_BUY for each load
-// from your store. Wood is used first, then metal, for whatever's short.
+// from your store. Wood is used first, then metal, then stone, for whatever's short.
 export const matCost = (type) => (B[type]?.cost ? Math.max(1, Math.round(B[type].cost * MAT_PER_COST)) : 0);
-// Wood and bricks are real, required ingredients (canPlace), not just a price discount - except these five:
-// the ones you'd need to build in order to ever get more wood or bricks in the first place. Requiring materials
-// to build the things that make materials would be a dead end with no way out.
-const BUILD_MAT_EXEMPT = [T.MATERIALS, T.QUARRY, T.COALMINE, T.FACTORY, T.BRICKWORKS];
+// Wood, metal and stone are real, required ingredients (canPlace), not just a price discount - except these two:
+// the ones you'd need to build in order to ever get more of any of them in the first place (a Sawmill for wood,
+// a Quarry for metal and stone). Requiring materials to build the things that make materials would be a dead
+// end with no way out.
+const BUILD_MAT_EXEMPT = [T.MATERIALS, T.QUARRY];
 export function buildPrice(s, i, type) {
   const mat = matCost(type);
-  const wood = Math.min(mat, Math.floor(stockOf(s, 'wood'))), metal = Math.min(mat - wood, Math.floor(stockOf(s, 'metal')));
-  const use = wood + metal, bought = mat - use;
-  // Bricks are a required ingredient too, spent at the same rate as wood/metal (capped by what's in stock, same
-  // pattern - 'bricks' isn't a kind with several ids, so stockOf/takeKind just fall back to that one id).
-  const brick = Math.min(mat, Math.floor(stockOf(s, 'bricks')));
+  const wood = Math.min(mat, Math.floor(stockOf(s, 'wood')));
+  const metal = Math.min(mat - wood, Math.floor(stockOf(s, 'metal')));
+  const stone = Math.min(mat - wood - metal, Math.floor(stockOf(s, 'stone')));
+  const use = wood + metal + stone, bought = mat - use;
   let base = type === T.XING ? B[type].cost : tileCost(s, i, type);
   if ((s.res?.bricks || 0) > 0) base = Math.round(base * BRICK_DISCOUNT);   // bricks in store: everything costs a little less
-  return { money: Math.max(Math.round(base / 2), base - use * MAT_BUY), mat, use, wood, metal, bought, brick, base };
+  return { money: Math.max(Math.round(base / 2), base - use * MAT_BUY), mat, use, wood, metal, stone, bought, base };
 }
 
 // Land value, 0..1 per tile. Parks, services, transit and clean air raise it; noise lowers it.
@@ -1782,11 +1782,12 @@ export function canPlace(s, i, type) {
   const a = availability(s, type);
   if (!a.ok) return { ok: false, reason: a.reason + '.' };
   const price = buildPrice(s, i, type);
-  // Wood and bricks are real, required ingredients for buildings (not roads/rail/paths) - not just a discount -
-  // except for the handful of buildings you'd need to recover from running out (see BUILD_MAT_EXEMPT above).
+  // Wood, metal and stone are real, required ingredients for buildings (not roads/rail/paths) - not just a
+  // discount - except for the handful of buildings you'd need to recover from running out (BUILD_MAT_EXEMPT).
   if (B[type].cat && !BUILD_MAT_EXEMPT.includes(type)) {
     if (stockOf(s, 'wood') < 1) return { ok: false, reason: 'Needs wood in stock. Cut some at a Sawmill, or buy it on the Exchange.' };
-    if ((s.res?.bricks || 0) < 1) return { ok: false, reason: 'Needs bricks in stock. Make some at a Factory (once you have Masonry), or trade for some on the Market.' };
+    if (stockOf(s, 'metal') < 1) return { ok: false, reason: 'Needs metal in stock. Dig some at a Quarry, or buy it on the Exchange.' };
+    if (stockOf(s, 'stone') < 1) return { ok: false, reason: 'Needs stone in stock. Dig some at a Quarry, or buy it on the Exchange.' };
   }
   if (s.money < price.money) return { ok: false, reason: `${ter === 2 ? 'A bridge here' : ter === 1 ? 'Building on a hill' : 'It'} costs $${price.money}.` };
   return { ok: true };
@@ -1798,16 +1799,16 @@ export function place(s, i, type) {
   if (crossing(s, i, type)) type = T.XING;
   const price = buildPrice(s, i, type), cost = price.money;
   s.money -= cost;
-  const took = { ...(price.wood ? takeKind(s, 'wood', price.wood) : {}), ...(price.metal ? takeKind(s, 'metal', price.metal) : {}), ...(price.brick ? takeKind(s, 'bricks', price.brick) : {}) };
+  const took = { ...(price.wood ? takeKind(s, 'wood', price.wood) : {}), ...(price.metal ? takeKind(s, 'metal', price.metal) : {}), ...(price.stone ? takeKind(s, 'stone', price.stone) : {}) };
   if (s.zone) s.zone[i] = 0;   // your own buildings are public: you pay their upkeep
   if (s.lease) delete s.lease[i];
   s.grid[i] = type;
   s.cond[i] = 0;
   s.lv[i] = 1;
-  s.queue.push({ i, left: B[type].work, tap: 0, paid: cost, mat: price.use + price.brick, wood: price.wood, metal: price.metal, brick: price.brick, took });
+  s.queue.push({ i, left: B[type].work, tap: 0, paid: cost, mat: price.use, wood: price.wood, metal: price.metal, stone: price.stone, took });
   s.counters.built++;
   s._plan = null;
-  return { ok: true, cost, mat: price.mat, wood: price.wood, metal: price.metal, brick: price.brick };
+  return { ok: true, cost, mat: price.mat, wood: price.wood, metal: price.metal, stone: price.stone };
 }
 
 export function undoPlace(s, i) {
@@ -1830,6 +1831,10 @@ export function undoPlace(s, i) {
 }
 
 export const upgradeCost = (s, i) => Math.round(B[s.grid[i]].cost * LEVEL.cost[level(s, i) + 1]);
+// Reinforcing: an upgrade needs bricks in stock too, same MAT_PER_COST rate construction uses for wood/metal/
+// stone, but not bought in - there's no simple buy line for bricks (see PRODUCTS.bricks), so this is capped by
+// whatever's actually in store, same pattern the old wood/brick construction gate used.
+export const reinforceCost = (s, i) => Math.max(1, Math.round(upgradeCost(s, i) * MAT_PER_COST));
 export function canUpgrade(s, i) {
   const t = s.grid[i];
   if (s.status !== 'alive') return { ok: false, reason: 'This city has fallen.' };
@@ -1838,9 +1843,10 @@ export function canUpgrade(s, i) {
   if (s.queue.some((q) => q.i === i)) return { ok: false, reason: 'Builders are already working here.' };
   if (level(s, i) >= MAX_LEVEL) return { ok: false, reason: 'Already at the top level.' };
   if (s.cond[i] < 60) return { ok: false, reason: 'Repair it first: condition must be 60% or more.' };
+  if ((s.res?.bricks || 0) < 1) return { ok: false, reason: 'Needs bricks in stock to reinforce it. Make some at a Factory or Brickworks (once you have Masonry), or trade for some on the Market.' };
   const cost = upgradeCost(s, i);
   if (s.money + (s.savings || 0) < cost) return { ok: false, reason: `Needs $${cost}.` };
-  return { ok: true, cost };
+  return { ok: true, cost, brick: Math.min(reinforceCost(s, i), Math.floor(stockOf(s, 'bricks'))) };
 }
 // The ring-fenced upgrade fund (see lease's `save` share) pays first, ordinary money covers the rest.
 export function upgrade(s, i) {
@@ -1849,8 +1855,9 @@ export function upgrade(s, i) {
   const fromSavings = Math.min(s.savings || 0, check.cost);
   s.savings = Math.round(((s.savings || 0) - fromSavings) * 100) / 100;
   s.money -= check.cost - fromSavings;
+  if (check.brick) takeKind(s, 'bricks', check.brick);
   s.queue.push({ i, left: Math.round(B[s.grid[i]].work * 1.2), up: true, tap: 0 });
-  return { ok: true, cost: check.cost, fromSavings };
+  return { ok: true, cost: check.cost, fromSavings, brick: check.brick };
 }
 
 export function tapHelp(s, i) {
