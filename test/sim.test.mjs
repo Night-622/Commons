@@ -28,6 +28,25 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(plan.needs.jobs > 0);
   console.log('new city ok');
 }
+// ---- migrate() cleans up a building type or product id a later version removed outright (2.9 removed the
+// Brickworks, T id 66, and its bricks/tiles/pavers products - a real, live bug: a save holding one crashed
+// the renderer, which reads B[grid[i]] unconditionally, before it could ever save again). Regression test
+// for the fix rather than for 66 specifically, since the same gap would reopen for any future removal.
+{
+  const s = sim.newCity('Orphaned', rng);
+  s.grid[10] = 66; s.cond[10] = 80; s.lv[10] = 2;   // an old, now-nonexistent building type
+  s.grid[11] = T.FACTORY; s.cond[11] = 80;
+  s.rec = { 11: 'bricks' };                          // a recipe for a product that no longer exists
+  s.res.bricks = 40; s.res.tiles = 5;                // stock of resources that no longer exist
+  const m = sim.migrate(s, rng);
+  assert(!B[66], 'sanity check: 66 really is an unrecognised type in the current building roster');
+  assert.equal(m.grid[10], T.RUBBLE, 'the unrecognised tile becomes rubble, not left dangling');
+  assert.equal(m.cond[10], 0);
+  assert.equal(m.grid[11], T.FACTORY, 'a real building next to it is untouched');
+  assert(!m.rec[11], 'the stale recipe is cleared rather than pointing at a product that no longer exists');
+  assert(!('bricks' in m.res) && !('tiles' in m.res), 'stray resource stock for a removed product is cleared too');
+  console.log('migrate cleans up removed types ok');
+}
 
 // ---- a working town over 25 days
 {

@@ -475,7 +475,10 @@ export class Renderer {
     const th = this.th, pal = this.pal;
     const lv = plot.lv ? plot.lv[i] || 1 : 1;
     const q = plot.queueMap?.get(i);
-    if (t === T.RUBBLE) {
+    // A plot can hold a tile type a later version removed outright (see sim.js migrate() for the save-side
+    // fix) - this draws it as rubble rather than crashing on B[t] being undefined. Matters for more than just
+    // your own city: this also draws neighbours' plots, and their save might not be migrated yet.
+    if (t === T.RUBBLE || !B[t]) {
       for (let k = 0; k < 3; k++) {
         const a = tx + 0.2 + hash(i, k) * 0.5, b = ty + 0.2 + hash(i, k + 7) * 0.5, s = 0.14 + hash(i, k + 3) * 0.1;
         this.box(g, P, a, b, a + s, b + s, 0, s * 0.8, th.ruin);

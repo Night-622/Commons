@@ -217,6 +217,17 @@ export function migrate(s, rng = Math.random) {
     }
     delete s.pop; delete s.cohorts;
   }
+  // A save can hold a building type or product id that a later version removed outright (2.9 removed the
+  // Brickworks and its bricks/tiles/pavers, the first time a building has ever been deleted rather than just
+  // added to) - B[removedType] or PRODUCTS[removedId] is undefined, and the next thing that reads it crashes
+  // before the city can save again. Fixed generically so it isn't a one-off patch for bricks specifically:
+  // an unrecognised tile becomes rubble, same as any other building whose condition fully decays; a factory
+  // recipe pointing at a product that no longer exists just goes idle.
+  for (let i = 0; i < N; i++) {
+    if (s.grid[i] !== T.EMPTY && !B[s.grid[i]]) { s.grid[i] = T.RUBBLE; s.cond[i] = 0; s.lv[i] = 1; s.zone[i] = 0; delete s.lease[i]; if (s.rec) delete s.rec[i]; }
+  }
+  if (s.rec) for (const i of Object.keys(s.rec)) if (!PRODUCT_IDS.includes(s.rec[i])) delete s.rec[i];
+  if (s.res) for (const k of Object.keys(s.res)) if (!RES[k] && !PRODUCT_IDS.includes(k)) delete s.res[k];
   s.v = 4;
   return s;
 }

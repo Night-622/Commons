@@ -163,3 +163,9 @@ main"):
          ornamental pavers. This changes the building roster, so it's
          another fresh start (WORLD_ID is now s2). No firestore.rules
          change.
+   2.10  Fixed a real bug from 2.9: a city that still had a Brickworks,
+         or a factory making bricks/tiles/pavers, could freeze and stop
+         saving - looked exactly like a permissions problem but wasn't;
+         deploying rules again wouldn't have fixed it. The game now
+         quietly cleans that out on load instead of choking on it. No
+         firestore.rules change, no world reset.

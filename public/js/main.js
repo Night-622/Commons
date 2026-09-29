@@ -3191,8 +3191,11 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 2.9';
+const VERSION = 'Commons 2.10';
 const CHANGELOG = [
+  ['2.10', [
+    'Fixed a real bug from 2.9: a city that still had a Brickworks, or a factory set to make bricks/tiles/pavers, could freeze up and stop saving - the game now quietly clears that out instead of choking on a building or product that no longer exists.',
+  ]],
   ['2.9', [
     'Bricks are gone: every building now needs wood, metal and stone to build, and the same three to upgrade - no separate material for upgrading any more.',
     'The Masonry research (and the Brickworks building it used to unlock) is gone too, along with bricks, patterned tiles and ornamental pavers as things to make or sell.',
