@@ -169,3 +169,10 @@ main"):
          deploying rules again wouldn't have fixed it. The game now
          quietly cleans that out on load instead of choking on it. No
          firestore.rules change, no world reset.
+   2.11  Fixed a real bug: a browser tab left open or backgrounded a
+         long time could see its sign-in quietly expire, so every save
+         failed with a permissions error until something else happened
+         to refresh it. The game now forces a fresh sign-in when you
+         come back to a tab, come back online, or a save is refused, so
+         a long-idle city recovers on its own. No firestore.rules
+         change, no world reset.

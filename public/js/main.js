@@ -1372,7 +1372,14 @@ document.addEventListener('visibilitychange', () => {
   setHidden(document.hidden && prefs.muteHidden);
   if (!state) return;
   if (document.hidden) save();
-  else if (!catching && !tabPaused) catchUp().then((r) => { if (!state) return; syncMine(); updateHud(); if (r) showAway(r); });
+  else if (!catching && !tabPaused) {
+    // A hidden tab can sit long enough for the ID token to actually expire (an hour) before the SDK's own
+    // refresh timer gets a chance to fire - browsers throttle timers in background tabs. Force a fresh one
+    // before anything tries to save, so returning to a long-idle tab doesn't open with a run of "permission-
+    // denied" saves that would otherwise only clear up once something else happened to trigger a refresh.
+    Promise.resolve(user?.getIdToken?.(true).catch(() => {})).then(() =>
+      catchUp().then((r) => { if (!state) return; syncMine(); updateHud(); if (r) showAway(r); }));
+  }
 });
 window.addEventListener('pagehide', () => state && save());
 
@@ -1527,6 +1534,10 @@ async function save(extra) {
       const why = !navigator.onLine ? 'You’re offline. Your city is safe on this device and saves when you’re back.' : fb.authMessage(e);
       setSaveState('fail', `Not saved: ${why} Tap to try again.`);
       if (saveFails === 1 || saveFails % 10 === 0) notify(`Couldn’t save. ${why}`, 'warn');
+      // A permission-denied save is often just a stale ID token (an hour old, the SDK's own refresh timer
+      // delayed by browser throttling) rather than an actual rules problem - force a fresh one before the
+      // retry, so the retry loop can actually self-heal instead of failing the same way every time.
+      if (navigator.onLine && String(e?.code || '').includes('permission-denied')) user?.getIdToken?.(true).catch(() => {});
       clearTimeout(retryTimer);
       retryTimer = setTimeout(() => save(), Math.min(120000, 5000 * 2 ** Math.min(5, saveFails - 1)));
     } finally { saving = null; }
@@ -1535,7 +1546,7 @@ async function save(extra) {
   return saving;
 }
 $('savestate').onclick = () => { if (saveError) notify(`Last save failed: ${fb.authMessage(saveError)}`, 'act'); lastSaved = ''; save(); };
-window.addEventListener('online', () => { if (state && saveFails) save(); });
+window.addEventListener('online', () => { if (state && saveFails) Promise.resolve(user?.getIdToken?.(true).catch(() => {})).then(() => save()); });
 window.addEventListener('offline', () => { if (state) setSaveState('fail', 'You’re offline. Your city keeps running here and saves when you reconnect.'); });
 // Closing the tab while the last save failed would lose recent building.
 window.addEventListener('beforeunload', (e) => { if (state && saveFails) { e.preventDefault(); e.returnValue = ''; } });
@@ -3191,8 +3202,11 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 2.10';
+const VERSION = 'Commons 2.11';
 const CHANGELOG = [
+  ['2.11', [
+    'Fixed a real bug: a browser tab left open (or backgrounded) a long time could see its sign-in quietly expire, so every save failed with a permissions error until something else happened to refresh it. The game now forces a fresh sign-in whenever you come back to a tab, come back online, or a save is refused - so a long-idle city recovers on its own instead of getting stuck.',
+  ]],
   ['2.10', [
     'Fixed a real bug from 2.9: a city that still had a Brickworks, or a factory set to make bricks/tiles/pavers, could freeze up and stop saving - the game now quietly clears that out instead of choking on a building or product that no longer exists.',
   ]],
