@@ -1499,7 +1499,7 @@ async function toggleCo(uid) {
 // ---------- saving ----------
 // One save at a time. A failed save isn't marked as done, so the next attempt sends it again, with a growing
 // pause between tries. The player sees a small status next to the clock rather than a stream of warnings.
-let saving = null, saveFails = 0, saveError = null, retryTimer = null, pendingExtra = null;
+let saving = null, saveFails = 0, saveError = null, retryTimer = null, pendingExtra = null, extraFails = 0;
 function scheduleSave(ms = 1500) { clearTimeout(saveTimer); saveTimer = setTimeout(save, ms); }
 function setSaveState(kind, title) {
   const el = $('savestate');
@@ -1511,7 +1511,7 @@ function setSaveState(kind, title) {
 async function save(extra) {
   if (!state || !plotId || !user || tabPaused || watching) return;
   clearTimeout(saveTimer);
-  if (extra) pendingExtra = { ...(pendingExtra || {}), ...extra };
+  if (extra) { pendingExtra = { ...(pendingExtra || {}), ...extra }; extraFails = 0; }
   if (saving) { await saving.catch(() => {}); if (!state || !plotId) return; return save(); }
   lastSave = Date.now();
   const out = plan?.out || {};
@@ -1529,7 +1529,14 @@ async function save(extra) {
       setSaveState('ok', fb.usingLegacySaves() ? 'Saved in the older format. Deploy firestore.rules to switch to split saves.' : `Saved at ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`);
     } catch (e) {
       console.error('Save failed', e);
-      if (ex) pendingExtra = { ...ex, ...(pendingExtra || {}) };
+      // If the extra part of the save (like a renamed mayor) is what keeps getting refused - not the city
+      // itself - retrying it forever would wedge every future save behind it. Drop it after a few tries so
+      // the plain city save can succeed again; the city stays saved even if that one change didn't stick.
+      if (ex) {
+        extraFails++;
+        if (extraFails <= 3) pendingExtra = { ...ex, ...(pendingExtra || {}) };
+        else notify('A recent change couldn’t be saved and was dropped so the rest of your city keeps saving.', 'warn');
+      }
       saveFails++; saveError = e;
       const why = !navigator.onLine ? 'You’re offline. Your city is safe on this device and saves when you’re back.' : fb.authMessage(e);
       setSaveState('fail', `Not saved: ${why} Tap to try again.`);
@@ -3202,8 +3209,11 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 2.11';
+const VERSION = 'Commons 2.12';
 const CHANGELOG = [
+  ['2.12', [
+    'Fixed a real bug: a mayor or city name with Greek, or other non-English, letters could look short enough on screen but still be over the security rules’ length limit (Firestore counts bytes, not letters) - once that happened, every single save, not just the rename, was refused forever, looking exactly like a rules or sign-in problem when it was neither. Names are now trimmed the way the rules actually measure them, so this can’t happen; a change that still somehow gets refused a few times in a row is now dropped instead of jamming every save behind it.',
+  ]],
   ['2.11', [
     'Fixed a real bug: a browser tab left open (or backgrounded) a long time could see its sign-in quietly expire, so every save failed with a permissions error until something else happened to refresh it. The game now forces a fresh sign-in whenever you come back to a tab, come back online, or a save is refused - so a long-idle city recovers on its own instead of getting stuck.',
   ]],
@@ -3700,7 +3710,7 @@ function showAccount(tab = acctTab) {
   modal.querySelectorAll('[data-acct-tab]').forEach((b) => { b.onclick = () => showAccount(b.dataset.acctTab); });
   modal.querySelector(`[data-acct-tab="${tab}"]`)?.focus();
   $('acct-mayor-save')?.addEventListener('click', () => busy($('acct-mayor-save'), async () => {
-    const v = $('acct-mayor').value.trim().slice(0, 24);
+    const v = fb.truncateUtf8($('acct-mayor').value.trim(), 24);
     if (!v) throw new Error('Type a name first.');
     mayor = v; profile.name = v; profileDirty = true;
     await save(coMode ? undefined : { ownerName: v });

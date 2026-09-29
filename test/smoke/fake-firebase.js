@@ -112,13 +112,24 @@ export async function findPlot(u, world = WORLD_ID) {
   if (!p || p.owner !== u.uid) return null;
   return { ...out(link.plotId, p), state: get(`plotState/${link.plotId}`)?.state };
 }
+export function truncateUtf8(str, maxBytes) {
+  const s = String(str ?? '');
+  const bytes = new TextEncoder().encode(s);
+  if (bytes.length <= maxBytes) return s;
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  for (let len = maxBytes; len >= 0; len--) {
+    try { return decoder.decode(bytes.slice(0, len)); } catch { /* cut mid-character: try one byte shorter */ }
+  }
+  return '';
+}
 function cleanSummary(state) {
   const s = JSON.parse(JSON.stringify(summary(state)));
   s.money = Number.isFinite(s.money) ? s.money : 0;
-  s.name = String(s.name || 'City').slice(0, 40); s.status = s.status || 'alive';
+  s.name = truncateUtf8(s.name || 'City', 40); s.status = s.status || 'alive';
   return s;
 }
 export async function claimPlot(u, mayor, cityName, world = WORLD_ID) {
+  mayor = truncateUtf8(mayor, 24);
   await tick();
   if (get(linkPath(u.uid, world))) throw new Error('You already have a plot in this world. Reload the page.');
   const w = get(`worlds/${world}`);
@@ -136,6 +147,7 @@ export async function claimPlot(u, mayor, cityName, world = WORLD_ID) {
   return { ...out(id, data), state: serialize(state) };
 }
 export async function takeOverRuins(u, mayor, targetId, newState, world = WORLD_ID) {
+  mayor = truncateUtf8(mayor, 24);
   const p = get(`plots/${targetId}`);
   if (!p || p.status !== 'ruins') throw new Error('Someone has already rebuilt there.');
   const data = { owner: u.uid, ownerName: mayor, ...cleanSummary(newState), map: mapString(newState), updatedAt: now() };
@@ -146,6 +158,7 @@ export async function takeOverRuins(u, mayor, targetId, newState, world = WORLD_
   return { ...out(targetId, get(`plots/${targetId}`)), state: serialize(newState) };
 }
 export async function buyPlot(u, mayor, via, px, py, cityName, world = WORLD_ID) {
+  mayor = truncateUtf8(mayor, 24);
   const id = `${world}_${px}_${py}`, link = get(linkPath(u.uid, world));
   if (get(`plots/${id}`)) throw new Error('Someone has already claimed that plot.');
   if (!link) throw new Error('Found your first city before buying more land.');
@@ -211,6 +224,7 @@ export async function savePlot(id, state, extra = {}) {
   if (ctl.failSaves) throw fail(ctl.failSaves);
   const p = get(`plots/${id}`);
   if (!p || p.owner !== user?.uid) throw fail('permission-denied');
+  if (extra.ownerName) extra = { ...extra, ownerName: truncateUtf8(extra.ownerName, 24) };
   set(`plotState/${id}`, { state: serialize(state) });
   merge(`plots/${id}`, { ...cleanSummary(state), map: mapString(state), ...JSON.parse(JSON.stringify(extra)), updatedAt: now() });
   ctl.saves++;

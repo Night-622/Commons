@@ -96,6 +96,26 @@ test('save: the money guard allows normal growth and refuses a big jump', async 
   await a.fb.savePlot(p.id, st);
 });
 
+test('names: a multi-byte mayor or city name is truncated by bytes, not characters, so it always saves', async () => {
+  // Firestore rules measure nameOk() in UTF-8 bytes; Greek (or Cyrillic, CJK...) is 2 bytes per character but
+  // 1 JS character, so a name that fits the client's character-count input limit can still be twice the rules'
+  // byte limit. Before the fix this made every save carrying the name fail with a permission error forever.
+  const a = await player();
+  const w = await newWorld(a);
+  const mayor = 'Β'.repeat(20);   // fits the found-mayor input's 20-character limit, but is 40 bytes
+  const city = 'Α'.repeat(28);    // fits the found-city input's 28-character limit, but is 56 bytes
+  const p = await a.fb.claimPlot(a.user, mayor, city, w.id);
+  assert.ok(new TextEncoder().encode(p.ownerName).length <= 24, 'ownerName truncated to 24 bytes at claim');
+  assert.ok(new TextEncoder().encode(p.name).length <= 40, 'name truncated to 40 bytes at claim');
+  // Renaming through savePlot's `extra` must be truncated the same way, or the save (and every retry after it)
+  // would be refused forever.
+  const st = JSON.parse(p.state);
+  sim.migrate(st);
+  await a.fb.savePlot(p.id, st, { ownerName: mayor });
+  const saved = await a.fb.findPlot(a.user, w.id);
+  assert.ok(new TextEncoder().encode(saved.ownerName).length <= 24, 'ownerName truncated to 24 bytes on rename');
+});
+
 test('ruins: anyone may rebuild on ruins, nobody on a live city', async () => {
   const a = await player(), b = await player(), c = await player();
   const w = await newWorld(a);

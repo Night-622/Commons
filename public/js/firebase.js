@@ -154,6 +154,7 @@ export async function claimPlot(user, mayor, cityName, world = WORLD_ID) {
   }
 }
 async function claimPlotTx(user, mayor, cityName, world, legacy) {
+  mayor = truncateUtf8(mayor, 24);
   const lref = linkRef(user.uid, world);
   const worldRef = doc(db, 'worlds', world);
   return runTransaction(db, async (tx) => {
@@ -191,6 +192,7 @@ async function claimPlotTx(user, mayor, cityName, world, legacy) {
 
 // Start a new city on someone else's ruins. The rubble stays; newState is prepared by the caller.
 export async function takeOverRuins(user, mayor, targetId, newState, world = WORLD_ID) {
+  mayor = truncateUtf8(mayor, 24);
   const lref = linkRef(user.uid, world);
   const pref = doc(db, 'plots', targetId);
   return runTransaction(db, async (tx) => {
@@ -209,6 +211,7 @@ export async function takeOverRuins(user, mayor, targetId, newState, world = WOR
 
 // Buy the plot next to one of your cities (`via`) and start a new city of your council there.
 export async function buyPlot(user, mayor, via, px, py, cityName, world = WORLD_ID) {
+  mayor = truncateUtf8(mayor, 24);
   const lref = linkRef(user.uid, world), id = `${world}_${px}_${py}`;
   return runTransaction(db, async (tx) => {
     const taken = await tx.get(doc(db, 'plots', id));
@@ -333,6 +336,23 @@ export async function getPlot(id) {
   return data;
 }
 
+// Firestore rules measure a string's .size() in UTF-8 bytes, not JS characters (String.length/.slice() count
+// UTF-16 code units) - a Greek, Cyrillic or CJK name can be well under a character limit but over the matching
+// byte limit in firestore.rules, which then silently and permanently rejects every save that carries it (looks
+// exactly like a stale-rules permission error, forever, since the client keeps resending the same name).
+export function truncateUtf8(str, maxBytes) {
+  const s = String(str ?? '');
+  const bytes = new TextEncoder().encode(s);
+  if (bytes.length <= maxBytes) return s;
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  // A UTF-8 character is at most 4 bytes, so cutting at maxBytes lands mid-character at worst 3 bytes early;
+  // back off byte by byte until the slice decodes cleanly instead of ending on a chopped-off character.
+  for (let len = maxBytes; len >= 0; len--) {
+    try { return decoder.decode(bytes.slice(0, len)); } catch { /* cut mid-character: try one byte shorter */ }
+  }
+  return '';
+}
+
 // Firestore rejects undefined anywhere in a write, which an old save missing a field would otherwise trip.
 function tidy(v) {
   if (v === undefined || (typeof v === 'number' && !Number.isFinite(v))) return null;
@@ -348,7 +368,7 @@ function cleanSummary(state) {
   const s = tidy(summary(state));
   s.money = Number.isFinite(s.money) ? s.money : 0;
   s.pop = s.pop || 0; s.peakPop = s.peakPop || s.pop; s.day = s.day || 0; s.cityNo = s.cityNo || 1; s.happiness = s.happiness || 0;
-  s.name = String(s.name || 'City').slice(0, 40); s.status = s.status || 'alive';
+  s.name = truncateUtf8(s.name || 'City', 40); s.status = s.status || 'alive';
   return s;
 }
 
@@ -358,6 +378,7 @@ let legacySaves = false;
 export const usingLegacySaves = () => legacySaves;
 export async function savePlot(id, state, extra = {}) {
   const json = serialize(state);
+  if (extra.ownerName) extra = { ...extra, ownerName: truncateUtf8(extra.ownerName, 24) };
   const top = { ...cleanSummary(state), map: mapString(state), ...tidy(extra), updatedAt: serverTimestamp() };
   if (!legacySaves) {
     try {

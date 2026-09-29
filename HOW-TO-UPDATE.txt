@@ -176,3 +176,14 @@ main"):
          come back to a tab, come back online, or a save is refused, so
          a long-idle city recovers on its own. No firestore.rules
          change, no world reset.
+   2.12  Fixed a real bug: firestore.rules limits a mayor or city name
+         by bytes, but the game only trimmed it by letters - a Greek
+         (or other non-English) name could look short enough yet still
+         be over the limit, and once that happened every future save,
+         not just the rename, was silently refused forever (looked
+         exactly like a stale-rules or sign-in problem, but "npm run
+         deploy:rules" never fixed it, because the rules were already
+         right). Names are now trimmed by bytes to match, and a change
+         that still keeps failing is dropped after a few tries instead
+         of blocking every other save behind it. No firestore.rules
+         change, no world reset.
