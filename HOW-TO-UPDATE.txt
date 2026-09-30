@@ -187,3 +187,8 @@ main"):
          that still keeps failing is dropped after a few tries instead
          of blocking every other save behind it. No firestore.rules
          change, no world reset.
+   2.13  Clearing a fallen city's rubble is now free, and a rubble tile
+         can be kept as a landmark instead - a permanent marker naming
+         the city that stood there, how long it lasted and how big it
+         got. Another fresh start (WORLD_ID is now s3). No firestore.rules
+         change.

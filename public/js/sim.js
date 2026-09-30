@@ -1,7 +1,7 @@
 // Pure city simulation with real residents. No DOM, no Firebase, so it runs in node tests too.
 // Two days are a year of life. Every car, bike and walker you see is one of these people on a real trip.
 import {
-  PLOT, GAP, TERRAIN, T, B, START_MONEY, REBUILD_MONEY, GRACE_DAYS, VOLUNTEER_RATE, RUBBLE_CLEAR_COST, COLLAPSE_UNPAID_DAYS,
+  PLOT, GAP, TERRAIN, T, B, START_MONEY, REBUILD_MONEY, GRACE_DAYS, VOLUNTEER_RATE, COLLAPSE_UNPAID_DAYS,
   COLLAPSE_POP, COLLAPSE_WATER_DAYS, COLLAPSE_TRAFFIC_DAYS, COLLAPSE_TRAFFIC_COMMUTE, COLLAPSE_DEBT, COLLAPSE_DEBT_DAYS,
   ROAD_CAP, HALL_CAP, HOURS_PER_DAY, LEVEL, MAX_LEVEL, UPGRADABLE, TAP_SHARE, TAP_CAP, GOALS, TRADE_PER_LINK,
   LINK_MOOD, MAX_LINKS, HISTORY_DAYS, LOG_SIZE, EVENT_CHANCE, CHUNK, CHUNKS, START_CHUNKS, LAND_PRICE, LAND_STEP,
@@ -185,6 +185,7 @@ export function migrate(s, rng = Math.random) {
   // Build days began in 1.7; anything older counts as built on day 0.
   if (!Array.isArray(s.bday) || s.bday.length !== N) s.bday = s.grid.map((t) => (B[t]?.cat ? 0 : -1));
   if (!Array.isArray(s.protect)) s.protect = [];
+  if (!s.landmarks || typeof s.landmarks !== 'object' || Array.isArray(s.landmarks)) s.landmarks = {};
   s.policy.toll = !!s.policy.toll; s.policy.carbon = !!s.policy.carbon;
   if (s.loan && !(s.loan.left > 0)) s.loan = null;
   if (!s.zone) s.zone = new Array(N).fill(0);
@@ -1064,6 +1065,18 @@ export function setProtected(s, i, on) {
   s._plan = null;
   return { ok: true };
 }
+// A tile of rubble kept as a landmark instead of cleared, remembering the city that fell there. Permanent:
+// once made, `canPlace`/`bulldoze` never let it be built on or cleared again (see below).
+export const landmark = (s, i) => s.landmarks?.[i] || null;
+export function setLandmark(s, i, on) {
+  if (s.status !== 'alive') return { ok: false, reason: 'This city has fallen.' };
+  if (s.grid[i] !== T.RUBBLE) return { ok: false, reason: 'Only rubble can become a landmark.' };
+  if (on && !s.fallen) return { ok: false, reason: 'There’s no fallen city to remember here.' };
+  s.landmarks ||= {};
+  if (on) s.landmarks[i] = { ...s.fallen };
+  else delete s.landmarks[i];
+  return { ok: true };
+}
 const hurt = (s, amt) => amt * (s.policy?.insured ? INSURANCE.damage : 1);
 
 // ---------- selling land back ----------
@@ -1897,12 +1910,11 @@ export function bulldoze(s, i) {
   if (t === T.EMPTY) return { ok: false, reason: 'Nothing to clear.' };
   if (t === T.HALL) return { ok: false, reason: 'The town hall stays.' };
   if (isProtected(s, i)) return { ok: false, reason: 'This historic building is protected. Lift the protection first.' };
+  if (t === T.RUBBLE && landmark(s, i)) return { ok: false, reason: 'This is a landmark. Remove its landmark status first.' };
   const wasHistoric = isHistoric(s, i);
   let refund = 0;
   if (t === T.RUBBLE) {
-    if (s.money < RUBBLE_CLEAR_COST) return { ok: false, reason: `Clearing rubble needs $${RUBBLE_CLEAR_COST}.` };
-    s.money -= RUBBLE_CLEAR_COST;
-    refund = -RUBBLE_CLEAR_COST;
+    // Free: rubble is what's left of a fallen city, not something the mayor chose to build.
   } else {
     const k = s.queue.findIndex((q) => q.i === i);
     if (k !== -1) {
@@ -2640,6 +2652,7 @@ function daily(s, plan, rng) {
 
 export function collapse(s, outcome = 'collapsed') {
   const record = { name: s.name, cityNo: s.cityNo, peakPop: s.peakPop, daysSurvived: s.day, outcome };
+  s.fallen = record;
   for (let i = 0; i < N; i++) {
     if (s.grid[i] !== T.EMPTY) { s.grid[i] = T.RUBBLE; s.cond[i] = 0; }
     s.lv[i] = 1;

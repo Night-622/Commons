@@ -478,6 +478,12 @@ export class Renderer {
     // A plot can hold a tile type a later version removed outright (see sim.js migrate() for the save-side
     // fix) - this draws it as rubble rather than crashing on B[t] being undefined. Matters for more than just
     // your own city: this also draws neighbours' plots, and their save might not be migrated yet.
+    if (t === T.RUBBLE && plot.landmarks?.[i]) {
+      // A plaque on a plinth: a kept landmark reads as deliberate, not just uncleared debris.
+      this.box(g, P, tx + 0.3, ty + 0.3, tx + 0.7, ty + 0.7, 0, 0.14, th.stone);
+      this.box(g, P, tx + 0.4, ty + 0.42, tx + 0.6, ty + 0.5, 0.14, 0.22, shade(th.stone, -0.25));
+      return;
+    }
     if (t === T.RUBBLE || !B[t]) {
       for (let k = 0; k < 3; k++) {
         const a = tx + 0.2 + hash(i, k) * 0.5, b = ty + 0.2 + hash(i, k + 7) * 0.5, s = 0.14 + hash(i, k + 3) * 0.1;

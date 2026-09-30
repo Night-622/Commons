@@ -106,6 +106,33 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   console.log('actions ok');
 }
 
+// ---- landmarks: rubble is free to clear, or can be kept as a lasting marker of the fallen city
+{
+  const s = sim.newCity('Fell', rng);
+  const a = sim.idx(13, 12), b = sim.idx(14, 12);   // right beside the town hall, on land a new city already owns
+  put(s, 13, 12, T.ROAD);
+  put(s, 14, 12, T.ROAD);
+  const rec = sim.collapse(s, 'collapsed');
+  assert.deepEqual(s.fallen, rec, 'the collapse record is kept on the state, for a landmark to remember later');
+  assert.equal(s.grid[a], T.RUBBLE, 'the roads just built are rubble now');
+  sim.rebuild(s, 'Again', 999);
+  assert.equal(s.grid[a], T.RUBBLE, 'rebuilding keeps the rubble - it doesn’t clear itself');
+
+  const before = s.money;
+  assert.equal(sim.bulldoze(s, a).ok, true, 'clearing rubble now succeeds');
+  assert.equal(s.money, before, 'clearing rubble costs nothing');
+  assert.equal(s.grid[a], T.EMPTY);
+
+  assert(!sim.landmark(s, b), 'not a landmark yet');
+  assert(sim.setLandmark(s, b, true).ok, 'can make a landmark of rubble from a real fallen city');
+  assert.deepEqual(sim.landmark(s, b), rec, 'the landmark remembers the fallen city');
+  assert(!sim.bulldoze(s, b).ok, 'a landmark cannot be cleared');
+  assert(!sim.place(s, b, T.ROAD).ok, 'a landmark cannot be built on either');
+  sim.setLandmark(s, b, false);
+  assert(sim.bulldoze(s, b).ok, 'once landmark status is lifted, it clears like any other rubble');
+  console.log('landmarks ok: rubble clears for free; a landmark stays until lifted');
+}
+
 // ---- old saves become people
 {
   const old = JSON.parse(sim.serialize(sim.newCity('Old', rng)));

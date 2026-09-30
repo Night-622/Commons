@@ -1,6 +1,6 @@
 import * as sim from './sim.js';
 import {
-  T, B, PLOT, TICK_MS, MAX_OFFLINE_DAYS, HOURS_PER_DAY, SAVE_EVERY_MS, RUBBLE_CLEAR_COST, MAX_LEVEL, LEVEL, UPGRADABLE,
+  T, B, PLOT, TICK_MS, MAX_OFFLINE_DAYS, HOURS_PER_DAY, SAVE_EVERY_MS, MAX_LEVEL, LEVEL, UPGRADABLE,
   REBUILD_MONEY, MOVE_KEEP, GOALS, BRUSHES, CHUNK, CHUNKS, EDU, MOVE_FEE, isHome, DECISIONS, ZONES, ZONE_COST,
   LOAN_DAYS, HISTORIC_DAYS, BADGES, REGIONAL, REGIONAL_SHARE, ALLIANCE_TRADE, DAILY, DAILY_REWARD, WEEKLY, WEEKLY_REWARD, GIFT_LIMITS, REACTIONS,
   RES, TRADE_RES, PRODUCTS, PRODUCT_IDS, KIND_IDS, USE, HARVEST, MARKET, STOCK, HALL_LEVELS, TECH, STYLES, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
@@ -380,7 +380,7 @@ function plotFrom(id, px, py, st, meta) {
   return {
     id, px, py, st, name: st.name, ownerName: meta.ownerName, status: st.status,
     pop: st.people.length, peakPop: st.peakPop, day: st.day, happiness: st.happiness, cityNo: st.cityNo,
-    grid: st.grid, cond: st.cond, lv: st.lv, land: st.land, uc: sim.underConstruction(st), terr: st.terr || (id === 'demo' ? null : sim.terrainFor(px, py, world.id)),
+    grid: st.grid, cond: st.cond, lv: st.lv, land: st.land, landmarks: st.landmarks, uc: sim.underConstruction(st), terr: st.terr || (id === 'demo' ? null : sim.terrainFor(px, py, world.id)),
     queueMap: new Map(st.queue.map((q) => [q.i, q])), version: meta.version ?? 0, mine: !!meta.mine, owner: meta.owner, out: meta.out || {}, flag: meta.mine ? profile?.colour : meta.flag,
     co: meta.co || [],
   };
@@ -2685,6 +2685,8 @@ function inspectorAction(what, arg) {
   if (what === 'tap') tap(i);
   else if (what === 'upgrade') upgradeAt(i);
   else if (what === 'protect') { const r = sim.setProtected(state, i, !sim.isProtected(state, i)); if (r.ok) { play('level'); notify(sim.isProtected(state, i) ? 'Protected. It will stand for good.' : 'Protection lifted.', 'act'); afterChange(); } else notify(r.reason, 'act'); }
+  else if (what === 'landmark') { const r = sim.setLandmark(state, i, true); if (r.ok) { play('level'); notify('Kept as a landmark. It will stay here for good.', 'act'); afterChange(); } else notify(r.reason, 'act'); }
+  else if (what === 'unlandmark') { sim.setLandmark(state, i, false); play('clear'); notify('Landmark status removed. You can clear the rubble now.', 'act'); afterChange(); }
   else if (what === 'sell-land') {
     const c = sim.chunkOf(i), r = sim.canSellLand(state, c);
     if (!r.ok) { notify(r.reason, 'act'); return; }
@@ -2847,8 +2849,13 @@ function ownTile(i) {
     return `<h2>${ter === 2 ? 'Water' : state.zone[i] ? ZONES[state.zone[i]].name : ter === 1 ? 'Hillside' : 'Empty land'}</h2>${where}<p>${ter === 2 ? 'Roads, footpaths and railways can bridge it, at four times the price.' : state.zone[i] ? 'Developers will build here when the city needs it. It needs a road beside it.' : `Switch to Build and tap here to see everything you can put on it.${ter === 1 ? ' Building on a hill costs 40% more, but the views raise land value.' : ''}`}</p>
       ${sell.ok ? `<div class="actions"><button class="btn" type="button" data-do="sell-land">Sell this ${CHUNK}×${CHUNK} parcel for ${money(sell.price)}</button></div>` : ''}`;
   }
-  if (t === T.RUBBLE) return `<h2>Rubble</h2>${where}<p>Left from a city that fell. Clearing it costs $${RUBBLE_CLEAR_COST}.</p>
-    <div class="actions"><button class="btn" data-do="clear">${icon('i-clear')}Clear for $${RUBBLE_CLEAR_COST}</button></div>`;
+  if (t === T.RUBBLE) {
+    const lm = sim.landmark(state, i);
+    if (lm) return `<h2>Landmark</h2>${where}<p>Remembers ${esc(lm.name)}, which lasted ${lm.daysSurvived} day${lm.daysSurvived === 1 ? '' : 's'} and reached ${lm.peakPop} people. It will stay here for good, unless you remove its landmark status.</p>
+      <div class="actions"><button class="btn" data-do="unlandmark">Remove landmark status</button></div>`;
+    return `<h2>Rubble</h2>${where}<p>Left from a city that fell. It’s free to clear, or you can keep it as a landmark instead.</p>
+      <div class="actions"><button class="btn" data-do="clear">${icon('i-clear')}Clear</button><button class="btn" data-do="landmark">Make a landmark</button></div>`;
+  }
   if (t === T.RAIL && !q) {
     const onLine = (plan?.trainLines || []).some((l) => l.includes(i));
     return `<h2>Railway</h2>${where}<p class="soft small">${esc(d.blurb)}</p>${row('Trains use it', onLine ? 'Yes' : 'Not yet')}
@@ -3209,8 +3216,13 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 2.12';
+const VERSION = 'Commons 2.13';
 const CHANGELOG = [
+  ['2.13', [
+    'A fresh start: the open world moved on again (WORLD_ID s2 → s3).',
+    'Clearing rubble left by a fallen city is now free.',
+    'A rubble tile can now be kept as a landmark instead of cleared - a permanent marker of the city that stood there, showing its name, how long it lasted and how big it got. A landmark can never be cleared or built on unless you remove its landmark status first.',
+  ]],
   ['2.12', [
     'Fixed a real bug: a mayor or city name with Greek, or other non-English, letters could look short enough on screen but still be over the security rules’ length limit (Firestore counts bytes, not letters) - once that happened, every single save, not just the rename, was refused forever, looking exactly like a rules or sign-in problem when it was neither. Names are now trimmed the way the rules actually measure them, so this can’t happen; a change that still somehow gets refused a few times in a row is now dropped instead of jamming every save behind it.',
   ]],
@@ -3533,7 +3545,7 @@ function showRuins(record) {
   const r = record || { name: state.name, peakPop: state.peakPop, daysSurvived: state.day };
   openModal(`<div class="plaque big"><h2 id="modal-title">${esc(r.name)} has fallen</h2>
     <p>It reached ${r.peakPop} people and lasted ${r.daysSurvived} days. Its ruins stay on the map with this record.</p></div>
-    <p>Start again on the same land (the rubble stays, and each tile costs $${RUBBLE_CLEAR_COST} to clear), or move to other ruins from the World panel.</p>
+    <p>Start again on the same land (the rubble stays, free to clear when you're ready), or move to other ruins from the World panel.</p>
     <label class="field"><span>New city name</span><input id="rebuild-name" maxlength="28" value="New ${esc(r.name)}"></label>
     <div class="mfoot"><button class="btn" id="ruins-world">See other ruins</button><button class="btn primary" id="do-rebuild">Rebuild here</button></div>`);
   $('ruins-world').onclick = () => { closeModal(); openPanel('world'); };
