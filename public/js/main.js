@@ -547,7 +547,7 @@ function giveGift(p) {
   $('gift-go').onclick = () => busy($('gift-go'), async () => {
     const amt = Math.floor(+$('gift-amt').value);
     if (!(amt >= 10) || amt > Math.min(1000, left)) throw new Error(`Choose between $10 and ${money(Math.min(1000, left))}.`);
-    await fb.sendGift(world.id, { from: plotId, fromName: state.name.slice(0, 40), fromOwner: user.uid, to: p.id, toOwner: p.owner, amount: amt, note: $('gift-note').value.trim().slice(0, 120) });
+    await fb.sendGift(world.id, { from: plotId, fromName: fb.truncateUtf8(state.name, 40), fromOwner: user.uid, to: p.id, toOwner: p.owner, amount: amt, note: fb.truncateUtf8($('gift-note').value.trim(), 120) });
     state.money -= amt; state.flags.giftOut += amt; state.counters.gifts = (state.counters.gifts || 0) + 1;
     sim.note(state, 'info', `Sent $${amt} to ${p.name}.`);
     closeModal(); play('coin'); notify(`Sent ${money(amt)} to ${p.name}.`, 'act'); afterChange();
@@ -575,7 +575,7 @@ function wireBook() {
   if (f) f.onsubmit = (e) => { e.preventDefault(); busy(f.querySelector('button'), async () => {
     const t = $('book-text').value.trim();
     if (!t) throw new Error('Write something first.');
-    await fb.signGuestbook(world.id, bookFor, user, mayor.slice(0, 24), state.name.slice(0, 40), t.slice(0, 200));
+    await fb.signGuestbook(world.id, bookFor, user, fb.truncateUtf8(mayor, 24), fb.truncateUtf8(state.name, 40), fb.truncateUtf8(t, 200));
     $('book-text').value = ''; play('coin'); loadBook(bookFor);
   }, $('book-msg')); };
   document.querySelectorAll('[data-unnote]').forEach((b) => { b.onclick = () => fb.deleteNote(world.id, b.dataset.unnote).then(() => loadBook(bookFor)).catch((e) => notify(fb.authMessage(e), 'act')); });
@@ -700,9 +700,9 @@ function wireDM(box) {
   box.querySelectorAll('[data-dm]').forEach((b) => { b.onclick = () => { const [uid, ...n] = b.dataset.dm.split('|'); openDM(uid, n.join('|')); }; });
   box.querySelector('[data-dm-back]')?.addEventListener('click', () => { dmUnsub?.(); dmUnsub = null; dmWith = null; renderDrawer(); });
   const f = box.querySelector('#dm-form');
-  if (f) f.onsubmit = (e) => { e.preventDefault(); const text = $('dm-text').value.trim().slice(0, 500); if (!text || !dmWith) return;
+  if (f) f.onsubmit = (e) => { e.preventDefault(); const text = fb.truncateUtf8($('dm-text').value.trim(), 500); if (!text || !dmWith) return;
     $('dm-text').value = '';
-    fb.sendDM(user, mayor.slice(0, 24), dmWith.uid, dmWith.name, text).catch((err) => { notify(fb.authMessage(err), 'warn'); $('dm-text').value = text; }); };
+    fb.sendDM(user, fb.truncateUtf8(mayor, 24), dmWith.uid, dmWith.name, text).catch((err) => { notify(fb.authMessage(err), 'warn'); $('dm-text').value = text; }); };
   const l = $('dm-list'); if (l) l.scrollTop = l.scrollHeight;
 }
 
@@ -765,17 +765,17 @@ function repayDebts() {
   if (!state || watching) return;
   for (const d of sim.dueDebts(state)) {
     sim.payDebt(state, d.offer);
-    fb.sendDeal(world.id, user, { offer: d.offer, kind: 'repay', fromName: state.name.slice(0, 40), toOwner: d.to, toPlot: d.toPlot || '', money: d.repay, res: null, qty: 0 })
+    fb.sendDeal(world.id, user, { offer: d.offer, kind: 'repay', fromName: fb.truncateUtf8(state.name, 40), toOwner: d.to, toPlot: d.toPlot || '', money: d.repay, res: null, qty: 0 })
       .then(() => { notify(`Repaid ${money(d.repay)} to ${d.toName}.`, 'act'); save(); fb.clearOffer(world.id, d.offer).catch(() => {}); })
       .catch((e) => { console.error('Repay', e); sim.addDebt(state, d); state.money += d.repay; });
   }
 }
 async function acceptOffer(o) {
-  const deal = { kind: o.kind, fromName: state.name.slice(0, 40), toOwner: o.owner, toPlot: o.plot, money: 0, res: null, qty: 0 };
+  const deal = { kind: o.kind, fromName: fb.truncateUtf8(state.name, 40), toOwner: o.owner, toPlot: o.plot, money: 0, res: null, qty: 0 };
   if (o.kind === 'sell') { if (state.money < o.total) throw new Error(`Needs ${money(o.total)}.`); deal.money = o.total; }
   if (o.kind === 'buy') { if ((state.res?.[o.res] || 0) < o.qty) throw new Error(`You have ${Math.floor(state.res?.[o.res] || 0)} ${RES_NAME(o.res)} in store.`); deal.res = o.res; deal.qty = o.qty; }
   if (o.kind === 'loan' || o.kind === 'labour' || o.kind === 'rent') { if (state.money < o.total) throw new Error(`Needs ${money(o.total)}.`); deal.money = o.total; }
-  await fb.takeOffer(world.id, o.id, user, plotId, state.name.slice(0, 40), deal);
+  await fb.takeOffer(world.id, o.id, user, plotId, fb.truncateUtf8(state.name, 40), deal);
   state.counters.traded = (state.counters.traded || 0) + 1;
   state.counters.deals = (state.counters.deals || 0) + 1;
   if (o.kind === 'sell') { state.money -= o.total; sim.receive(state, { res: o.res, qty: o.qty }); notify(`Bought ${o.qty} ${RES_NAME(o.res)} from ${o.city}.`, 'good'); }
@@ -802,7 +802,7 @@ async function postOffer(form) {
     : kind === 'loan'
     ? { kind, res: null, qty: 0, price: 0, total: qty, repay: price, days: Math.round(+form.days) }
     : { kind, res: form.res, qty, price: Math.round(price * 100) / 100, total: r.total };
-  try { await fb.postOffer(world.id, id, { ...offer, owner: user.uid, ownerName: mayor.slice(0, 24), plot: plotId, city: state.name.slice(0, 40) }); }
+  try { await fb.postOffer(world.id, id, { ...offer, owner: user.uid, ownerName: fb.truncateUtf8(mayor, 24), plot: plotId, city: fb.truncateUtf8(state.name, 40) }); }
   catch (e) { sim.release(state, id); afterChange(); throw e; }
   play('coin'); notify('Your offer is on the market.', 'act'); afterChange(); marketTab = 'yours';
 }
@@ -814,7 +814,7 @@ async function postRent(i, res, days, price) {
   if (!r.ok) throw new Error(r.reason + '.');
   await save();
   const offer = { kind: 'rent', res, qty: 0, price: 0, total: r.total, nominal: r.nominal, days, tile: i, btype: state.grid[i] };
-  try { await fb.postOffer(world.id, id, { ...offer, owner: user.uid, ownerName: mayor.slice(0, 24), plot: plotId, city: state.name.slice(0, 40) }); }
+  try { await fb.postOffer(world.id, id, { ...offer, owner: user.uid, ownerName: fb.truncateUtf8(mayor, 24), plot: plotId, city: fb.truncateUtf8(state.name, 40) }); }
   catch (e) { sim.release(state, id); afterChange(); throw e; }
   play('coin'); notify('Your offer is on the market.', 'act'); afterChange();
 }
@@ -849,7 +849,7 @@ function wireMarket(box) {
   if (lf) lf.onsubmit = (e) => { e.preventDefault(); busy(lf.querySelector('button'), async () => {
     const n = Math.round(+new FormData(lf).get('float')), c = sim.canList(state, n);
     if (!c.ok) throw new Error(c.reason + '.');
-    await fb.listStock(world.id, plotId, user, state.name.slice(0, 40), n);
+    await fb.listStock(world.id, plotId, user, fb.truncateUtf8(state.name, 40), n);
     const r = sim.listCity(state, n);
     done(r, `${state.name} is on the exchange. You raised ${money(r.got)} for ${n} shares.`);
   }, $('mk-msg')); };
@@ -941,12 +941,12 @@ function wireRegion(box) {
   if (f) f.onsubmit = (e) => { e.preventDefault(); busy(f.querySelector('button'), async () => {
     const type = $('project-type').value, t = REGIONAL[type];
     if (projects.some((p) => p.type === type && !p.done)) throw new Error(`There’s already a ${t.name.toLowerCase()} being funded. Pay into that one.`);
-    await fb.startProject(world.id, user, mayor.slice(0, 24), type, t.name, t.goal);
+    await fb.startProject(world.id, user, fb.truncateUtf8(mayor, 24), type, t.name, t.goal);
     formOk('region-msg', `Started a ${t.name.toLowerCase()}. Tell your neighbours!`);
   }, $('region-msg')); };
   const af = box.querySelector('#ally-form');
   if (af) af.onsubmit = (e) => { e.preventDefault(); busy(af.querySelector('button'), async () => {
-    const name = $('ally-name').value.trim().slice(0, 30), tag = $('ally-tag').value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+    const name = fb.truncateUtf8($('ally-name').value.trim(), 30), tag = $('ally-tag').value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
     if (!name) throw new Error('Name your alliance.');
     if (tag.length < 2) throw new Error('A tag is 2 to 4 letters or numbers.');
     if (alliances.some((x) => x.tag === tag)) throw new Error('That tag is taken.');
@@ -970,7 +970,7 @@ function wireRegion(box) {
     if (!t || !a) return;
     if (Date.now() - lastAllyMsg < 2500) { notify('Slow down a little.', 'act'); return; }
     lastAllyMsg = Date.now(); $('ally-text').value = '';
-    try { await fb.sendAllianceChat(world.id, a.id, user, mayor.slice(0, 24), t.slice(0, 280)); } catch (err) { notify(fb.authMessage(err), 'warn'); }
+    try { await fb.sendAllianceChat(world.id, a.id, user, fb.truncateUtf8(mayor, 24), fb.truncateUtf8(t, 280)); } catch (err) { notify(fb.authMessage(err), 'warn'); }
   };
 }
 
@@ -1443,11 +1443,11 @@ function startDesk() {
   deskTimer = setInterval(() => {
     if (watching || !state) return;
     if (desk && desk.uid !== user.uid) return;
-    fb.takeDesk(plotId, user, mayor.slice(0, 24), Date.now() - lastInput > DESK_IDLE_MS).catch((e) => console.error('Desk', e));
+    fb.takeDesk(plotId, user, fb.truncateUtf8(mayor, 24), Date.now() - lastInput > DESK_IDLE_MS).catch((e) => console.error('Desk', e));
   }, DESK_BEAT_MS);
 }
 async function takeDesk() {
-  await fb.takeDesk(plotId, user, mayor.slice(0, 24)).catch((e) => console.error('Desk', e));
+  await fb.takeDesk(plotId, user, fb.truncateUtf8(mayor, 24)).catch((e) => console.error('Desk', e));
   if (!watching) return;
   // Pick up exactly where the last mayor left off.
   const d = await fb.getPlot(plotId);
@@ -2593,7 +2593,7 @@ function wireDrawer(box) {
   }; });
   const rn = box.querySelector('#world-rename');
   if (rn) rn.onsubmit = (e) => { e.preventDefault(); busy(rn.querySelector('button'), async () => {
-    const v = $('world-newname').value.trim().slice(0, 40);
+    const v = fb.truncateUtf8($('world-newname').value.trim(), 40);
     if (!v) throw new Error('Type a name.');
     await fb.renameWorld(world.id, v); world = { ...world, name: v }; setWorld(world); formOk('world-msg', 'Renamed.'); loadWorlds();
   }, $('world-msg')); };
@@ -2645,7 +2645,7 @@ function wireDrawer(box) {
       chatDraft = '';
       $('chat-text').value = '';
       try {
-        await fb.sendChat(world.id, user, mayor.slice(0, 24), state.name.slice(0, 40), text.slice(0, 280));
+        await fb.sendChat(world.id, user, fb.truncateUtf8(mayor, 24), fb.truncateUtf8(state.name, 40), fb.truncateUtf8(text, 280));
         if (profile) { profile.stats.messages = (profile.stats.messages || 0) + 1; profileDirty = true; }
       } catch (err) { console.error(err); notify('Couldn’t send that message.', 'warn'); chatDraft = text; }
     };
@@ -2657,7 +2657,7 @@ function wireDrawer(box) {
       const name = $('world-name').value.trim();
       if (!name) throw new Error('Give the world a name.');
       await save();
-      const w = await fb.createWorld(user, name.slice(0, 40));
+      const w = await fb.createWorld(user, fb.truncateUtf8(name, 40));
       notifyLater = `Created ${w.name}. Share the invite code ${w.code} from the World panel.`;
       stopFollow();
       setWorld(w);
@@ -3237,8 +3237,11 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 2.14';
+const VERSION = 'Commons 2.15';
 const CHANGELOG = [
+  ['2.15', [
+    'Fixed a real bug: listing your city on the exchange (and a few other things - chat, gifts, guestbook notes, private messages, alliances, worlds) could fail with a permissions error if your mayor or city name had Greek or other non-English letters in it, the same byte-versus-letter mismatch 2.12 fixed for saving, just not caught everywhere else it could happen. Fixed the same way, everywhere it could still happen.',
+  ]],
   ['2.14', [
     'Fixed a real bug: the game tried to start its sound before you\'d clicked or tapped anything, which every browser refuses and logs a warning for. Sound now waits for your first click, key or tap, same as it always sounded like it should.',
     'Residents have babies more often.',
@@ -3550,7 +3553,7 @@ function showFeedback(kind = 'Bug') {
     if (text.length < 5) throw new Error('Write a little more so we can help.');
     const info = $('fb-info').checked ? { city: state?.name || '', world: world.id, plot: plotId || '', day: state?.day || 0, pop: state?.people.length || 0,
       browser: navigator.userAgent.slice(0, 200), screen: `${innerWidth}x${innerHeight}`, version: VERSION } : {};
-    await fb.sendFeedback({ uid: user.uid, kind: modal.querySelector('[data-kind][aria-checked="true"]').dataset.kind, text: text.slice(0, 2000), email: $('fb-email').value.trim().slice(0, 120), ...info });
+    await fb.sendFeedback({ uid: user.uid, kind: modal.querySelector('[data-kind][aria-checked="true"]').dataset.kind, text: fb.truncateUtf8(text, 2000), email: $('fb-email').value.trim().slice(0, 120), ...info });
     closeModal();
     notify('Thanks! Your feedback was sent.', 'act');
     play('goal');

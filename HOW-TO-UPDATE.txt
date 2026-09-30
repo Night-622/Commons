@@ -199,3 +199,10 @@ main"):
          budget and a price (120-300% of cost) per shop - a low price
          feeds more people, a high one earns more per sale but leaves
          more unfed. No firestore.rules change, no world reset.
+   2.15  Fixed a real bug: 2.12 fixed a Greek/non-English name breaking
+         saves (bytes vs letters), but missed several other places a
+         name or message gets sent - listing your city on the exchange,
+         chat, gifts, guestbook notes, private messages, alliances,
+         worlds - which could still fail with a permissions error the
+         same way. Fixed everywhere. No firestore.rules change, no
+         world reset.

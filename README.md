@@ -21,6 +21,12 @@ Guests can turn their guest city into a full account later (Account menu). Linki
 - Saves are split: `plots/{id}` is a small public summary everyone listens to; `plotState/{id}` holds the full city and is only fetched for adjacent neighbours.
 - `node test/balance.mjs` runs a scripted city for 100 days.
 
+## New in 2.15: the byte-vs-letter name bug from 2.12, everywhere else it could hide
+
+- **The bug**: 2.12 fixed `nameOk()`'s byte-vs-character mismatch (Firestore's `.size()` counts UTF-8 bytes; JS's `.slice()` counts UTF-16 code units) for the fields that feed `plots.ownerName`/`plots.name` - but `mayor.slice(0, 24)` and `state.name.slice(0, 40)` (and a handful of other free-text fields with their own rules limits) were copy-pasted all over main.js for other collections the *same* two rules-checked field names appear in: `worlds/{w}/offers` (`ownerName`/`city`), `worlds/{w}/stocks` (`city` - listing a city on the exchange), `dms/{pair}/messages` and `inbox` threads (`name`), `desks` (`name`), `worlds/{w}/chat` and `worlds/{w}/alliances/{id}/chat` (`name`/`text`), `worlds/{w}/guestbook` (`name`/`text`), `worlds/{w}/gifts` (`note`), `worlds/{w}` create/rename (`name`), `worlds/{w}/alliances` (`name`), and the feedback form (`text`). A Greek, Cyrillic or other non-Latin mayor/city name or message that fit the character-count limit but not the byte limit failed with the same misleading `permission-denied` on any of these - reported live as listing a city on the Market's exchange failing.
+- **The fix**: every one of those call sites now uses the same `fb.truncateUtf8()` 2.12 introduced, instead of `.slice()`.
+- No firestore.rules change - client-side only, same as 2.12.
+
 ## New in 2.14: sound waits for a gesture, faster births, and grocers as a real business
 
 - **The bug**: `sound.js`'s `audio()` created a `new AudioContext()` the first time anything tried to play a sound - including `music()`/`ambient()`, called every frame from the game loop as soon as a city loads, well before the player has clicked anything. Every browser refuses to start an `AudioContext` before a real user gesture and logs "The AudioContext was not allowed to start" - `ctx.resume()` afterwards doesn't fix an attempt that started too early. Fixed by listening for the page's first `pointerdown`/`keydown`/`touchstart` and only constructing (or resuming) the context after that; `audio()` returns `null` before it, which every sound call already handled gracefully.
