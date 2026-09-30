@@ -5,11 +5,12 @@ import {
   COLLAPSE_POP, COLLAPSE_WATER_DAYS, COLLAPSE_TRAFFIC_DAYS, COLLAPSE_TRAFFIC_COMMUTE, COLLAPSE_DEBT, COLLAPSE_DEBT_DAYS,
   ROAD_CAP, HALL_CAP, HOURS_PER_DAY, LEVEL, MAX_LEVEL, UPGRADABLE, TAP_SHARE, TAP_CAP, GOALS, TRADE_PER_LINK,
   LINK_MOOD, MAX_LINKS, HISTORY_DAYS, LOG_SIZE, EVENT_CHANCE, CHUNK, CHUNKS, START_CHUNKS, LAND_PRICE, LAND_STEP,
-  MOVE_FEE, ADULT, RETIRE, WAGE, isHome, walkable, BUS_SEATS, COMMUTE_JOBS, TICK_MS, isRoad, isRail, POLICY, WANT_REWARD,
+  MOVE_FEE, ADULT, RETIRE, BIRTH_CHANCE, WAGE, isHome, walkable, BUS_SEATS, COMMUTE_JOBS, TICK_MS, isRoad, isRail, POLICY, WANT_REWARD,
   SEASONS, SEASON_DAYS, YEAR_DAYS, UTILITY_POP, DECISIONS, ELECTION_EVERY, ZONES, ZONE_COST,
   HALL_LEVELS, FEATURE_NEEDS, MAT_PER_COST, MAT_BUY, HARVEST, EXCHANGE, PER_CAPITA, STOCK, TRADE_RES, MARKET, RES, FOOD, USE, STORE_BASE, SURPLUS_SALE, MATERIALS_BOOST, MATERIALS_PER_WORK, PLOT_BUY_PARCELS, PLOT_BUY_STEP, PLOT_BUY_MIN, BUILD_SPEED, RECRUIT_COST, FIRED_DAYS, ADULT_STUDY_YEARS, TRAINING_YEARS, EDU, HISTORIC_DAYS, INSURANCE, BONDS, LAND_RESALE, CROWDFUND, LETTER_DAYS, PLEDGE_DAYS, TECH, ERAS, ISSUES, TRAITS, PET_SHARE, PENSION, WASTE_POP, SEWAGE_POP, PROPERTY_TAX, RENT_SQUEEZE, MILESTONES, TOURIST_SPEND, DAYTRIP_SHARE, LOANS, LOAN_DAYS, CARBON_TAX, CONGESTION_FEE, QUAKE_CHANCE, TORNADO_CHANCE, BADGES,
   PRODUCTS, PRODUCT_IDS, FACTORY_BATCHES, STORE_SALE_SHARE, RAW_GOODS, STARTING_RES,
   kindOf, KIND_IDS, PICKS, BATCH_CAP, LEASE_TAX_MIN, LEASE_TAX_MAX, LEASE_TAX_DEFAULT, LEASE_SAVE_MAX, LEASE_MIN_DAYS, LEASE_CATS, RENT_MAX_DAYS, RENT_MAX_TOTAL,
+  GROCER_FOOD_COST, GROCER_MARKUP_MIN, GROCER_MARKUP_MAX, GROCER_DEMAND_FLOOR,
 } from './constants.js';
 // Products (and raw resources) can be posted or taken on the player-to-player Market; only raw resources trade
 // instantly on the world Exchange (worldPrices/buyResource/sellResource below).
@@ -186,6 +187,7 @@ export function migrate(s, rng = Math.random) {
   if (!Array.isArray(s.bday) || s.bday.length !== N) s.bday = s.grid.map((t) => (B[t]?.cat ? 0 : -1));
   if (!Array.isArray(s.protect)) s.protect = [];
   if (!s.landmarks || typeof s.landmarks !== 'object' || Array.isArray(s.landmarks)) s.landmarks = {};
+  if (!s.shopTerms || typeof s.shopTerms !== 'object' || Array.isArray(s.shopTerms)) s.shopTerms = {};
   s.policy.toll = !!s.policy.toll; s.policy.carbon = !!s.policy.carbon;
   if (s.loan && !(s.loan.left > 0)) s.loan = null;
   if (!s.zone) s.zone = new Array(N).fill(0);
@@ -1155,6 +1157,24 @@ export function repay(s, amount = s.loan?.left || 0) {
 const scale = (s, i, n) => Math.floor(n * condFactor(s, i) * LEVEL.capacity[level(s, i)] * utilK(s, i));
 export const homeCap = (s, i) => scale(s, i, B[s.grid[i]].homes || 0);
 export function jobSlots(s, i) { return (B[s.grid[i]].jobs || []).map(([, , n]) => scale(s, i, n)); }
+// Grocers: the share of a shop's budget-affordable capacity that actually gets bought, given its markup -
+// 1 at the lowest markup (everyone the budget can feed does), sliding down to GROCER_DEMAND_FLOOR at the highest.
+export const grocerDemand = (markup) => 1 - (markup - GROCER_MARKUP_MIN) / (GROCER_MARKUP_MAX - GROCER_MARKUP_MIN) * (1 - GROCER_DEMAND_FLOOR);
+// A grocer's weekly budget and markup, as set by setGrocerTerms - or, until the mayor sets their own, enough
+// to buy in exactly its base capacity at the lowest (least profitable, most affordable) markup.
+export function shopTerms(s, i) {
+  const custom = s.shopTerms?.[i];
+  if (custom) return custom;
+  return { budget: Math.round(scale(s, i, B[T.SHOP].serves) * GROCER_FOOD_COST * 7), markup: GROCER_MARKUP_MIN };
+}
+export function setGrocerTerms(s, i, budget, markup) {
+  if (s.grid[i] !== T.SHOP) return { ok: false, reason: 'Only grocers can be priced.' };
+  const b = Math.max(0, Math.round(Number(budget) || 0));
+  const m = Math.min(GROCER_MARKUP_MAX, Math.max(GROCER_MARKUP_MIN, Number(markup) || GROCER_MARKUP_MIN));
+  s.shopTerms = { ...(s.shopTerms || {}), [i]: { budget: b, markup: m } };
+  s._plan = null;
+  return { ok: true };
+}
 export function capacity(s, i, field) {
   const d = B[s.grid[i]];
   if (field === 'homes') return homeCap(s, i);
@@ -1162,7 +1182,13 @@ export function capacity(s, i, field) {
   if (field === 'seats') return d.school ? scale(s, i, d.school.seats) : 0;
   if (field === 'visits') return d.visits ? scale(s, i, d.visits.n) : 0;
   if (field === 'care') return d.care ? scale(s, i, d.care.n * (hasTech(s, 'telemed') ? 1.3 : 1)) : 0;
-  if (field === 'serves') return scale(s, i, (d.serves || 0) * (s.grid[i] === T.FARM && hasTech(s, 'vertical') ? 2 : 1));
+  if (field === 'serves') {
+    const base = scale(s, i, (d.serves || 0) * (s.grid[i] === T.FARM && hasTech(s, 'vertical') ? 2 : 1));
+    if (s.grid[i] !== T.SHOP) return base;
+    const { budget, markup } = shopTerms(s, i);
+    const afford = Math.floor((budget / 7) / GROCER_FOOD_COST);
+    return Math.min(base, Math.floor(afford * grocerDemand(markup)));
+  }
   if (field === 'graves') return scale(s, i, d.graves || 0);
   if (field === 'cases') return scale(s, i, d.cases || 0);
   return 0;
@@ -2210,7 +2236,7 @@ function daily(s, plan, rng) {
   for (const p of [...s.people]) {
     const q = p.pt && s.people.find((x) => x.i === p.pt);
     if (!q || p.i > q.i || p.h !== q.h || p.a < 20 || p.a > 45 || q.a < 20 || q.a > 45) continue;
-    if (roomIn(s, p.h, homes) < 1 || rng() > 0.1 * (hospital ? 1.4 : 1) * ((p.m + q.m) / 2 < 0.5 ? 0.5 : 1)) continue;
+    if (roomIn(s, p.h, homes) < 1 || rng() > BIRTH_CHANCE * (hospital ? 1.4 : 1) * ((p.m + q.m) / 2 < 0.5 ? 0.5 : 1)) continue;
     const baby = person(s, { f: Math.floor(rng() * FIRST.length), l: p.l, a: 0, h: p.h, pa: p.i, b: 1, sp: 0 });
     remember(s, baby, 'Born here'); remember(s, p, `Had baby ${FIRST[baby.f]}`); remember(s, q, `Had baby ${FIRST[baby.f]}`);
     p.jy = q.jy = 3;
@@ -2333,10 +2359,26 @@ function daily(s, plan, rng) {
   const ps = productsDay(s, uc);
   st.products = ps;
   if (ps.sold) { st.income += ps.sold; st.byClass = { ...st.byClass, produce: (st.byClass.produce || 0) + ps.sold }; }
-  // Produce, products and food imports are folded into income/upkeep above for the Budget's figures, but the
-  // day's main money line (just above) has already been applied - without this they'd show in Budget and the
-  // money chart without ever actually changing the balance.
-  s.money += (rs.sold || 0) + (ps.sold || 0) - (rs.importCost || 0);
+  // Grocers: the mayor buys in a day's share of the weekly budget whether or not it all sells (a real cost),
+  // and residents who do buy pay the price that budget was marked up to - see grocerDemand()/capacity() above
+  // for how a higher markup already left fewer of them able to.
+  let groceryIncome = 0, groceryCost = 0;
+  for (let i = 0; i < N; i++) {
+    if (s.grid[i] !== T.SHOP || !active(s, i, uc) || staffing(s, i) <= 0) continue;
+    const { budget, markup } = shopTerms(s, i);
+    groceryCost += budget / 7;
+    groceryIncome += (plan.served.get(i) || 0) * GROCER_FOOD_COST * markup;
+  }
+  groceryIncome = Math.round(groceryIncome); groceryCost = Math.round(groceryCost);
+  if (groceryCost || groceryIncome) {
+    st.income += groceryIncome; st.upkeep += groceryCost;
+    st.byClass = { ...st.byClass, grocery: (st.byClass.grocery || 0) + groceryIncome };
+    st.upkeepBy = { ...st.upkeepBy, grocery: groceryCost };
+  }
+  // Produce, products, food imports and grocery trade are folded into income/upkeep above for the Budget's
+  // figures, but the day's main money line (just above) has already been applied - without this they'd show in
+  // Budget and the money chart without ever actually changing the balance.
+  s.money += (rs.sold || 0) + (ps.sold || 0) - (rs.importCost || 0) + groceryIncome - groceryCost;
   // Having none at all is already covered by power and water coverage; this is for having some, but not enough.
   const shortOf = (k) => (pop >= UTILITY_POP && rs.prod[k] > 0 ? rs.short[k] / Math.max(1, rs.need[k]) : 0);
   const shortK = { water: shortOf('water'), power: shortOf('power') };

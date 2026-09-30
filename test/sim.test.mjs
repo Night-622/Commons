@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import * as sim from '../public/js/sim.js';
-import { T, PLOT, B, START_MONEY, START_CHUNKS, STARTING_RES, COLLAPSE_POP, COLLAPSE_WATER_DAYS, COLLAPSE_DEBT, COLLAPSE_DEBT_DAYS, BATCH_CAP, TRADE_RES, RES, PER_CAPITA, LEASE_TAX_MAX } from '../public/js/constants.js';
+import { T, PLOT, B, START_MONEY, START_CHUNKS, STARTING_RES, COLLAPSE_POP, COLLAPSE_WATER_DAYS, COLLAPSE_DEBT, COLLAPSE_DEBT_DAYS, BATCH_CAP, TRADE_RES, RES, PER_CAPITA, LEASE_TAX_MAX, GROCER_FOOD_COST, GROCER_MARKUP_MIN, GROCER_MARKUP_MAX } from '../public/js/constants.js';
 
 // sim.tick() never reads the real clock, but sim.newCity() sets the city's *starting* hour of day from
 // Date.now() - left alone, that makes every run start at a different hour, which can shift a long test's exact
@@ -131,6 +131,42 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   sim.setLandmark(s, b, false);
   assert(sim.bulldoze(s, b).ok, 'once landmark status is lifted, it clears like any other rubble');
   console.log('landmarks ok: rubble clears for free; a landmark stays until lifted');
+}
+
+// ---- grocers: a mayor-set weekly budget and markup decide how many people a shop can feed, and its profit
+{
+  const s = sim.newCity('Grocery', rng);
+  put(s, 13, 12, T.SHOP);
+  finishAll(s);
+  const i = sim.idx(13, 12);
+  const empty = sim.idx(14, 12);
+
+  const def = sim.shopTerms(s, i);
+  assert.equal(def.markup, GROCER_MARKUP_MIN, 'defaults to the lowest, most affordable markup');
+  const baseCap = Math.floor(def.budget / 7 / GROCER_FOOD_COST);
+  assert.equal(sim.capacity(s, i, 'serves'), baseCap, 'the default budget buys in exactly the base capacity');
+
+  assert(!sim.setGrocerTerms(s, empty, 1000, 2).ok, 'only a grocer tile can be priced');
+  const r = sim.setGrocerTerms(s, i, 700, 5);   // above the max markup clamps down
+  assert(r.ok);
+  const terms = sim.shopTerms(s, i);
+  assert.equal(terms.budget, 700);
+  assert.equal(terms.markup, GROCER_MARKUP_MAX, 'markup clamps to the max');
+  const capAtMax = sim.capacity(s, i, 'serves');
+  assert(capAtMax < Math.floor(700 / 7 / GROCER_FOOD_COST), 'a high markup leaves food bought in that nobody paid for');
+
+  // With the budget itself no longer the limit (sized to exactly match the base capacity), the markup's
+  // demand effect is what's actually being compared here.
+  sim.setGrocerTerms(s, i, def.budget, GROCER_MARKUP_MAX);
+  const tightAtMax = sim.capacity(s, i, 'serves');
+  sim.setGrocerTerms(s, i, def.budget, GROCER_MARKUP_MIN);
+  const tightAtMin = sim.capacity(s, i, 'serves');
+  assert.equal(tightAtMin, baseCap, 'the lowest markup serves everyone the budget can afford');
+  assert(tightAtMax < tightAtMin, 'for the same budget, the lowest markup feeds more people than the highest');
+
+  assert(sim.setGrocerTerms(s, i, -50, 1).ok, 'a negative budget is clamped, not refused');
+  assert.equal(sim.shopTerms(s, i).budget, 0, 'clamped to zero, not negative');
+  console.log('grocers ok: budget buys capacity, markup trades it for profit');
 }
 
 // ---- old saves become people

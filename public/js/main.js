@@ -5,6 +5,7 @@ import {
   LOAN_DAYS, HISTORIC_DAYS, BADGES, REGIONAL, REGIONAL_SHARE, ALLIANCE_TRADE, DAILY, DAILY_REWARD, WEEKLY, WEEKLY_REWARD, GIFT_LIMITS, REACTIONS,
   RES, TRADE_RES, PRODUCTS, PRODUCT_IDS, KIND_IDS, USE, HARVEST, MARKET, STOCK, HALL_LEVELS, TECH, STYLES, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
   PICKS, BATCH_CAP, LEASE_MIN_DAYS, LEASE_TAX_MAX, LEASE_TAX_DEFAULT, RENT_MAX_DAYS, RENT_MAX_TOTAL,
+  GROCER_MARKUP_MIN, GROCER_MARKUP_MAX,
 } from './constants.js';
 import { Renderer, STRIDE, thumbnail, modelHeight } from './render.js';
 import { loadPrefs, savePrefs, applyPrefs, resolvedTheme, palette, PALETTES } from './prefs.js';
@@ -2564,6 +2565,15 @@ function wireDrawer(box) {
     if (!r.ok) { notify(r.reason + '.', 'act'); play('error'); return; }
     play('level'); notify(already ? 'Lease terms updated.' : 'Leased to local operators.', 'act'); afterChange();
   };
+  const grocerForm = box.querySelector('#grocer-form');
+  if (grocerForm) grocerForm.onsubmit = (e) => {
+    e.preventDefault();
+    const tile = +grocerForm.dataset.tile, fd = new FormData(grocerForm);
+    checkpoint('grocer pricing');
+    const r = sim.setGrocerTerms(state, tile, +fd.get('budget'), +fd.get('markup') / 100);
+    if (!r.ok) { notify(r.reason + '.', 'act'); play('error'); return; }
+    play('level'); notify('Grocer pricing updated.', 'act'); afterChange();
+  };
   box.querySelectorAll('[data-filter]').forEach((b) => { b.onclick = () => { peopleFilter = b.dataset.filter; renderDrawer(); }; });
   box.querySelectorAll('[data-stats-tab]').forEach((b) => { b.onclick = () => { statsTab = b.dataset.statsTab; renderDrawer(); }; });
   if (drawer === 'region') wireRegion(box);
@@ -2938,7 +2948,18 @@ function ownTile(i) {
   if (d.school) body += row(d.school.stage === 'daycare' ? 'Places' : 'Seats', `${people.filter((p) => p.sc === i || p.tu === i).length} of ${sim.capacity(state, i, 'seats')}`) + faces(people.filter((p) => p.sc === i || p.tu === i), 'Pupils');
   if (d.care) body += row('Patients today', `${[...(plan?.careFor.values() || [])].filter((c) => c === i).length} of ${Math.floor(sim.capacity(state, i, 'care') * sim.staffing(state, i))}`);
   if (d.visits) body += row('Visitors tonight', `${people.filter((p) => p.fun === i).length} of ${Math.floor(sim.capacity(state, i, 'visits') * sim.staffing(state, i))}`);
-  if (d.serves) body += row('Households fed', [...(plan?.shopFor.values() || [])].filter((s) => s === i).length);
+  if (d.serves) body += row('Households fed', `${[...(plan?.shopFor.values() || [])].filter((s) => s === i).length}${t === T.SHOP ? ` of ${sim.capacity(state, i, 'serves')}` : ''}`);
+  if (t === T.SHOP) {
+    const terms = sim.shopTerms(state, i);
+    body += row('Weekly food budget', money(terms.budget)) + row('Price', `${Math.round(terms.markup * 100)}% of cost`);
+    body += `<details data-key="grocer-${i}" ${openDetails.has(`grocer-${i}`) ? 'open' : ''}><summary>Set budget and price</summary>
+      <p class="soft small">Buy in food for this many people a week - spent whether it all sells or not - then price it as a share over cost. Price it low and more people can afford it; price it high and you earn more on each sale, but fewer residents will pay, and the rest go unfed.</p>
+      <form id="grocer-form" data-tile="${i}" class="mk-form">
+        <label class="field"><span>Weekly budget ($)</span><input name="budget" type="number" min="0" step="1" value="${terms.budget}" required></label>
+        <label class="field"><span>Price (${Math.round(GROCER_MARKUP_MIN * 100)}-${Math.round(GROCER_MARKUP_MAX * 100)}% of cost)</span><input name="markup" type="number" min="${Math.round(GROCER_MARKUP_MIN * 100)}" max="${Math.round(GROCER_MARKUP_MAX * 100)}" step="1" value="${Math.round(terms.markup * 100)}" required></label>
+        <div class="actions"><button class="btn primary" type="submit">Set price</button></div>
+      </form></details>`;
+  }
   if (d.makes) {
     const k = sim.staffing(state, i) * LEVEL.capacity[lv];
     body += row('Makes a day', Object.entries(d.makes).map(([r, n]) => `${Math.round(n * k)} ${RES[r].name.toLowerCase()}`).join(', ') || 'Nothing until it has staff');
@@ -3216,8 +3237,13 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 2.13';
+const VERSION = 'Commons 2.14';
 const CHANGELOG = [
+  ['2.14', [
+    'Fixed a real bug: the game tried to start its sound before you\'d clicked or tapped anything, which every browser refuses and logs a warning for. Sound now waits for your first click, key or tap, same as it always sounded like it should.',
+    'Residents have babies more often.',
+    'Grocers now really are a shop, not a free service: set a weekly food budget (spent whether it all sells or not) and a price, 120-300% of cost. A low price lets more people afford to eat; a high one earns more per sale, but fewer residents pay it, and the rest go unfed even with food on the shelves.',
+  ]],
   ['2.13', [
     'A fresh start: the open world moved on again (WORLD_ID s2 → s3).',
     'Clearing rubble left by a fallen city is now free.',

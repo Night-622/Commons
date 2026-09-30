@@ -60,6 +60,7 @@ export const HALL_CAP = 120;
 export const YEAR_DAYS = 2;
 export const ADULT = 18;
 export const RETIRE = 65;
+export const BIRTH_CHANCE = 0.22;   // daily chance an eligible couple with room at home has a baby (before mood/hospital adjust it)
 export const WAGE = [4, 7, 11];   // daily tax by the education a job needs
 export const EDU = ['No schooling', 'Primary', 'High school', 'Degree'];
 // Staff you bring in from outside for an open job, by the education the job needs.
@@ -121,7 +122,7 @@ export const B = {
   [T.VILLA]: { key: 'villa', name: 'Villa', cat: 'homes', col: 'house', cost: 380, work: 36, upkeep: 5, homes: 4, homeMood: 0.08, blurb: 'Homes for 4 with a garden. Residents are happier.' },
 
   [T.WORK]: { key: 'work', name: 'Office', cat: 'work', col: 'work', cost: 220, work: 30, upkeep: 4, jobs: [['Clerk', 1, 8], ['Manager', 3, 2]], blurb: 'Office jobs for people with schooling.' },
-  [T.SHOP]: { key: 'shop', name: 'Grocer', cat: 'work', col: 'shop', cost: 160, work: 20, upkeep: 3, jobs: [['Shop assistant', 0, 3]], serves: 30, blurb: 'Food for 30 people. Every household needs one nearby.' },
+  [T.SHOP]: { key: 'shop', name: 'Grocer', cat: 'work', col: 'shop', cost: 160, work: 20, upkeep: 3, jobs: [['Shop assistant', 0, 3]], serves: 30, blurb: 'Food for up to 30 people. Every household needs one nearby. You set its weekly food budget and price: sell cheap and feed more, or mark it up and earn more from those who still pay.' },
   [T.CAFE]: { key: 'cafe', name: 'Café', cat: 'work', col: 'shop', cost: 180, work: 20, upkeep: 3, jobs: [['Barista', 0, 3]], visits: { n: 20, who: 'all' }, blurb: 'Jobs, plus somewhere to go in the evening.' },
   [T.FACTORY]: { key: 'factory', name: 'Factory', cat: 'work', col: 'work', cost: 300, work: 40, upkeep: 5, jobs: [['Factory hand', 0, 14], ['Engineer', 3, 1]], pollution: 3, smog: 0.05, injury: 0.004, makesProducts: true, blurb: 'Pick a recipe once you’ve researched it, and it turns raw resources into a product to sell in a Store or trade. Noisy: homes within 3 tiles are less happy.' },
   [T.FARM]: { key: 'farm', name: 'Urban farm', cat: 'work', col: 'park', cost: 200, work: 22, upkeep: 2, jobs: [['Farmhand', 0, 4]], serves: 15, fresh: 0.02, blurb: 'Feeds 15 people. Pick what to grow, then collect it when it\'s ready.' },
@@ -402,6 +403,13 @@ export const STARTING_RES = { water: 100, power: 200, wood: 200, metal: 90, ston
 // mood) and has `shares` shares. A mayor can list between listMin and listMax of them once the city has minPop
 // people, and is paid for them at once (less ipoDiscount); others then buy and sell them on the exchange.
 export const STOCK = { shares: 1000, listMin: 50, listMax: 490, minPop: 40, ipoDiscount: 0.95, fee: 0.01 };
+// Grocers: the mayor sets a weekly budget (spent daily, whether or not it all sells - a real cost of stocking
+// up) and a markup, 120%-300% of that cost. A low markup lets everyone the budget can feed actually afford it;
+// a high one earns more per sale but GROCER_DEMAND_FLOOR is as few as this share of them still buy in, so the
+// rest go unfed even with food in stock. Default terms (until a mayor sets their own) buy in exactly the
+// building's base capacity at the lowest markup - close to how grocers always worked, plus a little profit.
+export const GROCER_FOOD_COST = 0.5;          // $ per person fed, per day
+export const GROCER_MARKUP_MIN = 1.2, GROCER_MARKUP_MAX = 3, GROCER_DEMAND_FLOOR = 0.35;
 export const MARKET = { maxQty: 5000, maxPrice: 50, maxLoan: 20000, maxLoanDays: 30, maxOpen: 6 };
 // A day, per person - plus a per-staffed-building draw on top, since running a building takes water and power
 // too, not just housing people. Water and power are deliberately not easy: keeping both flowing takes real,

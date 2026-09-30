@@ -192,3 +192,10 @@ main"):
          the city that stood there, how long it lasted and how big it
          got. Another fresh start (WORLD_ID is now s3). No firestore.rules
          change.
+   2.14  Fixed a real bug: the game tried to start audio before the
+         first click or tap, which browsers refuse and log a warning
+         for - it now waits for that first click. Babies arrive more
+         often. Grocers now cost real money to run: set a weekly food
+         budget and a price (120-300% of cost) per shop - a low price
+         feeds more people, a high one earns more per sale but leaves
+         more unfed. No firestore.rules change, no world reset.

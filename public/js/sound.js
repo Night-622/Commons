@@ -6,7 +6,17 @@ export function setSound(on, vol, amb = vol, haptics = true) { enabled = on; vol
 export function setHidden(h) { hidden = h; if (h && amb) amb.gain.gain.setTargetAtTime(0.0001, amb.ctx.currentTime, 0.2); }
 const HAPTIC = { place: 12, error: [20, 40, 20], goal: [15, 30, 15, 30, 40], level: 25, warn: [30, 60, 30] };
 
+// Browsers refuse to start an AudioContext before the page has had a real user gesture (a click, key or
+// touch) - creating one earlier, e.g. from the game loop's own ambient()/music() calls right after load,
+// just logs "not allowed to start" and leaves it stuck suspended. Wait for that first gesture instead.
+let gestured = false;
+if (typeof addEventListener === 'function') {
+  const onGesture = () => { gestured = true; if (ctx?.state === 'suspended') ctx.resume(); };
+  for (const ev of ['pointerdown', 'keydown', 'touchstart']) addEventListener(ev, onGesture, { once: true, passive: true });
+}
+
 function audio() {
+  if (!gestured) return null;
   if (!ctx) {
     try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; }
   }

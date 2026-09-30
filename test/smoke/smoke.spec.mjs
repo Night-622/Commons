@@ -233,6 +233,29 @@ test('staff: recruit and hire from a building’s panel', async ({ page }) => {
   expect(clean(errors)).toEqual([]);
 });
 
+test('grocer: set a weekly budget and price, and the panel reflects it', async ({ page }) => {
+  test.setTimeout(120_000);
+  const errors = await newGame(page);
+  await page.locator('#map').focus();
+  await page.keyboard.press('b');
+  for (const k of ['ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter']) await page.keyboard.press(k);
+  await page.locator('#cat-q').fill('grocer');
+  await page.locator('#catalog [data-build]').first().click();
+  if (await page.locator('#modal[open]').count()) await page.locator('#modal .primary').click();
+  await page.locator('#map').focus();
+  await page.keyboard.press('e');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#drawer').getByText('Set budget and price')).toBeVisible({ timeout: 90_000 });
+  await page.locator('#drawer').getByText('Set budget and price').click();
+  await page.locator('#grocer-form [name="budget"]').fill('50');
+  await page.locator('#grocer-form [name="markup"]').fill('300');
+  await page.locator('#grocer-form button[type="submit"]').click();
+  await expect(page.locator('#toasts')).toContainText('Grocer pricing updated');
+  await expect(page.locator('#drawer')).toContainText('300% of cost');
+  await expect(page.locator('#drawer')).toContainText('$50');
+  expect(clean(errors)).toEqual([]);
+});
+
 test('interface: sizes, menu directions, hiding and a bigger panel', async ({ page }) => {
   const errors = await newGame(page);
   await unlockAll(page);
