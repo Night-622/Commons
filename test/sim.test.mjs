@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import * as sim from '../public/js/sim.js';
-import { T, PLOT, B, START_MONEY, START_CHUNKS, STARTING_RES, COLLAPSE_POP, COLLAPSE_WATER_DAYS, COLLAPSE_DEBT, COLLAPSE_DEBT_DAYS, BATCH_CAP, TRADE_RES, RES, PER_CAPITA, LEASE_TAX_MAX, GROCER_FOOD_COST, GROCER_MARKUP_MIN, GROCER_MARKUP_MAX } from '../public/js/constants.js';
+import { T, PLOT, B, START_MONEY, START_CHUNKS, STARTING_RES, COLLAPSE_POP, COLLAPSE_WATER_DAYS, COLLAPSE_DEBT, COLLAPSE_DEBT_DAYS, BATCH_CAP, TRADE_RES, RES, PER_CAPITA, LEASE_TAX_MAX, GROCER_FOOD_COST, GROCER_MARKUP_MIN, GROCER_MARKUP_MAX, TROOP_TIERS, DEFENSE_PER_POST, NIGHT_GUARD_BONUS } from '../public/js/constants.js';
 
 // sim.tick() never reads the real clock, but sim.newCity() sets the city's *starting* hour of day from
 // Date.now() - left alone, that makes every run start at a different hour, which can shift a long test's exact
@@ -167,6 +167,44 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(sim.setGrocerTerms(s, i, -50, 1).ok, 'a negative budget is clamped, not refused');
   assert.equal(sim.shopTerms(s, i).budget, 0, 'clamped to zero, not negative');
   console.log('grocers ok: budget buys capacity, markup trades it for profit');
+}
+
+// ---- military: train troops, raise defenceRating() with Defence posts, and a night guard that only helps after dark
+{
+  const s = sim.newCity('Garrison', rng);
+  s.rp = 200; s.tech = []; s.hall = 1;   // tier 1 needs at least a Village
+  for (const id of ['militia', 'trainedtroops', 'defenses', 'nightwatch']) assert(sim.research(s, id).ok, `research ${id}`);
+  put(s, 13, 12, T.BASE);
+  const base = sim.idx(13, 12);
+  finishAll(s);
+  assert(sim.hire(s, s.people.find((p) => p.j < 0).i, base, 1).ok, 'staff the base (the Recruit slot, no schooling needed)');
+
+  assert(sim.canTrain(s, 't1', 5).ok, 'tier 1 is trainable once militia is researched and the base is staffed');
+  assert(!sim.canTrain(s, 't2', 1).ok, 'tier 2 needs a bigger town hall than a brand-new settlement');
+
+  const before = s.money;
+  const r = sim.train(s, 't1', 5);
+  assert(r.ok);
+  assert(s.money < before, 'training costs money up front');
+  assert.equal(sim.troopCount(s), 0, 'troops are not ready until training finishes');
+  for (let h = 0; h < TROOP_TIERS[0].hours * 5; h++) sim.tick(s, rng);
+  assert.equal(s.troops.t1, 5, 'training finishes after its full time');
+  assert.equal(sim.troopCount(s), 5);
+
+  const fromTroops = sim.defenseRating(s);
+  assert.equal(fromTroops, 5 * TROOP_TIERS[0].power, 'defence comes from troop power');
+  put(s, 14, 12, T.DEFENSE);
+  put(s, 15, 12, T.HOUSE);   // room for the recruit below - the hall alone has no spare homes
+  finishAll(s);
+  assert(sim.recruit(s, sim.idx(14, 12), 0, rng).ok, 'recruit a Guard from outside, since no settler on hand has schooling');
+  assert.equal(sim.defenseRating(s), fromTroops + DEFENSE_PER_POST, 'a staffed Defence post adds a flat amount');
+
+  assert(sim.setNightGuard(s, true).ok, 'the night guard can be posted once Night watch is researched');
+  s.hour = 2;   // the middle of the night (DAWN 6, DUSK 20)
+  assert.equal(sim.defenseRating(s), Math.round((fromTroops + DEFENSE_PER_POST) * (1 + NIGHT_GUARD_BONUS)), 'the night guard only boosts defence after dark');
+  s.hour = 12;
+  assert.equal(sim.defenseRating(s), fromTroops + DEFENSE_PER_POST, 'no bonus in daylight, even while posted');
+  console.log('military ok: training, Defence posts and a night guard that only works at night');
 }
 
 // ---- old saves become people

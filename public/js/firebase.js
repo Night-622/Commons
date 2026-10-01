@@ -190,6 +190,33 @@ async function claimPlotTx(user, mayor, cityName, world, legacy) {
   });
 }
 
+// Found a city at a spot the player picked themselves, rather than the next frontier slot. The create rule
+// only constrains px/py at all when buying next to an existing city (boughtNextTo) - a brand new player's first
+// plot can be anywhere, so this needs no firestore.rules change. `index: -1` marks it as off the sequential
+// frontier, same as a plot bought next to one of your other cities (buyPlot) already does.
+export async function claimPlotAt(user, mayor, cityName, world, px, py) {
+  mayor = truncateUtf8(mayor, 24);
+  const lref = linkRef(user.uid, world);
+  const id = `${world}_${px}_${py}`;
+  return runTransaction(db, async (tx) => {
+    const already = await tx.get(lref);
+    if (already.exists()) throw new Error('You already have a plot in this world. Reload the page.');
+    const taken = await tx.get(doc(db, 'plots', id));
+    if (taken.exists()) throw new Error('Someone just claimed that spot. Pick another.');
+    const state = newCity(cityName);
+    ensureTerrain(state, px, py, world);
+    const data = {
+      owner: user.uid, ownerName: mayor, world, px, py, index: -1,
+      createdAt: serverTimestamp(), updatedAt: serverTimestamp(), ...cleanSummary(state), map: mapString(state),
+    };
+    tx.set(doc(db, 'plots', id), data);
+    tx.set(doc(db, 'plotState', id), { state: serialize(state) });
+    if (world === 'public') tx.set(lref, { plotId: id, createdAt: serverTimestamp() });
+    else tx.set(lref, { uid: user.uid, world, plotId: id, createdAt: serverTimestamp() });
+    return { id, ...data, state: serialize(state) };
+  });
+}
+
 // Start a new city on someone else's ruins. The rubble stays; newState is prepared by the caller.
 export async function takeOverRuins(user, mayor, targetId, newState, world = WORLD_ID) {
   mayor = truncateUtf8(mayor, 24);
@@ -265,8 +292,22 @@ export const finishDeal = (world, id) => deleteDoc(doc(db, 'worlds', world, 'dea
 
 // ---------- city shares ----------
 // worlds/{w}/stocks/{plotId}: a listed city: how many of its shares were put up (float) and how many are still unsold.
-export const listStock = (world, plotId, user, city, float) =>
-  setDoc(doc(db, 'worlds', world, 'stocks', plotId), { owner: user.uid, city, float, available: float, createdAt: serverTimestamp() });
+// A plain setDoc here would silently turn into a Firestore "update" (not "create") if a listing already exists
+// server-side for this plot - which happens if an earlier listStock succeeded but the save that would have
+// recorded `s.listed` locally never went through (the exact symptom: the game still offers "List my city" as if
+// it's unlisted). The rules only let an "update" touch `available` (so buying/selling can't rewrite the listing),
+// so that retry fails with permission-denied forever, looking exactly like a stale-rules problem. Clear out a
+// stale listing of your own first, as its own request - inside one transaction, create-vs-update is decided
+// against the state Firestore started the transaction with, so a delete immediately followed by a set in the
+// same transaction is still evaluated as an "update", not the fresh "create" that's actually wanted.
+export async function listStock(world, plotId, user, city, float) {
+  const ref = doc(db, 'worlds', world, 'stocks', plotId);
+  try {
+    const existing = await getDoc(ref);
+    if (existing.exists() && existing.data().owner === user.uid) await deleteDoc(ref);
+  } catch { /* not allowed to clear it (shares already sold) - the set below will fail with that real reason */ }
+  return setDoc(ref, { owner: user.uid, city, float, available: float, createdAt: serverTimestamp() });
+}
 export function listenStocks(world, cb) {
   return onSnapshot(query(collection(db, 'worlds', world, 'stocks'), limit(100)), (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), (e) => console.error('Stocks', e));
 }

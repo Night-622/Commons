@@ -552,6 +552,32 @@ test('city shares: only the owner lists; trades only move the counter within bou
   await a.fb.delistStock(w.id, pa.id);
 });
 
+test('city shares: listing again (e.g. a retry after a dropped save) replaces a stale listing of your own', async () => {
+  const a = await player(), b = await player();
+  const w = await newWorld(a);
+  const pa = await a.fb.claimPlot(a.user, 'Ana', 'A', w.id);
+  await a.fb.listStock(w.id, pa.id, a.user, 'A', 200);
+  // A plain setDoc here would hit the stocks rule's "update" branch (only `available` may change) instead of
+  // "create", since the doc already exists - exactly what happens if an earlier listStock succeeded but the
+  // save that would have remembered `s.listed` locally never went through. Listing again must still work.
+  await a.fb.listStock(w.id, pa.id, a.user, 'A', 300);
+  const after = (await getDoc(doc(a.db, 'worlds', w.id, 'stocks', pa.id))).data();
+  assert.equal(after.float, 300); assert.equal(after.available, 300);
+  // But not once someone else has actually bought in - that would wipe out their holding.
+  await b.fb.tradeStock(w.id, pa.id, -30);
+  await assert.rejects(a.fb.listStock(w.id, pa.id, a.user, 'A', 300), /permission/i);
+});
+
+test('settling: choosing your own spot works like the frontier, and refuses a taken tile or a second plot', async () => {
+  const a = await player(), b = await player();
+  const w = await newWorld(a);
+  const pa = await a.fb.claimPlotAt(a.user, 'Ana', 'A', w.id, 7, 7);
+  assert.equal(pa.px, 7); assert.equal(pa.py, 7);
+  assert.equal((await a.fb.findPlot(a.user, w.id)).id, pa.id);
+  await assert.rejects(b.fb.claimPlotAt(b.user, 'Ben', 'B', w.id, 7, 7), /just claimed/);
+  await assert.rejects(a.fb.claimPlotAt(a.user, 'Ana', 'Second', w.id, 8, 8), /already have a plot/);
+});
+
 test('fresh start: the current open world can be founded; odd world ids stay private-only', async () => {
   const a = await player();
   const p = await a.fb.claimPlot(a.user, 'Ana', 'A', WORLD_ID);

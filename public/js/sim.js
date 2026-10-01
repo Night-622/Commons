@@ -11,6 +11,7 @@ import {
   PRODUCTS, PRODUCT_IDS, FACTORY_BATCHES, STORE_SALE_SHARE, RAW_GOODS, STARTING_RES,
   kindOf, KIND_IDS, PICKS, BATCH_CAP, LEASE_TAX_MIN, LEASE_TAX_MAX, LEASE_TAX_DEFAULT, LEASE_SAVE_MAX, LEASE_MIN_DAYS, LEASE_CATS, RENT_MAX_DAYS, RENT_MAX_TOTAL,
   GROCER_FOOD_COST, GROCER_MARKUP_MIN, GROCER_MARKUP_MAX, GROCER_DEMAND_FLOOR,
+  TROOP_TIERS, DEFENSE_PER_POST, NIGHT_GUARD_BONUS, NIGHT_GUARD_UPKEEP, DAWN, DUSK,
 } from './constants.js';
 // Products (and raw resources) can be posted or taken on the player-to-player Market; only raw resources trade
 // instantly on the world Exchange (worldPrices/buyResource/sellResource below).
@@ -119,7 +120,8 @@ export function newCity(name, rng = Math.random) {
     v: 4, name, grid, cond, lv: new Array(N).fill(1), land, queue: [], money: START_MONEY, res: { ...STARTING_RES }, people: [], nextId: 1, hall: 0, hallDone: {},
     happiness: 0.65, hour: 0, day: 0, peakPop: 10, unpaidDays: 0, waterShortDays: 0, trafficBadDays: 0, debtDays: 0, cityNo: 1, status: 'alive', lastTick: Date.now(),
     goalsDone: [], history: [], log: [], links: 0, flags: {}, graves: 0, cases: 0, clock: 1, wants: [], zone: new Array(N).fill(0), bday: new Array(N).fill(-1), protect: [],
-    policy: { tax: 1, funding: 1, freeTransit: false },
+    policy: { tax: 1, funding: 1, freeTransit: false, nightGuard: false },
+    troops: {}, trainQueue: [],
     counters: { births: 0, deaths: 0, graduates: 0, crimes: 0, cases: 0, treated: 0, arrivals: 0, departures: 0, built: 0, land: 0, moved: 0 },
     stats: { income: 0, upkeep: 0, failedTrips: 0, arrivals: 0, departures: 0, graduates: 0 },
   };
@@ -188,6 +190,9 @@ export function migrate(s, rng = Math.random) {
   if (!Array.isArray(s.protect)) s.protect = [];
   if (!s.landmarks || typeof s.landmarks !== 'object' || Array.isArray(s.landmarks)) s.landmarks = {};
   if (!s.shopTerms || typeof s.shopTerms !== 'object' || Array.isArray(s.shopTerms)) s.shopTerms = {};
+  if (!s.troops || typeof s.troops !== 'object' || Array.isArray(s.troops)) s.troops = {};
+  if (!Array.isArray(s.trainQueue)) s.trainQueue = [];
+  s.policy.nightGuard = !!s.policy.nightGuard;
   s.policy.toll = !!s.policy.toll; s.policy.carbon = !!s.policy.carbon;
   if (s.loan && !(s.loan.left > 0)) s.loan = null;
   if (!s.zone) s.zone = new Array(N).fill(0);
@@ -1080,6 +1085,58 @@ export function setLandmark(s, i, on) {
   return { ok: true };
 }
 const hurt = (s, amt) => amt * (s.policy?.insured ? INSURANCE.damage : 1);
+
+// ---------- military ----------
+// Home-front only for now: train troops, raise defenceRating() with Defence posts and a night guard. Attacking
+// another mayor (stealing land, raiding resources, intercepting a trade) isn't built yet - that needs its own
+// careful, exploit-proofed design on top of this, since it would touch other players' cities directly.
+export const isNight = (s) => s.hour < DAWN || s.hour >= DUSK;
+const troopTier = (id) => TROOP_TIERS.find((t) => t.id === id);
+export function canTrain(s, tierId, n) {
+  if (s.status !== 'alive') return { ok: false, reason: 'This city has fallen.' };
+  const tier = troopTier(tierId);
+  if (!tier) return { ok: false, reason: 'Unknown unit.' };
+  if (!hasTech(s, tier.tech)) return { ok: false, reason: `Needs the ${TECH.find((x) => x.id === tier.tech).name} research` };
+  if (hallLevel(s) < tier.hall) return { ok: false, reason: `Needs a ${HALL_LEVELS[tier.hall].name.toLowerCase()} or bigger` };
+  if (!s.grid.some((t, i) => t === T.BASE && active(s, i) && staffing(s, i) > 0)) return { ok: false, reason: 'Needs a staffed Military base' };
+  if (!(Number.isInteger(n) && n >= 1)) return { ok: false, reason: 'How many?' };
+  const cost = {}; for (const [k, v] of Object.entries(tier.cost)) cost[k] = Math.round(v * n);
+  if (s.money < cost.money) return { ok: false, reason: `Needs $${cost.money}` };
+  for (const k of Object.keys(cost)) if (k !== 'money' && stockOf(s, k) < cost[k]) return { ok: false, reason: `Needs ${cost[k]} ${RES[k].name.toLowerCase()}` };
+  return { ok: true, cost };
+}
+export function train(s, tierId, n) {
+  const check = canTrain(s, tierId, n);
+  if (!check.ok) return check;
+  s.money -= check.cost.money;
+  for (const k of Object.keys(check.cost)) if (k !== 'money') takeKind(s, k, check.cost[k]);
+  (s.trainQueue ||= []).push({ tier: tierId, n, left: troopTier(tierId).hours * n });
+  return { ok: true, cost: check.cost };
+}
+// Called once an hour from tick(): training already paid for keeps going even if the base falls idle later,
+// same as a building under construction does.
+function advanceTraining(s) {
+  if (!s.trainQueue?.length) return;
+  const done = [];
+  s.trainQueue = s.trainQueue.filter((q) => { q.left--; if (q.left > 0) return true; done.push(q); return false; });
+  for (const q of done) {
+    s.troops[q.tier] = (s.troops[q.tier] || 0) + q.n;
+    note(s, 'good', `${q.n} ${troopTier(q.tier).name.toLowerCase()} finished training.`);
+  }
+}
+export function canSetNightGuard(s) { return hasTech(s, 'nightwatch'); }
+export function setNightGuard(s, on) {
+  if (!canSetNightGuard(s)) return { ok: false, reason: 'Needs the Night watch research' };
+  s.policy.nightGuard = !!on;
+  return { ok: true };
+}
+export function troopCount(s) { return Object.values(s.troops || {}).reduce((a, b) => a + b, 0); }
+export function defenseRating(s, uc = underConstruction(s)) {
+  const troopPower = TROOP_TIERS.reduce((a, t) => a + (s.troops?.[t.id] || 0) * t.power, 0);
+  const posts = s.grid.reduce((a, t, i) => a + (t === T.DEFENSE && active(s, i, uc) && staffing(s, i) > 0 ? 1 : 0), 0);
+  const night = s.policy?.nightGuard && isNight(s);
+  return Math.round((troopPower + posts * DEFENSE_PER_POST) * (night ? 1 + NIGHT_GUARD_BONUS : 1));
+}
 
 // ---------- selling land back ----------
 export function canSellLand(s, c) {
@@ -2292,6 +2349,11 @@ function daily(s, plan, rng) {
   const retirees = s.people.filter((p) => p.a >= RETIRE).length;
   if (retirees) { st.upkeepBy = { ...st.upkeepBy, pensions: retirees * PENSION }; st.upkeep += retirees * PENSION; }
   st.retirees = retirees;
+  // Night guard: a standing cost per soldier for as long as it's posted, not just while it's actually dark.
+  if (s.policy?.nightGuard) {
+    const guardCost = Math.round(troopCount(s) * NIGHT_GUARD_UPKEEP);
+    if (guardCost) { st.upkeepBy = { ...st.upkeepBy, nightGuard: guardCost }; st.upkeep += guardCost; }
+  }
   const recycled = s.grid.reduce((a, t, i) => a + (t === T.RECYCLE && active(s, i, uc) && staffing(s, i) > 0 ? 1 : 0), 0);
   if (recycled) { const r = Math.round(Math.min(pop, recycled * B[T.RECYCLE].waste) * B[T.RECYCLE].sells); st.income += r; by.recycling = r; }
   // Loan repayments come out before anything else. Missing one hurts the credit rating.
@@ -2825,6 +2887,7 @@ export function tick(s, rng = Math.random) {
   }
   // Everything else you pick a target for (Quarry, Sawmill, Farm, Greenhouse and the rest): progress its batch.
   advanceBatches(s);
+  advanceTraining(s);
   const p = s._plan && s._plan.day === s.day ? s._plan : plan(s, rng);
   // An empty town counts as hopeful as a new one, so it can fill up again if it still has homes and money.
   const avg = s.people.length ? s.people.reduce((a, x) => a + x.m, 0) / s.people.length : 0.65;

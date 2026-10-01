@@ -5,7 +5,7 @@ import {
   LOAN_DAYS, HISTORIC_DAYS, BADGES, REGIONAL, REGIONAL_SHARE, ALLIANCE_TRADE, DAILY, DAILY_REWARD, WEEKLY, WEEKLY_REWARD, GIFT_LIMITS, REACTIONS,
   RES, TRADE_RES, PRODUCTS, PRODUCT_IDS, KIND_IDS, USE, HARVEST, MARKET, STOCK, HALL_LEVELS, TECH, STYLES, WASTE_POP, SEWAGE_POP, DAWN, DUSK, WORLD_ID, CLASSIC_WORLD, OPEN_WORLDS, MAX_CITIES, MAX_CO, DESK_IDLE_MS, DESK_STALE_MS, DESK_BEAT_MS,
   PICKS, BATCH_CAP, LEASE_MIN_DAYS, LEASE_TAX_MAX, LEASE_TAX_DEFAULT, RENT_MAX_DAYS, RENT_MAX_TOTAL,
-  GROCER_MARKUP_MIN, GROCER_MARKUP_MAX,
+  GROCER_MARKUP_MIN, GROCER_MARKUP_MAX, TROOP_TIERS,
 } from './constants.js';
 import { Renderer, STRIDE, thumbnail, modelHeight } from './render.js';
 import { loadPrefs, savePrefs, applyPrefs, resolvedTheme, palette, PALETTES } from './prefs.js';
@@ -242,10 +242,13 @@ async function showFound() {
   $('found-joinbox').classList.add('hidden');
   $('found-join').classList.toggle('hidden', world.id !== WORLD_ID);
   $('found-ruins').classList.add('hidden');
+  $('found-picker').classList.add('hidden');
   show('found');
   (base ? $('found-city') : $('found-mayor')).focus();
   try {
-    const ruins = (await fb.loadWorld(world.id)).filter((p) => p.status === 'ruins').slice(0, 4);
+    const plots = await fb.loadWorld(world.id);
+    wireFoundPicker(plots);
+    const ruins = plots.filter((p) => p.status === 'ruins').slice(0, 4);
     if (!ruins.length) return;
     $('found-ruins').innerHTML = `<p class="or"><span>or start on ruins</span></p>${ruins.map((r) => `
       <div class="ruin-row"><span><b>Ruins of ${esc(r.name)}</b><small>Reached ${r.peakPop} people. The rubble stays.</small></span>
@@ -264,6 +267,51 @@ async function showFound() {
       }, $('found-msg'));
     });
   } catch (e) { console.error(e); }
+}
+
+// Pick your own spot instead of the frontier. A plot's own create rule never constrains px/py except when
+// buying next to a city you already own, so any empty tile is a valid first plot - this is purely a map to
+// choose one from, not a new server-side allowance.
+$('found-pick-toggle').onclick = () => {
+  const open = $('found-picker').classList.toggle('hidden') === false;
+  $('found-pick-toggle').textContent = open ? 'Use the frontier instead' : 'Choose your spot on the map instead';
+};
+function wireFoundPicker(plots) {
+  const canvas = $('found-picker-canvas');
+  const taken = new Map(plots.map((p) => [`${p.px}_${p.py}`, p]));
+  const xs = plots.map((p) => p.px), ys = plots.map((p) => p.py);
+  const pad = 5, half = 14;
+  const cx = xs.length ? Math.round((Math.min(...xs) + Math.max(...xs)) / 2) : 0;
+  const cy = ys.length ? Math.round((Math.min(...ys) + Math.max(...ys)) / 2) : 0;
+  const span = Math.min(40, Math.max(2 * half, (xs.length ? Math.max(...xs) - Math.min(...xs) : 0) + pad * 2, (ys.length ? Math.max(...ys) - Math.min(...ys) : 0) + pad * 2));
+  const x0 = cx - Math.floor(span / 2), y0 = cy - Math.floor(span / 2);
+  const draw = () => {
+    const dpr = devicePixelRatio || 1, size = canvas.clientWidth || 320;
+    canvas.width = size * dpr; canvas.height = size * dpr;
+    const g = canvas.getContext('2d'), cell = canvas.width / span;
+    g.clearRect(0, 0, canvas.width, canvas.height);
+    for (let gy = 0; gy < span; gy++) for (let gx = 0; gx < span; gx++) {
+      const p = taken.get(`${x0 + gx}_${y0 + gy}`);
+      g.fillStyle = !p ? 'rgba(90,170,110,0.55)' : p.status === 'ruins' ? '#9a8b7b' : p.owner === user.uid ? '#ffc933' : '#5e7a92';
+      g.fillRect(gx * cell + 1, gy * cell + 1, cell - 2, cell - 2);
+    }
+  };
+  draw();
+  addEventListener('resize', draw, { once: true });
+  canvas.onclick = (e) => {
+    const r = canvas.getBoundingClientRect(), cell = r.width / span;
+    const gx = Math.floor((e.clientX - r.left) / cell), gy = Math.floor((e.clientY - r.top) / cell);
+    const px = x0 + gx, py = y0 + gy;
+    if (taken.has(`${px}_${py}`)) { $('found-pick-msg').textContent = 'That spot is already taken. Pick an empty one.'; return; }
+    const m = $('found-mayor').value.trim(), c = $('found-city').value.trim();
+    if (!m || !c) { $('found-pick-msg').textContent = 'Give yourself and your city a name first.'; return; }
+    busy($('found-picker-canvas'), async () => {
+      $('found-pick-msg').textContent = '';
+      const doc = await fb.claimPlotAt(user, m, c, world.id, px, py);
+      if (!user.isAnonymous && !user.displayName) fb.setDisplayName(m).catch(() => {});
+      startGame(doc);
+    }, $('found-pick-msg'));
+  };
 }
 
 // ---------- routing ----------
@@ -2586,6 +2634,12 @@ function wireDrawer(box) {
   box.querySelector('#daily-claim')?.addEventListener('click', claimDaily);
   box.querySelector('#open-timelapse')?.addEventListener('click', showTimelapse);
   box.querySelectorAll('[data-tech]').forEach((b) => { b.onclick = () => { const r = sim.research(state, b.dataset.tech); if (r.ok) { play('level'); notify(`Research complete: ${b.closest('li').querySelector('b').textContent}.`, 'good'); afterChange(); } else notify(r.reason, 'act'); }; });
+  box.querySelectorAll('form[data-train]').forEach((f) => { f.onsubmit = (e) => {
+    e.preventDefault();
+    const tier = f.dataset.train, n = Math.round(+new FormData(f).get('n')), name = TROOP_TIERS.find((t) => t.id === tier).name.toLowerCase();
+    const r = sim.train(state, tier, n);
+    if (r.ok) { play('level'); notify(`Training ${n} ${name}.`, 'act'); afterChange(); } else notify(r.reason + '.', 'act');
+  }; });
   box.querySelectorAll('[data-react]').forEach((b) => { b.onclick = () => {
     const [id, emo] = b.dataset.react.split('|'), msg = chatMessages.find((x) => x.id === id);
     const cur = msg?.reactions?.[user.uid];
@@ -2695,6 +2749,7 @@ function inspectorAction(what, arg) {
   if (what === 'tap') tap(i);
   else if (what === 'upgrade') upgradeAt(i);
   else if (what === 'protect') { const r = sim.setProtected(state, i, !sim.isProtected(state, i)); if (r.ok) { play('level'); notify(sim.isProtected(state, i) ? 'Protected. It will stand for good.' : 'Protection lifted.', 'act'); afterChange(); } else notify(r.reason, 'act'); }
+  else if (what === 'night-guard') { const on = arg === '1'; const r = sim.setNightGuard(state, on); if (r.ok) { play('level'); notify(on ? 'Night guard posted.' : 'Night guard stood down.', 'act'); afterChange(); } else notify(r.reason, 'act'); }
   else if (what === 'landmark') { const r = sim.setLandmark(state, i, true); if (r.ok) { play('level'); notify('Kept as a landmark. It will stay here for good.', 'act'); afterChange(); } else notify(r.reason, 'act'); }
   else if (what === 'unlandmark') { sim.setLandmark(state, i, false); play('clear'); notify('Landmark status removed. You can clear the rubble now.', 'act'); afterChange(); }
   else if (what === 'sell-land') {
@@ -3237,8 +3292,14 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 2.15';
+const VERSION = 'Commons 2.16';
 const CHANGELOG = [
+  ['2.16', [
+    'A fresh start: the open world moved on again (WORLD_ID s3 → s4). Founding a city now also offers "Choose your spot on the map instead" - pick any empty tile yourself rather than always joining at the frontier.',
+    'Fixed a real bug: listing your city on the exchange could still fail with a permissions error after an earlier save had gone wrong, even once the name itself was fine - the game was trying to re-list it the same way as a brand new listing, which the rules only allow once. Re-listing now works properly.',
+    'New: Military. Research Militia (and the technologies after it, 10-30 points each, in City stats) to unlock a Military base and train troops - five tiers, from plain Militia up to planes, ships and missiles, each needing a bigger town hall than the last. A Defence post and a night guard (after dark) raise your defence rating. This is the home front only for now: attacking another mayor - stealing land, raiding resources, intercepting a trade - needs its own careful design before it\'s safe to add to a shared world, and comes in a later version.',
+    'The most your city will run on its own while you\'re away is now 30 days (was 144): past that it waits for you rather than carrying on indefinitely. It can still be found and interacted with while paused like this.',
+  ]],
   ['2.15', [
     'Fixed a real bug: listing your city on the exchange (and a few other things - chat, gifts, guestbook notes, private messages, alliances, worlds) could fail with a permissions error if your mayor or city name had Greek or other non-English letters in it, the same byte-versus-letter mismatch 2.12 fixed for saving, just not caught everywhere else it could happen. Fixed the same way, everywhere it could still happen.',
   ]],

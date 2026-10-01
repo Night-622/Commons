@@ -135,6 +135,12 @@
       <label class="field"><span>City name</span><input id="found-city" maxlength="28" required></label>
       <button class="btn primary wide" type="submit" id="found-go">Claim my plot</button>
       <p id="found-msg" class="formmsg" role="alert"></p>
+      <button class="linkbtn" type="button" id="found-pick-toggle">Choose your spot on the map instead</button>
+      <div id="found-picker" class="found-picker hidden">
+        <p class="soft small">Tap an empty tile to found your city there instead of the frontier.</p>
+        <canvas id="found-picker-canvas" width="320" height="320" aria-label="Map of nearby plots. Empty tiles can be tapped to found your city there."></canvas>
+        <p id="found-pick-msg" class="formmsg" role="alert"></p>
+      </div>
       <div id="found-ruins" class="found-ruins hidden"></div>
       <div id="found-joinbox" class="found-joinbox hidden">
         <label class="field"><span>Invite code from a friend</span>

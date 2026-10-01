@@ -69,7 +69,7 @@ const CODE = { [T.HOUSE]: 'H', [T.APARTMENT]: 'Ap', [T.VILLA]: 'V', [T.WORK]: 'O
   [T.POLICE]: 'Po', [T.FIRE]: 'Fi', [T.COURT]: 'Ct', [T.CEMETERY]: 'Ce', [T.PARK]: 'Pk', [T.PLAYGROUND]: 'Pl', [T.SPORTS]: 'Sp', [T.GYM]: 'Gy',
   [T.DOJO]: 'Do', [T.POOL]: 'Sw', [T.CINEMA]: 'Ci', [T.STATION]: 'St', [T.STOP]: 'Bs', [T.DEPOT]: 'Bd', [T.HALL]: 'TH', [T.POWER]: 'Pw', [T.WATER]: 'Wa', [T.DRAIN]: 'Dr',
   [T.SOLAR]: 'So', [T.WIND]: 'Wi', [T.MUSEUM]: 'Mu', [T.STADIUM]: 'SD', [T.HOTEL]: 'Ht', [T.FARM]: 'Fa', [T.HARBOUR]: 'Hb', [T.AIRPORT]: 'Ai', [T.LANDFILL]: 'Lf', [T.RECYCLE]: 'Re', [T.SEWAGE]: 'Sw', [T.VET]: 'Vt', [T.METRO]: 'M', [T.MONUMENT]: 'Mo',
-  [T.ORCHARD]: 'Or', [T.DAIRY]: 'Da', [T.RANCH]: 'Ra', [T.MATERIALS]: 'Mw', [T.WAREHOUSE]: 'Wh' };
+  [T.ORCHARD]: 'Or', [T.DAIRY]: 'Da', [T.RANCH]: 'Ra', [T.MATERIALS]: 'Mw', [T.WAREHOUSE]: 'Wh', [T.BASE]: 'Mb', [T.DEFENSE]: 'Df' };
 export const glyphOf = (t) => GLYPH_COL[B[t]?.col];
 // Ground colour for buildings that are mostly open space.
 const GROUND = { [T.SPORTS]: '#6fbf5a', [T.POOL]: '#e9e2cf', [T.CEMETERY]: '#8fb77a', [T.PLAYGROUND]: '#e8d6a3', [T.YARD]: '#c9ae86', [T.VILLA]: '#b8e09a', [T.FARM]: '#9c7a52', [T.STADIUM]: '#6fbf5a', [T.SOLAR]: '#b9d69b', [T.WIND]: '#a9d68b', [T.LANDFILL]: '#a89a78',
@@ -80,7 +80,7 @@ const MODEL_H = { [T.APARTMENT]: 1.3, [T.VILLA]: 0.8, [T.CAFE]: 0.55, [T.FACTORY
   [T.DRAIN]: 0.3, [T.RAIL]: 0.05, [T.STATION]: 0.9, [T.STOP]: 0.5, [T.DEPOT]: 0.8, [T.POWER]: 1.4, [T.WATER]: 1.3,
   [T.SOLAR]: 0.3, [T.WIND]: 1.8, [T.MUSEUM]: 1.1, [T.STADIUM]: 0.9, [T.HOTEL]: 1.6, [T.FARM]: 0.4, [T.HARBOUR]: 1.2, [T.AIRPORT]: 1.1, [T.LANDFILL]: 0.4, [T.RECYCLE]: 0.8, [T.SEWAGE]: 0.5, [T.VET]: 0.7, [T.METRO]: 0.6, [T.MONUMENT]: 2,
   [T.ORCHARD]: 0.6, [T.DAIRY]: 0.7, [T.RANCH]: 0.5, [T.MATERIALS]: 0.9, [T.WAREHOUSE]: 0.8,
-  [T.QUARRY]: 0.55, [T.POULTRY]: 0.42, [T.STORE]: 0.42, [T.COALMINE]: 0.62 };
+  [T.QUARRY]: 0.55, [T.POULTRY]: 0.42, [T.STORE]: 0.42, [T.COALMINE]: 0.62, [T.BASE]: 1, [T.DEFENSE]: 0.6 };
 export function glyph(g, kind, x, y, r, col) {
   g.fillStyle = col;
   g.beginPath();

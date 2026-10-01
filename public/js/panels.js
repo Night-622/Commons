@@ -1,7 +1,7 @@
 // HTML for the side drawer and the build catalogue. Pure functions: main.js supplies data and wires up buttons.
-import { REGIONAL, ALLIANCE_TRADE, REACTIONS, T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY, BONDS, INSURANCE, TECH, ERAS, TRAITS, CARBON_TAX, LOANS, LOAN_DAYS, CONGESTION_FEE, BADGES, RES, FOOD, TECH_BRANCHES, STORE_BASE, TRADE_RES, PRODUCTS, PRODUCT_IDS, RAW_GOODS, MARKET, USE, EXCHANGE, STOCK, HALL_LEVELS, FEATURE_NEEDS, PICKS, KIND_NAME, KIND_IDS, LEASE_TAX_MAX, LEASE_MIN_DAYS } from './constants.js';
+import { REGIONAL, ALLIANCE_TRADE, REACTIONS, T, B, GOALS, WAGE, TRADE_PER_LINK, MAX_LINKS, CATS, BUILDINGS, EDU, LEVEL, POLICY, BONDS, INSURANCE, TECH, ERAS, TRAITS, CARBON_TAX, LOANS, LOAN_DAYS, CONGESTION_FEE, BADGES, RES, FOOD, TECH_BRANCHES, STORE_BASE, TRADE_RES, PRODUCTS, PRODUCT_IDS, RAW_GOODS, MARKET, USE, EXCHANGE, STOCK, HALL_LEVELS, FEATURE_NEEDS, PICKS, KIND_NAME, KIND_IDS, LEASE_TAX_MAX, LEASE_MIN_DAYS, TROOP_TIERS, DEFENSE_PER_POST, NIGHT_GUARD_BONUS, NIGHT_GUARD_UPKEEP } from './constants.js';
 import { t as tr } from './i18n.js';
-import { creditRating, greenShare, traitOf, hasTech, canResearch, eraOf, resourceStock, matCost, goalProgress } from './sim.js';
+import { creditRating, greenShare, traitOf, hasTech, canResearch, eraOf, resourceStock, matCost, goalProgress, hallLevel, troopCount, defenseRating, canTrain, canSetNightGuard } from './sim.js';
 import { ROLES, roleOf, jobText, family, healthText, moodReasons, thought, personName } from './people.js';
 
 // The market: open offers from other cities, a form to post your own, and what you owe or are owed.
@@ -245,7 +245,7 @@ function spark(values, colour, fmt) {
 }
 export function statsPanel(ctx, tab) {
   const { state: s, totals, plan, census: c, fill } = ctx;
-  const tabs = [['overview', 'People'], ['services', 'Services'], ['resources', 'Resources'], ['budget', 'Budget'], ['policy', 'Policy', 'adv'], ['research', 'Research', 'adv'], ['history', 'History']];
+  const tabs = [['overview', 'People'], ['services', 'Services'], ['resources', 'Resources'], ['budget', 'Budget'], ['policy', 'Policy', 'adv'], ['research', 'Research', 'adv'], ['military', 'Military', 'adv'], ['history', 'History']];
   let body = '';
   if (tab === 'overview') {
     const ages = [['Under 5', c.toddlers, '#f2a3c0'], ['5 to 11', c.kids, '#e0588e'], ['12 to 17', c.teens, '#c04a86'], ['18 to 64', c.adults, '#3b7ddd'], ['65 and over', c.seniors, '#7c8a90']];
@@ -330,6 +330,26 @@ export function statsPanel(ctx, tab) {
       ${TECH_BRANCHES.map(([b, label]) => `<h3 class="sub">${label}</h3><ul class="tech tree">${TECH.filter((t) => t.branch === b).map((t) => { const done = hasTech(s, t.id), c = canResearch(s, t.id), blocked = t.needs && !hasTech(s, t.needs);
         return `<li class="${done ? 'done' : blocked ? 'blocked' : ''} ${t.needs ? 'child' : ''}"><span class="pmain"><b>${t.name}</b><small>${t.text}${blocked ? ` Needs ${TECH.find((x) => x.id === t.needs).name}.` : ''}</small></span>
           ${done ? '<span class="tag">Done</span>' : `<button class="btn ${c.ok ? 'primary' : ''}" type="button" data-tech="${t.id}" ${c.ok ? '' : 'disabled'}>${t.cost} pts</button>`}</li>`; }).join('')}</ul>`).join('')}`;
+  } else if (tab === 'military') {
+    const dr = defenseRating(s), posts = s.grid.reduce((a, t, i) => a + (t === T.DEFENSE ? 1 : 0), 0);
+    const queue = s.trainQueue || [];
+    body = `<p class="soft small">Build up and defend your city: train troops at a Military base, raise your defence rating with Defence posts, and post a night guard after dark. Attacking another mayor - stealing land, raiding resources, intercepting a trade - isn't built yet; this is the home front it'll stand on.</p>
+      <div class="grid2"><div class="kv"><span>Defence rating</span><b class="num">${dr}</b></div><div class="kv"><span>Troops</span><b class="num">${troopCount(s)}</b></div>
+      <div class="kv"><span>Defence posts</span><b class="num">${posts}</b></div><div class="kv"><span>Night guard</span><b>${s.policy?.nightGuard ? 'Posted' : 'Stood down'}</b></div></div>
+      ${canSetNightGuard(s) ? `<div class="actions"><button class="btn ${s.policy?.nightGuard ? '' : 'primary'}" type="button" data-do="night-guard" data-arg="${s.policy?.nightGuard ? '0' : '1'}">${s.policy?.nightGuard ? 'Stand down the night guard' : 'Post a night guard'}</button></div>
+        <p class="soft small">+${Math.round(NIGHT_GUARD_BONUS * 100)}% defence after dark, for $${NIGHT_GUARD_UPKEEP} a day per soldier while it's posted.</p>`
+        : '<p class="soft small">Research Night watch to post a night guard.</p>'}
+      <h3 class="sub">Troops</h3>
+      <ul class="tech">${TROOP_TIERS.map((tier) => {
+        const have = s.troops?.[tier.id] || 0, done = hasTech(s, tier.tech), hallOk = hallLevel(s) >= tier.hall;
+        const locked = !done || !hallOk;
+        const why = !done ? `Needs the ${TECH.find((x) => x.id === tier.tech).name} research.` : !hallOk ? `Needs a ${HALL_LEVELS[tier.hall].name.toLowerCase()} or bigger.` : '';
+        const costText = Object.entries(tier.cost).map(([k, v]) => k === 'money' ? `$${v}` : `${v} ${RES[k].name.toLowerCase()}`).join(', ');
+        return `<li class="${locked ? 'blocked' : ''}"><span class="pmain"><b>${tier.name}</b><small>Power ${tier.power} each. ${costText} and ${tier.hours}h to train one.${why ? ` ${why}` : ''}</small></span>
+          <span class="tag">${have} ready</span>
+          ${locked ? '' : `<form data-train="${tier.id}" class="mk-form"><input name="n" type="number" min="1" value="1" aria-label="How many ${tier.name.toLowerCase()}"><button class="btn primary" type="submit">Train</button></form>`}</li>`;
+      }).join('')}</ul>
+      ${queue.length ? `<h3 class="sub">In training</h3><ul class="tech">${queue.map((q) => { const tier = TROOP_TIERS.find((t) => t.id === q.tier); return `<li><span class="pmain"><b>${q.n} ${tier.name.toLowerCase()}</b><small>${q.left}h left</small></span></li>`; }).join('')}</ul>` : ''}`;
   } else if (tab === 'resources') {
     const r = s.stats.res, ps = s.stats.products, stock = resourceStock(s), cap = r?.cap || STORE_BASE, num = (n) => Math.round(n || 0).toLocaleString();
     const row2 = (l, v) => `<div class="kv"><span>${l}</span><b class="num">${v}</b></div>`;

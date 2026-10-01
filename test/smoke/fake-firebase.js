@@ -146,6 +146,21 @@ export async function claimPlot(u, mayor, cityName, world = WORLD_ID) {
   persist();
   return { ...out(id, data), state: serialize(state) };
 }
+export async function claimPlotAt(u, mayor, cityName, world, px, py) {
+  mayor = truncateUtf8(mayor, 24);
+  await tick();
+  if (get(linkPath(u.uid, world))) throw new Error('You already have a plot in this world. Reload the page.');
+  const id = `${world}_${px}_${py}`;
+  if (get(`plots/${id}`)) throw new Error('Someone just claimed that spot. Pick another.');
+  const state = newCity(cityName);
+  ensureTerrain(state, px, py, world);
+  const data = { owner: u.uid, ownerName: mayor, world, px, py, index: -1, createdAt: now(), updatedAt: now(), ...cleanSummary(state), map: mapString(state) };
+  set(`plots/${id}`, data);
+  set(`plotState/${id}`, { state: serialize(state) });
+  set(linkPath(u.uid, world), world === 'public' ? { plotId: id, createdAt: now() } : { uid: u.uid, world, plotId: id, createdAt: now() });
+  persist();
+  return { ...out(id, data), state: serialize(state) };
+}
 export async function takeOverRuins(u, mayor, targetId, newState, world = WORLD_ID) {
   mayor = truncateUtf8(mayor, 24);
   const p = get(`plots/${targetId}`);

@@ -206,3 +206,12 @@ main"):
          worlds - which could still fail with a permissions error the
          same way. Fixed everywhere. No firestore.rules change, no
          world reset.
+   2.16  Founding a city now also offers choosing your own spot on the
+         map, not just the frontier. Fixed a real bug: listing your
+         city on the exchange again after an earlier attempt went
+         wrong could still fail with a permissions error. New: a
+         Military branch of research unlocks a Military base, troops
+         (five tiers), a Defence post and a night guard - the home
+         front only for now, no attacking other mayors yet. The most a
+         city runs unattended is now 30 days (was 144). Another fresh
+         start (WORLD_ID is now s4). No firestore.rules change.

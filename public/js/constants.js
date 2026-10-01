@@ -1,13 +1,13 @@
 // All tunable numbers live here so balancing never means hunting through logic.
 
-// The shared world everyone starts in. 2.13 reset it again (a fresh start, at Michael's request): the open
-// world is 's3', and private worlds made before RESET_AT are no longer listed. Earlier worlds are still in the
+// The shared world everyone starts in. 2.16 reset it again (a fresh start, at Michael's request): the open
+// world is 's4', and private worlds made before RESET_AT are no longer listed. Earlier worlds are still in the
 // database, just not shown.
-export const WORLD_ID = 's3';
+export const WORLD_ID = 's4';
 // Start of today in UTC, not the user's local calendar date (the world clock, day/night and this cutoff all run
 // on UTC - a local "tomorrow" can still be UTC "today", so bumping this by a calendar day too early would hide
 // worlds made only hours ago). Check the actual UTC date before changing this on a reset.
-export const RESET_AT = Date.UTC(2026, 8, 30);
+export const RESET_AT = Date.UTC(2026, 9, 1);
 export const CLASSIC_WORLD = 'public';
 // A council can own several cities: buy the plot next to one of yours. Priced like land: this many parcels at your
 // current land price, times PLOT_BUY_STEP for each city you already have, and never less than PLOT_BUY_MIN.
@@ -15,7 +15,7 @@ export const CLASSIC_WORLD = 'public';
 // The desk frees up when its holder has been idle this long, or their game stops checking in.
 export const MAX_CO = 3, DESK_IDLE_MS = 120000, DESK_STALE_MS = 60000, DESK_BEAT_MS = 20000;
 export const PLOT_BUY_PARCELS = 4, PLOT_BUY_STEP = 1.6, PLOT_BUY_MIN = 1000, MAX_CITIES = 9;
-export const OPEN_WORLDS = { s3: 'The world' };
+export const OPEN_WORLDS = { s4: 'The world' };
 export const PLOT = 24;          // tiles per side of a plot
 export const GAP = 0;            // tiles between neighbouring plots on the master map: none, so the world is one piece
 export const CHUNK = 4;          // land is bought in 4×4 parcels
@@ -28,7 +28,7 @@ export const MOVE_FEE = 0.25;    // moving a building costs a quarter of its pri
 export const TICK_MS = 25000;    // 1 tick = 1 in-game hour, so 1 in-game day = 10 real minutes
 export const HOURS_PER_DAY = 24;
 export const DAWN = 6, DUSK = 20;     // 14 hours of daylight and 10 of night: ~5.8 real minutes of day, ~4.2 of night
-export const MAX_OFFLINE_DAYS = 144;  // city days simulated while you're away (24 real hours); after that it waits for you
+export const MAX_OFFLINE_DAYS = 30;  // city days simulated while you're away; after that it stops catching up and waits for you (it can still be attacked while paused like this)
 // Builders work this many times faster than one labour unit an hour, and progress in real time between hours,
 // so a house still goes up in seconds even though an hour now lasts 75 seconds.
 export const BUILD_SPEED = 30;
@@ -86,10 +86,13 @@ export const T = {
   SOLAR: 42, WIND: 43, MUSEUM: 44, STADIUM: 45, HOTEL: 46, FARM: 47, HARBOUR: 48, AIRPORT: 49, LANDFILL: 50, RECYCLE: 51, SEWAGE: 52, VET: 53, METRO: 54, MONUMENT: 55,
   ORCHARD: 56, DAIRY: 57, RANCH: 58, MATERIALS: 59, WAREHOUSE: 60,
   QUARRY: 61, POULTRY: 62, STORE: 63, COALMINE: 64, GREENHOUSE: 65,
+  // 66 was Brickworks, removed in 2.9 - left retired rather than reused, so an old, long-unopened save with a
+  // leftover tile of that id still gets cleaned up to rubble by migrate() instead of becoming a new building.
+  BASE: 67, DEFENSE: 68,
 };
 
 export const CATS = [
-  ['homes', 'Homes'], ['work', 'Work and shops'], ['learn', 'Education'], ['care', 'Health and safety'], ['fun', 'Leisure and sport'], ['transport', 'Transport'], ['utility', 'Utilities'],
+  ['homes', 'Homes'], ['work', 'Work and shops'], ['learn', 'Education'], ['care', 'Health and safety'], ['fun', 'Leisure and sport'], ['transport', 'Transport'], ['utility', 'Utilities'], ['military', 'Military'],
 ];
 
 // Every building has a job. jobs: [title, education needed, count]. col: which colour slot it uses.
@@ -166,6 +169,8 @@ export const B = {
   [T.STORE]: { key: 'store', name: 'Store', cat: 'work', col: 'shop', cost: 260, work: 26, upkeep: 3, jobs: [['Shopkeeper', 0, 3]], sellsProducts: true, research: 'retail', blurb: 'Sells the products your factories make straight to your own residents, at a better price than the Market pays.' },
   [T.GREENHOUSE]: { key: 'greenhouse', name: 'Greenhouse', cat: 'work', col: 'park', cost: 260, work: 26, upkeep: 3, jobs: [['Gardener', 0, 3]], fresh: 0.01, blurb: 'Buy a seed and grow herbs, peppers or strawberries under glass, in any season. Collect them when they\'re ripe.' },
   [T.MONUMENT]: { key: 'monument', name: 'Monument', cat: 'fun', col: 'hall', cost: 2600, work: 200, upkeep: 6, visits: { n: 40, who: 'all' }, draw: 25, minPop: 80, blurb: 'A grand landmark for 40 visitors a day. Tourists come to see it, and the whole street becomes a sought-after address.' },
+  [T.BASE]: { key: 'base', name: 'Military base', cat: 'military', col: 'hall', cost: 900, work: 90, upkeep: 12, jobs: [['Officer', 2, 2], ['Recruit', 0, 6]], research: 'militia', blurb: 'Trains troops once you have researched them - pick a unit and how many in City stats, Military. Needs the Militia research.' },
+  [T.DEFENSE]: { key: 'defense', name: 'Defence post', cat: 'military', col: 'hall', cost: 500, work: 50, upkeep: 8, jobs: [['Guard', 1, 3]], research: 'defenses', blurb: 'Raises your city\'s defence rating while staffed. Needs the Defences research.' },
   [T.HALL]: { key: 'hall', name: 'Town hall', col: 'hall', cost: 0, work: 0, upkeep: 0, homes: 6, jobs: [['Builder', 0, 3], ['Clerk', 2, 2]], serves: 10 },
   [T.RUBBLE]: { key: 'rubble', name: 'Rubble', cost: 0, work: 0, upkeep: 0 },
 };
@@ -295,7 +300,7 @@ export const WASTE_POP = 45, SEWAGE_POP = 70;   // from this many people, rubbis
 // Research: educated residents and libraries earn research points; each project unlocks or improves something.
 // The technology tree: each branch unlocks in order (needs). Research points come from graduates, libraries,
 // universities and museums.
-export const TECH_BRANCHES = [['education', 'Education'], ['commerce', 'Commerce'], ['farming', 'Farming'], ['industry', 'Industry'], ['energy', 'Energy and transport'], ['society', 'Society']];
+export const TECH_BRANCHES = [['education', 'Education'], ['commerce', 'Commerce'], ['farming', 'Farming'], ['industry', 'Industry'], ['energy', 'Energy and transport'], ['society', 'Society'], ['military', 'Military']];
 export const TECH = [
   { id: 'highschool', branch: 'education', name: 'High schools', cost: 10, text: 'Unlocks high schools: teenagers finish school and can go on to work that needs it.' },
   { id: 'university', branch: 'education', name: 'Universities', cost: 30, needs: 'highschool', text: 'Unlocks universities: degrees for doctors, engineers and teachers.' },
@@ -321,6 +326,16 @@ export const TECH = [
   { id: 'fusion', branch: 'energy', name: 'Clean reactors', cost: 200, needs: 'smartgrid', text: 'Fossil power stations stop fouling the air.' },
   { id: 'telemed', branch: 'society', name: 'Telemedicine', cost: 60, text: 'Clinics and hospitals treat 30% more patients.' },
   { id: 'edtech', branch: 'education', name: 'The internet', cost: 60, needs: 'university', text: 'Homes go online: everyone studies 25% faster and research comes 20% quicker.' },
+  // Military: a Military base trains whichever tiers are researched (see TROOP_TIERS), each also gated by a
+  // minimum town hall size. A straight line, cheapest first, so the 10-30 point costs stay small next to the
+  // other branches above - a point total nobody beelines by accident.
+  { id: 'militia', branch: 'military', name: 'Militia', cost: 10, text: 'Unlocks the Military base and Militia, your first troops.' },
+  { id: 'defenses', branch: 'military', name: 'Defences', cost: 15, needs: 'militia', text: 'Unlocks the Defence post, raising your city’s defence rating while it’s staffed.' },
+  { id: 'nightwatch', branch: 'military', name: 'Night watch', cost: 10, needs: 'militia', text: 'Lets you post a night guard: a defence boost after dark, for a daily cost per soldier.' },
+  { id: 'trainedtroops', branch: 'military', name: 'Trained troops', cost: 15, needs: 'militia', text: 'Better-trained troops, stronger than militia.' },
+  { id: 'spydrones', branch: 'military', name: 'Spies and drones', cost: 20, needs: 'trainedtroops', text: 'Unlocks spies and drones.' },
+  { id: 'armour', branch: 'military', name: 'Armour', cost: 25, needs: 'spydrones', text: 'Unlocks tanks.' },
+  { id: 'advweapons', branch: 'military', name: 'Advanced weapons', cost: 30, needs: 'armour', text: 'Unlocks planes, ships and missiles - the strongest troops.' },
 ];
 // Resources: kept up to a storage limit, used by people and buildings. Water and power can't be bought or sold:
 // a shortfall just shows up as illness and unhappiness. Everything else is bought and sold on the Exchange; what
@@ -602,3 +617,19 @@ export const LEASE_SAVE_MAX = 1;
 // once, rather than a running exchange between two cities that might not even be online at the same time. The
 // building itself sits out the term (it can't be picked, leased or re-rented) - that's the owner's real cost.
 export const RENT_MAX_DAYS = 30, RENT_MAX_TOTAL = 6000;
+
+// Military: train troops at a Military base once their tier is researched (see TECH above) and your town hall
+// is big enough (`hall`, an index into HALL_LEVELS). `cost` is per soldier, taken all at once when training
+// starts; `power` is how much each one adds to defenceRating(); `hours` is how long training takes for one.
+// Attacking another mayor - stealing land, raiding resources, intercepting a trade - isn't built yet: this is
+// the home-front half (build up, defend, post a night guard) a later version adds the other half on top of.
+export const TROOP_TIERS = [
+  { id: 't1', name: 'Militia', tech: 'militia', hall: 1, cost: { money: 40, wood: 2, metal: 1 }, power: 1, hours: 4 },
+  { id: 't2', name: 'Trained troops', tech: 'trainedtroops', hall: 2, cost: { money: 90, wood: 2, metal: 3 }, power: 3, hours: 6 },
+  { id: 't3', name: 'Spies and drones', tech: 'spydrones', hall: 3, cost: { money: 180, metal: 4, stone: 2 }, power: 6, hours: 8 },
+  { id: 't4', name: 'Tanks', tech: 'armour', hall: 4, cost: { money: 320, metal: 10, stone: 4 }, power: 12, hours: 10 },
+  { id: 't5', name: 'Planes, ships and missiles', tech: 'advweapons', hall: 5, cost: { money: 600, metal: 18, stone: 8 }, power: 24, hours: 14 },
+];
+export const DEFENSE_PER_POST = 8;      // defenceRating() added per staffed Defence post
+export const NIGHT_GUARD_BONUS = 0.35;  // +35% defenceRating() while the night guard is posted, after dark
+export const NIGHT_GUARD_UPKEEP = 1;    // $ a day per soldier while the night guard is posted (on top of normal upkeep)

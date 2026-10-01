@@ -1,6 +1,6 @@
 # Commons
 
-A persistent, shared-map city builder. Every player owns a 24×24 plot on one master map, next to real neighbours. A day lasts 10 real minutes (about 6 of daylight, 4 of night). Cities keep running while you're away (up to 144 city days, 24 hours), and cities that collapse stay on the map as ruins with a record.
+A persistent, shared-map city builder. Every player owns a 24×24 plot on one master map, next to real neighbours. A day lasts 10 real minutes (about 6 of daylight, 4 of night). Cities keep running while you're away (up to 30 city days; past that they wait for you, but can still be found and interacted with), and cities that collapse stay on the map as ruins with a record.
 
 Plain HTML, CSS and JavaScript modules on Firebase Hosting, with Firestore and Firebase Auth. No build step.
 
@@ -20,6 +20,16 @@ Guests can turn their guest city into a full account later (Account menu). Linki
 - Life stories and favourites for residents, catalogue search, snapshot undo for the last minute, photo mode, likes, chat mute and report, browser alerts, installable app.
 - Saves are split: `plots/{id}` is a small public summary everyone listens to; `plotState/{id}` holds the full city and is only fetched for adjacent neighbours.
 - `node test/balance.mjs` runs a scripted city for 100 days.
+
+## New in 2.16: pick your spot, a home-front Military branch, a 30-day offline cap
+
+- A fresh start: `WORLD_ID` moved on again (`s3` → `s4`).
+- **Choose where to settle**: founding a city now offers "Choose your spot on the map instead" alongside the usual frontier join. `firebase.js`'s new `claimPlotAt(user, mayor, cityName, world, px, py)` needs no `firestore.rules` change - the `plots` create rule only ever constrains `px`/`py` when buying next to a city you already own (`boughtNextTo`); a brand new player's first plot was always allowed to be anywhere. The picker (`main.js`'s `wireFoundPicker`) fetches `loadWorld(world)`, works out a window around the existing cluster (padded so there's always empty edge space, capped at 40×40), and draws it on a plain `<canvas>` - claimed tiles in grey (or yellow if they're yours, brown if ruins), empty ones in green, tap to found there.
+- **Fixed a real bug**: listing your city on the exchange a second time (e.g. retrying after an earlier save failure meant `s.listed` was never recorded locally, even though the Firestore listing itself had gone through) failed with a permissions error - a plain `setDoc` on a plot that already has a listing is evaluated by the rules as an "update" (which may only ever touch `available`), not a fresh "create". `listStock` now explicitly deletes a stale listing of its own first - as its own request, since a delete immediately followed by a set in the *same* transaction is still evaluated against the state the transaction started with, not a fresh one. If someone's already bought shares, that delete (and so the relist) is correctly refused, same as before.
+- **New: Military (home front only).** A new `military` branch in the technology tree - Militia, Defences, Night watch, Trained troops, Spies and drones, Armour, Advanced weapons, 10-30 points each, shown in the existing Research tab for free. Militia unlocks a new Military base (trains troops) and Defences unlocks a Defence post (`sim.js`: `canTrain`/`train` deduct resources and money up front and queue the order in `s.trainQueue`, advanced hourly in `tick()`; `defenseRating()` sums troop power plus `DEFENSE_PER_POST` per staffed Defence post, plus `NIGHT_GUARD_BONUS` while `s.policy.nightGuard` is on and it's actually dark). A new "Military" tab in City stats (`panels.js`/`main.js`) shows troop counts, lets you train more, and toggle the night guard. **Attacking another mayor - stealing land, raiding resources, intercepting a trade - is not built yet**: that needs its own careful, exploit-proofed transaction design before it's safe to add to a shared, live world, and is planned for a later version once this foundation has been played with a while.
+- `MAX_OFFLINE_DAYS` 144 → 30: the most a city simulates on its own before waiting for you. It can still be found and interacted with while paused like this (nothing about `catchUp()`'s cap changes read access).
+- New tests: `test/sim.test.mjs` ("military: train troops, raise defenceRating()...") covers training, the hall/tech gates, Defence posts and the night guard's day/night switch; `test/rules/rules.test.mjs` adds "city shares: listing again..." and "settling: choosing your own spot..."; `test/smoke/smoke.spec.mjs` adds a found-the-map-way test and a full research-build-train military flow.
+- No firestore.rules change - `s.troops`/`s.trainQueue`/`s.policy.nightGuard` live inside the opaque `plotState` blob like everything else in `sim`'s state, and `claimPlotAt` needs nothing the create rule didn't already allow.
 
 ## New in 2.15: the byte-vs-letter name bug from 2.12, everywhere else it could hide
 

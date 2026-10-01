@@ -50,6 +50,23 @@ test('sign in as a guest and found a city', async ({ page }) => {
   expect(clean(errors)).toEqual([]);
 });
 
+test('found: choosing a spot on the map instead of the frontier', async ({ page }) => {
+  const errors = await watch(page);
+  await page.goto('/');
+  await page.locator('#auth-guest').click();
+  await expect(page.locator('#found')).toBeVisible();
+  await page.locator('#found-mayor').fill('Pip');
+  await page.locator('#found-city').fill('Pickville');
+  await page.locator('#found-pick-toggle').click();
+  await expect(page.locator('#found-picker')).toBeVisible();
+  const canvas = page.locator('#found-picker-canvas');
+  const box = await canvas.boundingBox();
+  await canvas.click({ position: { x: box.width / 2, y: box.height / 2 } });   // the middle tile - empty on a fresh world
+  await expect(page.locator('#game')).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('#city-name')).toContainText('Pickville');
+  expect(clean(errors)).toEqual([]);
+});
+
 // Clicks every tab inside a container, waiting a moment for each to draw.
 async function everyTab(page, container) {
   const n = await page.locator(`${container} [role="tab"]`).count();
@@ -233,6 +250,34 @@ test('staff: recruit and hire from a building’s panel', async ({ page }) => {
   expect(clean(errors)).toEqual([]);
 });
 
+test('military: research Militia, build a base, train troops, raise defence rating', async ({ page }) => {
+  test.setTimeout(120_000);
+  const errors = await newGame(page);
+  await page.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plotState/')) { const st = JSON.parse(v.state); st.hall = 1; st.tech = [...(st.tech || []), 'militia']; v.state = JSON.stringify(st); } localStorage.setItem('fakefb', JSON.stringify(db)); });
+  await page.reload();
+  await expect(page.locator('#game')).toBeVisible({ timeout: 30_000 });
+  if (await page.locator('#modal[open]').count()) await page.keyboard.press('Escape');
+  await page.locator('#map').focus();
+  await page.keyboard.press('b');
+  for (const k of ['ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter']) await page.keyboard.press(k);
+  await page.locator('#cat-q').fill('military base');
+  await page.locator('#catalog [data-build]').first().click();
+  if (await page.locator('#modal[open]').count()) await page.locator('#modal .primary').click();
+  await page.locator('#map').focus();
+  await page.keyboard.press('e');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#drawer [data-do="recruit"]').first()).toBeVisible({ timeout: 90_000 });
+  await page.locator('#drawer [data-do="recruit"]').last().click();   // the Recruit slot (no schooling needed), not the Officer one
+  await expect(page.locator('#toasts')).toContainText(/moving here|No home|Needs \$/);
+  await page.locator('#drawer [data-close-drawer]').first().click();
+  await page.locator('#rail [data-panel="stats"]').click();
+  await page.locator('[data-stats-tab="military"]').click();
+  await expect(page.locator('#drawer form[data-train="t1"]')).toBeVisible();
+  await page.locator('#drawer form[data-train="t1"] button[type="submit"]').click();
+  await expect(page.locator('#toasts')).toContainText(/Training 1 militia|Needs/);
+  expect(clean(errors)).toEqual([]);
+});
+
 test('grocer: set a weekly budget and price, and the panel reflects it', async ({ page }) => {
   test.setTimeout(120_000);
   const errors = await newGame(page);
@@ -301,7 +346,7 @@ test('world: neighbours touch, with borders', async ({ browser }) => {
   await b.waitForTimeout(800);
   if (process.env.SHOTS) await b.screenshot({ path: `${process.env.SHOTS}/world-borders.png` });
   const plots = await b.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('fakefb')).docs).filter((k) => k.startsWith('plots/')));
-  expect(plots).toEqual(expect.arrayContaining([expect.stringMatching(/^plots\/s3_/)]));
+  expect(plots).toEqual(expect.arrayContaining([expect.stringMatching(/^plots\/s4_/)]));
   expect(plots.length).toBe(2);
   expect(clean(errors)).toEqual([]);
   await ctx.close();
