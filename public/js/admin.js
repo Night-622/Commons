@@ -162,7 +162,13 @@ function cityDetail(c) {
   if (!s) return '<p class="soft">Couldn’t load this city’s save.</p>';
   const news = (s.log || []).slice(-8).reverse().map((n) => `<div class="meta">Day ${esc(n.d)}: ${esc(n.t)}</div>`).join('') || '<p class="soft">No recent news.</p>';
   return `<div class="detail">
-    <div class="row"><b>${esc(HALL_LEVELS[sim.hallLevel(s)]?.name || 'City')}</b> · ${(s.tech || []).length} technologies · ${sim.troopCount(s)} troops, defence ${Math.round(sim.defenseRating(s))}</div>
+    <div class="row"><b>${esc(HALL_LEVELS[sim.hallLevel(s)]?.name || 'City')}</b> · ${sim.troopCount(s)} troops, defence ${Math.round(sim.defenseRating(s))}</div>
+    <div class="row">
+      <b>Research</b>
+      <span class="meta">${(s.tech || []).length} technologies unlocked</span>
+      <label>Points <input type="number" min="0" value="${Math.floor(s.rp || 0)}" data-rp="${c.id}"></label>
+      <button class="btn" data-setrp="${c.id}">Set points</button>
+    </div>
     <div class="row">
       <b>Resources</b>
       <button class="btn" data-fillres="${c.id}">Fill all to capacity</button>
@@ -214,6 +220,7 @@ function wireCityControls() {
   $('list').querySelectorAll('[data-rename]').forEach((b) => { b.onclick = () => renameCity(b.dataset.rename); });
   $('list').querySelectorAll('[data-addmoney]').forEach((b) => { b.onclick = () => adjustMoney(b.dataset.addmoney, 1); });
   $('list').querySelectorAll('[data-removemoney]').forEach((b) => { b.onclick = () => adjustMoney(b.dataset.removemoney, -1); });
+  $('list').querySelectorAll('[data-setrp]').forEach((b) => { b.onclick = () => setResearch(b.dataset.setrp); });
   $('list').querySelectorAll('[data-fillres]').forEach((b) => { b.onclick = () => fillResources(b.dataset.fillres); });
   $('list').querySelectorAll('[data-saveres]').forEach((b) => { b.onclick = () => saveResources(b.dataset.saveres); });
   $('list').querySelectorAll('[data-boostmood]').forEach((b) => { b.onclick = () => boostMood(b.dataset.boostmood); });
@@ -251,6 +258,11 @@ function adjustMoney(plotId, sign) {
   const amt = Number(qs(`[data-amt="${plotId}"]`).value);
   if (!Number.isFinite(amt) || amt <= 0) { $('msg').textContent = 'Enter a positive amount first.'; return; }
   editState(plotId, (s) => { s.money = Math.max(0, s.money + sign * amt); });
+}
+function setResearch(plotId) {
+  const v = Number(qs(`[data-rp="${plotId}"]`).value);
+  if (!Number.isFinite(v) || v < 0) { $('msg').textContent = 'Enter a research point total of 0 or more first.'; return; }
+  editState(plotId, (s) => { s.rp = v; });
 }
 function fillResources(plotId) {
   editState(plotId, (s) => { const cap = sim.storeCap(s); for (const k of Object.keys(RES)) s.res[k] = cap; });

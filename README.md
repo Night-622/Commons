@@ -21,6 +21,11 @@ Guests can turn their guest city into a full account later (Account menu). Linki
 - Saves are split: `plots/{id}` is a small public summary everyone listens to; `plotState/{id}` holds the full city and is only fetched for adjacent neighbours.
 - `node test/balance.mjs` runs a scripted city for 100 days.
 
+## New in 2.22: research points join the Inspect panel's editable stats
+
+- A "Set points" field for `s.rp` next to the technology count, same `editState` pattern as everything else in Inspect - it just hadn't been added alongside resources/mood in 2.21.
+- No firestore.rules change.
+
 ## New in 2.21: exact resource and mood control, not just fill/boost
 
 - **Every resource gets its own input** in the Inspect panel, prefilled with the city's real amount - "Save these amounts" writes exactly what's there, which is the only way to set a resource *below* what it already has (the "Fill all to capacity" button from 2.20 is still there as a one-click shortcut, just no longer the only option).

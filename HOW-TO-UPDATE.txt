@@ -323,3 +323,7 @@ main"):
          ever nudges happiness a quarter of the way towards the
          population's real average each day, so without that it
          would have drifted straight back. No firestore.rules change.
+   2.22  The Inspect panel's Research row now has a "Set points"
+         field for s.rp, same pattern as resources and mood (replaces
+         the research-point count that wasn't editable before).
+         No firestore.rules change.

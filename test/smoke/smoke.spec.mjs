@@ -719,6 +719,10 @@ test('admin: sign in, inspect a city, edit money, trigger a disaster, ban and un
   await page.locator('[data-setmood]').click();
   await expect.poll(() => stateOf(plotId).then((s) => Math.round(s.happiness * 100))).toBe(42);
 
+  await page.locator('[data-rp]').fill('250');
+  await page.locator('[data-setrp]').click();
+  await expect.poll(() => stateOf(plotId).then((s) => s.rp)).toBe(250);
+
   await page.locator('[data-disaster][data-kind="blackout"]').click();
   await expect.poll(() => blackout(plotId)).toBe(1);
 
