@@ -175,7 +175,7 @@ export function migrate(s, rng = Math.random) {
     s.hall = s.day > 2 ? [15, 40, 80, 150, 250, 500].filter((n) => s.people.length >= n).length : 0;
     s.hallDone = {};
     // What an established city already had open stays open: the technologies that gate it now.
-    const grant = [...(s.hall >= 1 ? ['highschool', 'trade', 'diplomacy'] : []), ...(s.hall >= 2 ? ['university', 'finance'] : [])];
+    const grant = [...(s.hall >= 1 ? ['highschool', 'diplomacy'] : []), ...(s.hall >= 2 ? ['university', 'finance'] : [])];
     if (s.day > 2) s.tech = [...new Set([...(s.tech || []), ...grant])];
     s.lv[HALL_INDEX] = Math.max(s.lv[HALL_INDEX] || 1, hallSize(s.hall));
   }

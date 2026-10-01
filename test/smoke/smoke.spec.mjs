@@ -28,7 +28,7 @@ async function found(page, { mayor = 'Mona', city = 'Testhaven' } = {}) {
 }
 // Fast-forward every city in the fake world to a metropolis with every technology, so a test can use what they open.
 async function unlockAll(page) {
-  await page.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plotState/')) { const st = JSON.parse(v.state); st.hall = 6; st.hallDone = {}; st.tech = ['highschool', 'university', 'trade', 'finance', 'retail', 'diplomacy', 'orchards', 'dairy', 'ranching', 'poultry', 'logistics', 'carpentry', 'toolmaking', 'bakery']; v.state = JSON.stringify(st); } localStorage.setItem('fakefb', JSON.stringify(db)); });
+  await page.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plotState/')) { const st = JSON.parse(v.state); st.hall = 6; st.hallDone = {}; st.tech = ['highschool', 'university', 'finance', 'retail', 'diplomacy', 'orchards', 'dairy', 'ranching', 'poultry', 'logistics', 'carpentry', 'toolmaking', 'bakery']; v.state = JSON.stringify(st); } localStorage.setItem('fakefb', JSON.stringify(db)); });
   await page.reload();
   await expect(page.locator('#game')).toBeVisible({ timeout: 30_000 });
   if (await page.locator('#modal[open]').count()) await page.keyboard.press('Escape');
@@ -346,7 +346,7 @@ test('world: neighbours touch, with borders', async ({ browser }) => {
   await b.waitForTimeout(800);
   if (process.env.SHOTS) await b.screenshot({ path: `${process.env.SHOTS}/world-borders.png` });
   const plots = await b.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('fakefb')).docs).filter((k) => k.startsWith('plots/')));
-  expect(plots).toEqual(expect.arrayContaining([expect.stringMatching(/^plots\/s4_/)]));
+  expect(plots).toEqual(expect.arrayContaining([expect.stringMatching(/^plots\/s5_/)]));
   expect(plots.length).toBe(2);
   expect(clean(errors)).toEqual([]);
   await ctx.close();
@@ -636,10 +636,17 @@ test('town hall: a new mayor sees the next step, the hall’s needs, and why thi
   await page.locator('#rail [data-panel="goals"]').click();
   await expect(page.locator('#drawer .path')).toContainText('Town hall: Settlement');
   await expect(page.locator('#drawer .pathgoals li')).toHaveCount(5);   // people + four objectives
-  await expect(page.locator('#rail [data-panel="market"]')).toHaveClass(/locked/);
-  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/hall.png` });
+  // The Market is open from the start, no research needed.
+  await expect(page.locator('#rail [data-panel="market"]')).not.toHaveClass(/locked/);
   await page.locator('#rail [data-panel="market"]').click();
-  await expect(page.locator('#modal[open]')).toContainText('Research Trade');
+  await expect(page.locator('#drawer')).toBeVisible();
+  await expect(page.locator('#modal[open]')).toHaveCount(0);
+  await page.locator('#rail [data-panel="market"]').click();
+  // The Region still needs research, and shows what's locked and why.
+  await expect(page.locator('#rail [data-panel="region"]')).toHaveClass(/locked/);
+  if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/hall.png` });
+  await page.locator('#rail [data-panel="region"]').click();
+  await expect(page.locator('#modal[open]')).toContainText('Research Diplomacy');
   if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/locked.png` });
   await page.locator('#see-path').click();
   await expect(page.locator('#drawer [role="tab"][aria-selected="true"]')).toContainText('Research');

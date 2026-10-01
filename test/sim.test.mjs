@@ -760,7 +760,7 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   const s = sim.newCity('Hallway', rng); s.money = 20000; s.land.fill(1);
   let hs = sim.hallState(s);
   assert.equal(hs.name, 'Settlement'); assert.equal(hs.next.name, 'Village');
-  assert(!sim.unlocked(s, 'market'), 'the Market needs the Trade technology');
+  assert(sim.unlocked(s, 'market'), 'the Market is open from the start, no research needed');
   for (let x = 2; x <= 13; x++) put(s, x, c + 1, T.ROAD);
   [T.HOUSE, T.HOUSE, T.HOUSE, T.WORK, T.SHOP].forEach((t, k) => put(s, 3 + k * 2, c + 2, t));
   for (const q of [...s.queue]) s.cond[q.i] = 100; s.queue = [];
@@ -783,13 +783,13 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(sim.canBuyLand(s, 16).capped, 'a town can’t buy a 17th parcel');
   // Technologies open features.
   s.rp = 100; s.tech = [];
-  assert(sim.research(s, 'trade').ok && sim.unlocked(s, 'market'), 'Trade opens the Market');
+  assert(sim.research(s, 'finance').ok && sim.unlocked(s, 'shares'), 'Finance opens city shares');
   // Older cities start where their size has earned, keeping what they used.
   const old = JSON.parse(sim.serialize(sim.newCity('Veteran', rng))); delete old.hall; old.day = 30;
   for (let k = 0; k < 90; k++) old.people.push([...old.people[0].slice(0, 0), 800 + k, ...old.people[0].slice(1)]);
   sim.migrate(old);
   assert.equal(old.hall, 3, 'a 96-person city from before starts as a large town');
-  assert(sim.unlocked(old, 'market') && sim.unlocked(old, 'shares') && sim.hasTech(old, 'highschool'), 'and keeps its market, shares and high schools');
+  assert(sim.unlocked(old, 'shares') && sim.hasTech(old, 'highschool'), 'and keeps its shares and high schools');
   // Any wood species counts towards a resource requirement, cheapest first.
   s.hallDone = { materials: true, tech2: true, trade1: true, clinic: true };
   for (let k = 0; k < 40; k++) s.people.push({ ...s.people[0], i: 1000 + k });

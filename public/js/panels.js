@@ -80,7 +80,6 @@ export function marketPanel(ctx) {
 
 // What a locked feature is for, and exactly what opens it: a technology, or a bigger town hall.
 const FEATURE_INFO = {
-  market: ['The Market', 'Buy what you lack and sell what you have too much of at the world’s prices; trade with other mayors, lend and borrow.', 'Once you make things, you can sell them: a busy farm can pay its way when food is scarce.'],
   shares: ['City shares', 'Invest in other mayors’ cities, or list yours to raise money now.', 'A growing city is worth something. Investors win or lose with the cities they back.'],
   region: ['The Region', 'Shared projects with other mayors, and alliances with their own chat and rankings.', 'Some things are too big for one town. Allies trade more and grow together.'],
   co: ['Co-mayors', 'Let a friend help run your city: one of you plays at a time.', 'A bigger city is a lot of work. Two mayors can keep it going.'],

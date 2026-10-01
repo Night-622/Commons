@@ -21,6 +21,13 @@ Guests can turn their guest city into a full account later (Account menu). Linki
 - Saves are split: `plots/{id}` is a small public summary everyone listens to; `plotState/{id}` holds the full city and is only fetched for adjacent neighbours.
 - `node test/balance.mjs` runs a scripted city for 100 days.
 
+## New in 2.17: 400 of every starting resource, and the Market needs no research
+
+- A fresh start: `WORLD_ID` moved on again (`s4` → `s5`).
+- **Starting resources**: `STARTING_RES` is now an even `{ water: 400, power: 400, wood: 400, metal: 400, stone: 400 }` for a brand new city, replacing the old mixed `{ water: 100, power: 200, wood: 200, metal: 90, stone: 110 }`.
+- **Trading is always open**: the Market (buying/selling at the Exchange, trading directly with other mayors, lending and borrowing) no longer needs the Trade research - `FEATURE_NEEDS` no longer has a `market` entry, so `sim.unlocked(s, 'market')` is always `true`. The `trade` technology itself is gone from `TECH`; `finance` and `retail` (which used to need it first) are now roots of the Commerce branch in their own right, each still gated by its own research as before. The rail icon, the "Locked" modal and the old `trade1`/`deal1` goal text that referenced "needs the Trade research" are all updated to match.
+- No firestore.rules change - this is all client-side gating (`sim.unlocked`), not anything the rules ever checked.
+
 ## New in 2.16: pick your spot, a home-front Military branch, a 30-day offline cap
 
 - A fresh start: `WORLD_ID` moved on again (`s3` → `s4`).

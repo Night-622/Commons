@@ -1,9 +1,9 @@
 // All tunable numbers live here so balancing never means hunting through logic.
 
-// The shared world everyone starts in. 2.16 reset it again (a fresh start, at Michael's request): the open
-// world is 's4', and private worlds made before RESET_AT are no longer listed. Earlier worlds are still in the
+// The shared world everyone starts in. 2.17 reset it again (a fresh start, at Michael's request): the open
+// world is 's5', and private worlds made before RESET_AT are no longer listed. Earlier worlds are still in the
 // database, just not shown.
-export const WORLD_ID = 's4';
+export const WORLD_ID = 's5';
 // Start of today in UTC, not the user's local calendar date (the world clock, day/night and this cutoff all run
 // on UTC - a local "tomorrow" can still be UTC "today", so bumping this by a calendar day too early would hide
 // worlds made only hours ago). Check the actual UTC date before changing this on a reset.
@@ -15,7 +15,7 @@ export const CLASSIC_WORLD = 'public';
 // The desk frees up when its holder has been idle this long, or their game stops checking in.
 export const MAX_CO = 3, DESK_IDLE_MS = 120000, DESK_STALE_MS = 60000, DESK_BEAT_MS = 20000;
 export const PLOT_BUY_PARCELS = 4, PLOT_BUY_STEP = 1.6, PLOT_BUY_MIN = 1000, MAX_CITIES = 9;
-export const OPEN_WORLDS = { s4: 'The world' };
+export const OPEN_WORLDS = { s5: 'The world' };
 export const PLOT = 24;          // tiles per side of a plot
 export const GAP = 0;            // tiles between neighbouring plots on the master map: none, so the world is one piece
 export const CHUNK = 4;          // land is bought in 4×4 parcels
@@ -207,7 +207,7 @@ export const HALL_LEVELS = [
   { name: 'Large town', pop: 80, goals: [
     ['materials', 'Build a sawmill or a quarry', 'Place a Sawmill or a Quarry (Build, Work and shops). Wood and metal in store make building faster and cheaper.'],
     ['tech2', 'Research 2 technologies', 'Open City stats, Research. Your hall, graduates and libraries earn points; spend them on any technology.'],
-    ['trade1', 'Make a trade on the Market', 'Open the Market (needs the Trade research) and take an offer, or use the Exchange.'],
+    ['trade1', 'Make a trade on the Market', 'Open the Market and take an offer, or use the Exchange.'],
     ['clinic', 'Open a clinic', 'Place a Clinic (Build, Health and safety) and hire a nurse and a doctor.'],
   ], res: { wood: 48, metal: 24, vegetables: 40 }, land: 22, rp: 4, store: 300 },
   { name: 'City', pop: 150, goals: [
@@ -246,7 +246,7 @@ export const STYLES = [
     map: { bg: '#10151c', bg2: '#0b0f14', road: '#2c2c2e', glass: '#64d2ff', wall: '#d1d1d6', water: '#1f4b6e' } },
 ];
 // What opens each feature: a technology, or a town hall level (index into HALL_LEVELS).
-export const FEATURE_NEEDS = { market: { tech: 'trade' }, shares: { tech: 'finance' }, region: { tech: 'diplomacy' }, co: { hall: 3 }, council: { hall: 4 } };
+export const FEATURE_NEEDS = { shares: { tech: 'finance' }, region: { tech: 'diplomacy' }, co: { hall: 3 }, council: { hall: 4 } };
 export const QUAKE_CHANCE = 0.006;     // per day
 export const TORNADO_CHANCE = 0.012;   // per day in spring and summer storms
 // Badges shown on the map and in leaderboards.
@@ -304,9 +304,8 @@ export const TECH_BRANCHES = [['education', 'Education'], ['commerce', 'Commerce
 export const TECH = [
   { id: 'highschool', branch: 'education', name: 'High schools', cost: 10, text: 'Unlocks high schools: teenagers finish school and can go on to work that needs it.' },
   { id: 'university', branch: 'education', name: 'Universities', cost: 30, needs: 'highschool', text: 'Unlocks universities: degrees for doctors, engineers and teachers.' },
-  { id: 'trade', branch: 'commerce', name: 'Trade', cost: 10, text: 'Opens the Market: buy and sell resources at the world’s prices, trade with other mayors, lend and borrow.' },
-  { id: 'finance', branch: 'commerce', name: 'Finance', cost: 35, needs: 'trade', text: 'Opens city shares: invest in other cities, or list yours to raise money.' },
-  { id: 'retail', branch: 'commerce', name: 'Retail', cost: 25, needs: 'trade', text: 'Unlocks Stores: sell your factories’ products straight to your own residents.' },
+  { id: 'finance', branch: 'commerce', name: 'Finance', cost: 35, text: 'Opens city shares: invest in other cities, or list yours to raise money.' },
+  { id: 'retail', branch: 'commerce', name: 'Retail', cost: 25, text: 'Unlocks Stores: sell your factories’ products straight to your own residents.' },
   { id: 'diplomacy', branch: 'society', name: 'Diplomacy', cost: 15, text: 'Opens the Region: shared projects with other mayors, and alliances.' },
   { id: 'orchards', branch: 'farming', name: 'Orchards', cost: 30, text: 'Unlocks orchards: fruit.' },
   { id: 'dairy', branch: 'farming', name: 'Dairy farming', cost: 50, needs: 'orchards', text: 'Unlocks dairy farms.' },
@@ -411,9 +410,9 @@ export const PRODUCTS = {
 export const PRODUCT_IDS = Object.keys(PRODUCTS);
 export const STORE_SALE_SHARE = 0.85;    // a Store sells products for this share of the import price (vs SURPLUS_SALE on the open market)
 export const FACTORY_BATCHES = 6;        // batches of a recipe a fully-staffed, fully-levelled factory can run a day
-// What a brand new city starts with: enough to build straight away and try a trade, without waiting on
-// production. Metal and stone are deliberately tighter than wood - a Quarry needs building soon.
-export const STARTING_RES = { water: 100, power: 200, wood: 200, metal: 90, stone: 110 };
+// What a brand new city starts with: an even 400 of each, at Michael's request - enough to build straight
+// away and try a trade, without waiting on production.
+export const STARTING_RES = { water: 400, power: 400, wood: 400, metal: 400, stone: 400 };
 // City shares. Every city is worth what its public figures say (people, money, buildings, resources, growth,
 // mood) and has `shares` shares. A mayor can list between listMin and listMax of them once the city has minPop
 // people, and is paid for them at once (less ipoDiscount); others then buy and sell them on the exchange.
@@ -568,7 +567,7 @@ export const GOALS = [
   { id: 'link1', text: 'Link a road or railway with a neighbour', reward: 400,
     how: 'Run a road or railway to your plot edge where a neighbour has one at the same spot.' },
   { id: 'deal1', text: 'Trade with another mayor', reward: 300,
-    how: 'Open the Market (needs the Trade research) and take another mayor\'s offer, or post your own.' },
+    how: 'Open the Market and take another mayor\'s offer, or post your own.' },
   { id: 'ally1', text: 'Join or found an alliance', reward: 400,
     how: 'Open Region (needs the Diplomacy research) and join or found an alliance.' },
 ];

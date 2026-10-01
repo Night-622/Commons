@@ -3292,8 +3292,12 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 2.16';
+const VERSION = 'Commons 2.17';
 const CHANGELOG = [
+  ['2.17', [
+    'A fresh start: the open world moved on again (WORLD_ID s4 → s5). A new city now starts with 400 of each resource (water, power, wood, metal, stone), up from a mixed 90-200.',
+    'The Market no longer needs research: trading with other mayors, the Exchange and lending/borrowing are all open from the very first day. The Trade technology is gone; Finance and Retail (shares and Stores) no longer need it first, just their own research as before.',
+  ]],
   ['2.16', [
     'A fresh start: the open world moved on again (WORLD_ID s3 → s4). Founding a city now also offers "Choose your spot on the map instead" - pick any empty tile yourself rather than always joining at the frontier.',
     'Fixed a real bug: listing your city on the exchange could still fail with a permissions error after an earlier save had gone wrong, even once the name itself was fine - the game was trying to re-list it the same way as a brand new listing, which the rules only allow once. Re-listing now works properly.',
@@ -3874,7 +3878,7 @@ function showHallUp(lv) {
   $('see-path').onclick = () => { closeModal(); drawer = null; openPanel('goals'); };
 }
 // A locked feature: what it is, which chapter opens it, and why it's worth getting to.
-const FEATURE_NEEDS_TECH = (f) => ['market', 'shares', 'region'].includes(f);
+const FEATURE_NEEDS_TECH = (f) => ['shares', 'region'].includes(f);
 function showLocked(feature) {
   openModal(`${closeX}<h2 id="modal-title">Locked</h2>${panels.lockHtml(feature, state)}
     <div class="mfoot"><button class="btn" data-close>OK</button><button class="btn primary" id="see-path">${FEATURE_NEEDS_TECH(feature) ? 'Open Research' : 'See the town hall'}</button></div>`);

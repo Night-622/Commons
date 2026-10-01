@@ -215,3 +215,10 @@ main"):
          front only for now, no attacking other mayors yet. The most a
          city runs unattended is now 30 days (was 144). Another fresh
          start (WORLD_ID is now s4). No firestore.rules change.
+   2.17  A new city now starts with 400 of each resource (water,
+         power, wood, metal, stone), not a mixed 90-200. The Market -
+         trading with other mayors, the Exchange, lending and
+         borrowing - no longer needs research; it's open from day one.
+         The Trade technology is gone; Finance and Retail stand on
+         their own now instead of needing it first. Another fresh
+         start (WORLD_ID is now s5). No firestore.rules change.
