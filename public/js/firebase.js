@@ -19,7 +19,8 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 try { auth.useDeviceLanguage(); } catch { /* older SDKs */ }
 // A local copy of the database makes reloads quick and lets the game read while briefly offline.
-let db;
+// Exported so admin.html can share this same app/connection instead of starting a second one.
+export let db;
 try { db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); }
 catch (e) { console.warn('Offline cache unavailable', e); db = getFirestore(app); }
 const google = () => { const p = new GoogleAuthProvider(); p.setCustomParameters({ prompt: 'select_account' }); return p; };
@@ -52,6 +53,12 @@ export async function resetPassword(email) {
     if (back && /unauthorized-continue-uri|invalid-continue-uri|unauthorized-domain|missing-continue-uri/.test(code(e))) await sendPasswordResetEmail(auth, to);
     else throw e;
   }
+}
+// Fails open (false) on a network error or similar - the real enforcement is in firestore.rules, which
+// refuses a banned player's own saves/chat/market/gifts/DMs regardless of what this says.
+export async function checkBanned(uid) {
+  try { return (await getDoc(doc(db, 'banned', uid))).exists(); }
+  catch { return false; }
 }
 export const signOutUser = () => signOut(auth);
 

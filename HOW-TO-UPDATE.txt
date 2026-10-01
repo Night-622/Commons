@@ -256,3 +256,26 @@ main"):
          anything a motivated player couldn't already do from the
          browser console - it just gives one person a button for it.
          No firestore.rules change.
+   2.19  admin.html can now sign in with plain email/password too (not
+         just Google) - useful for an admin who'd rather not use their
+         Google account, or who doesn't have one. "Create account"
+         there makes a normal email/password account the same as
+         signing up in the game; once it exists, grant it access the
+         usual way (npm run make-admin -- <email>).
+         New: a "Cities" tab in admin.html lists every city in a
+         world and lets an admin add or remove money, fill every
+         resource to capacity, rename a city or its mayor, and
+         ban/unban a player - all straight from the page, no script
+         needed. THIS UPDATE CHANGES firestore.rules: isAdmin() can
+         now write any plots/plotState doc directly (skipping the
+         normal rate limits, which exist to catch ordinary play, not
+         a deliberate edit), and a new banned/{uid} collection blocks
+         a banned player's own saves, chat, market offers, gifts and
+         DMs (reading still works - they just can't act). Deploy the
+         rules first, as above, before pushing.
+         admin.js now shares public/js/firebase.js's auth/Firestore
+         connection (it used to start a second one) - mostly a
+         simplification, worth knowing if admin.html ever needs a
+         new Firestore import, since it should keep coming from
+         firebase.js rather than a fresh CDN import where it's
+         already exported.

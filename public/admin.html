@@ -10,6 +10,7 @@
     .item { border: 1.5px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 8px 0; background: var(--panel, #fff); }
     .item.done { opacity: .55; } .item pre { white-space: pre-wrap; font: inherit; margin: 6px 0; }
     .meta { color: var(--soft); font-size: .85em; } .item .row { margin: 6px 0 0; }
+    .item input[type=number] { width: 100px; } .item input[type=text] { width: 160px; }
   </style>
 </head>
 <body>
@@ -18,14 +19,25 @@
     <p class="soft" id="who">Checking your access…</p>
     <div class="row">
       <button class="btn primary" id="signin" type="button">Sign in with Google</button>
+    </div>
+    <form class="row" id="emailform">
+      <label class="field"><span>Email</span><input id="ad-email" type="email" autocomplete="username"></label>
+      <label class="field"><span>Password</span><input id="ad-pass" type="password" autocomplete="current-password"></label>
+      <button class="btn" type="submit">Sign in</button>
+      <button class="btn" type="button" id="ad-signup">Create account</button>
+    </form>
+    <div class="row" id="toolbar" hidden>
       <div class="seg" role="tablist" id="tabs">
         <button type="button" role="tab" data-tab="feedback" aria-selected="true">Feedback</button>
         <button type="button" role="tab" data-tab="reports" aria-selected="false">Chat reports</button>
         <button type="button" role="tab" data-tab="chat" aria-selected="false">Chat</button>
+        <button type="button" role="tab" data-tab="cities" aria-selected="false">Cities</button>
       </div>
       <label class="tgl"><input type="checkbox" id="showdone"><span class="sw" aria-hidden="true"></span><span class="tl">Show handled</span></label>
+      <button class="btn" type="button" id="ad-signout">Sign out</button>
     </div>
     <div class="row" id="chatrow" hidden><label class="field"><span>World id</span><span class="inline"><input id="world" value="main"><button class="btn" id="loadchat" type="button">Load</button></span></label></div>
+    <div class="row" id="resetrow" hidden><label class="field"><span>Send a password reset to</span><span class="inline"><input id="resetemail" type="email" placeholder="player@example.com"><button class="btn" id="sendreset" type="button">Send</button></span></label></div>
     <p class="formmsg" id="msg" role="alert"></p>
     <div id="list"></div>
   </main>

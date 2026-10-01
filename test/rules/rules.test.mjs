@@ -584,3 +584,56 @@ test('fresh start: the current open world can be founded; odd world ids stay pri
   assert.equal(p.world, WORLD_ID);
   await assertFails(setDoc(doc(a.db, 'worlds', 'sx'), { nextIndex: 1 }));   // not an open world id
 });
+
+// ---------- admin.html: editing any city, and banning (2.19) ----------
+const makeAdmin = (uid) => admin((db) => setDoc(doc(db, 'admins', uid), { name: 'test admin' }));
+
+test('admin: can edit any city directly (money, resources, names), skipping the normal rate limits', async () => {
+  const a = await player(), c = await player();
+  await makeAdmin(c.uid);
+  const w = await newWorld(a);
+  const p = await a.fb.claimPlot(a.user, 'Ana', 'Anaville', w.id);
+  const st = JSON.parse(p.state); sim.migrate(st);
+  st.money += 50000;   // far past riseOk's flat allowance - would fail for Ana herself, or for a stranger
+  st.name = 'Renamed by admin';
+  await assert.rejects(a.fb.savePlot(p.id, st), /permission/i, 'too big a jump even for the owner');
+  await c.fb.savePlot(p.id, st, { ownerName: 'New Mayor' });
+  const after = await a.fb.findPlot(a.user, w.id);
+  assert.equal(after.money, st.money);
+  assert.equal(after.name, 'Renamed by admin');
+  assert.equal(after.ownerName, 'New Mayor');
+  // A non-admin stranger still can't touch Ana's city.
+  const b = await player();
+  await assert.rejects(b.fb.savePlot(p.id, st), /permission/i);
+});
+
+test('ban: a banned player can’t save, chat, post offers, send gifts or DM, but can still read; unban restores it', async () => {
+  const a = await player(), b = await player(), c = await player();
+  await makeAdmin(c.uid);
+  const w = await newWorld(a);
+  const pa = await a.fb.claimPlot(a.user, 'Ana', 'A', w.id), pb = await b.fb.claimPlot(b.user, 'Ben', 'B', w.id);
+  // Only an admin can ban - not the player themselves, not anyone else.
+  await assertFails(setDoc(doc(a.db, 'banned', a.uid), { at: serverTimestamp() }));
+  await assertFails(setDoc(doc(b.db, 'banned', a.uid), { at: serverTimestamp() }));
+  await setDoc(doc(env.authenticatedContext(c.uid).firestore(), 'banned', a.uid), { at: serverTimestamp() });
+  assert.equal(await a.fb.checkBanned(a.uid), true);
+  // Reading still works.
+  await getDoc(doc(a.db, 'plots', pa.id));
+  // Everything that normally lets a player act is refused now.
+  const st = JSON.parse((await a.fb.findPlot(a.user, w.id)).state); sim.migrate(st); st.money += 10;
+  await assert.rejects(a.fb.savePlot(pa.id, st), /permission/i);
+  // sendChat's own catch assumes any denial means slow-mode, so this isn't a /permission/ message - but it is
+  // still refused, which is what matters: a banned player's chat never reaches the server either way.
+  await assert.rejects(a.fb.sendChat(w.id, a.user, 'Ana', 'A', 'hi'));
+  await assertFails(a.fb.postOffer(w.id, a.fb.newOfferId(w.id), { kind: 'sell', res: 'fruit', qty: 10, price: 1, total: 10, owner: a.uid, ownerName: 'Ana', plot: pa.id, city: 'A' }));
+  await assertFails(a.fb.sendGift(w.id, { from: pa.id, fromName: 'A', fromOwner: a.uid, to: pb.id, toOwner: b.uid, amount: 50, note: '' }));
+  await assertFails(a.fb.sendDM(a.user, 'Ana', b.uid, 'Ben', 'hello'));
+  // Someone else is unaffected.
+  await b.fb.sendChat(w.id, b.user, 'Ben', 'B', 'still here');
+  // Unban: only an admin can lift it, and then everything works again.
+  await assertFails(deleteDoc(doc(a.db, 'banned', a.uid)));
+  await deleteDoc(doc(env.authenticatedContext(c.uid).firestore(), 'banned', a.uid));
+  assert.equal(await a.fb.checkBanned(a.uid), false);
+  await a.fb.savePlot(pa.id, st);
+  await a.fb.sendChat(w.id, a.user, 'Ana', 'A', 'back');
+});

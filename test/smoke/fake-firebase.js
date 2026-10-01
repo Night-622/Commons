@@ -8,17 +8,20 @@ import { newCity, serialize, summary, mapString, ensureTerrain } from './sim.js'
 const KEY = 'fakefb';
 const ctl = (window.__fakeFb = window.__fakeFb || { failSaves: null, saves: 0 });
 const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
-let db = load();
-db.docs ||= {};
-const persist = () => { localStorage.setItem(KEY, JSON.stringify(db)); fire(); };
+let store = load();
+store.docs ||= {};
+// admin.html's only use of this (raw Firestore calls) isn't exercised by these tests; exported just to
+// match the real firebase.js's exports (checked below).
+export const db = null;
+const persist = () => { localStorage.setItem(KEY, JSON.stringify(store)); fire(); };
 const TIME_KEYS = ['createdAt', 'updatedAt', 'endedAt', 'at'];
 const ts = (ms) => ({ toMillis: () => ms, toDate: () => new Date(ms), seconds: Math.floor(ms / 1000) });
 const out = (id, d) => { if (!d) return null; const o = { id, ...structuredClone(d) }; for (const k of TIME_KEYS) if (typeof o[k] === 'number') o[k] = ts(o[k]); return o; };
-const get = (path) => db.docs[path] || null;
-const set = (path, data) => { db.docs[path] = { ...data }; };
-const merge = (path, data) => { db.docs[path] = { ...(db.docs[path] || {}), ...data }; };
-const del = (path) => { delete db.docs[path]; };
-const under = (col) => Object.entries(db.docs).filter(([k]) => k.startsWith(col + '/') && !k.slice(col.length + 1).includes('/')).map(([k, v]) => out(k.slice(col.length + 1), v));
+const get = (path) => store.docs[path] || null;
+const set = (path, data) => { store.docs[path] = { ...data }; };
+const merge = (path, data) => { store.docs[path] = { ...(store.docs[path] || {}), ...data }; };
+const del = (path) => { delete store.docs[path]; };
+const under = (col) => Object.entries(store.docs).filter(([k]) => k.startsWith(col + '/') && !k.slice(col.length + 1).includes('/')).map(([k, v]) => out(k.slice(col.length + 1), v));
 const now = () => Date.now();
 const newId = () => Math.random().toString(36).slice(2, 12);
 const fail = (code, message = code) => { const e = new Error(message); e.code = code; return e; };
@@ -27,17 +30,17 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 // Listeners re-run their query after every write, in this tab or another.
 const listeners = new Set();
 function fire() { for (const l of listeners) queueMicrotask(l); }
-addEventListener('storage', (e) => { if (e.key === KEY) { db = load(); db.docs ||= {}; fire(); } });
+addEventListener('storage', (e) => { if (e.key === KEY) { store = load(); store.docs ||= {}; fire(); } });
 function listen(run) { const l = () => run(); listeners.add(l); queueMicrotask(l); return () => listeners.delete(l); }
 
 // ---------- auth ----------
 // Each tab remembers who signed in there (so two tabs can be two players); a new tab starts as the last player.
 const tabUser = () => { try { return JSON.parse(sessionStorage.getItem('fakeuser')); } catch { return null; } };
-let user = tabUser() || db.user || null;
+let user = tabUser() || store.user || null;
 const authCbs = new Set();
 const mkUser = (o) => ({ uid: o.uid, isAnonymous: !!o.isAnonymous, email: o.email || null, displayName: o.displayName || null, providerData: o.email ? [{ providerId: 'password' }] : [] });
 function setUser(u) {
-  user = u ? mkUser(u) : null; db.user = u; auth.currentUser = user;
+  user = u ? mkUser(u) : null; store.user = u; auth.currentUser = user;
   try { if (u) sessionStorage.setItem('fakeuser', JSON.stringify(u)); else sessionStorage.removeItem('fakeuser'); } catch { /* ignore */ }
   persist(); for (const cb of authCbs) setTimeout(() => cb(user), 0);
 }
@@ -47,15 +50,15 @@ export const signInGuest = async () => { setUser({ uid: 'guest' + newId(), isAno
 export const signInGoogle = async () => { setUser({ uid: 'google' + newId(), email: 'google@example.com', displayName: 'Googler' }); return { user }; };
 export const redirectResult = async () => null;
 export async function signInEmail(email, pass) {
-  const a = db.accounts?.[email.trim()];
+  const a = store.accounts?.[email.trim()];
   if (!a || a.pass !== pass) throw fail('auth/invalid-credential');
   setUser({ uid: a.uid, email: email.trim() }); return { user };
 }
 export async function createEmail(email, pass) {
-  db.accounts ||= {};
-  if (db.accounts[email.trim()]) throw fail('auth/email-already-in-use');
+  store.accounts ||= {};
+  if (store.accounts[email.trim()]) throw fail('auth/email-already-in-use');
   if (String(pass).length < 6) throw fail('auth/weak-password');
-  db.accounts[email.trim()] = { uid: 'mail' + newId(), pass };
+  store.accounts[email.trim()] = { uid: 'mail' + newId(), pass };
   return signInEmail(email, pass);
 }
 export async function resetPassword(email) {
@@ -63,9 +66,10 @@ export async function resetPassword(email) {
   ctl.resets = (ctl.resets || 0) + 1;
 }
 export const signOutUser = async () => setUser(null);
-export async function upgradeWithEmail(email) { setUser({ ...db.user, isAnonymous: false, email }); }
-export async function upgradeWithGoogle() { setUser({ ...db.user, isAnonymous: false, email: 'google@example.com' }); }
-export const setDisplayName = async (name) => { db.user = { ...db.user, displayName: name }; persist(); };
+export async function checkBanned(uid) { return !!get(`banned/${uid}`); }
+export async function upgradeWithEmail(email) { setUser({ ...store.user, isAnonymous: false, email }); }
+export async function upgradeWithGoogle() { setUser({ ...store.user, isAnonymous: false, email: 'google@example.com' }); }
+export const setDisplayName = async (name) => { store.user = { ...store.user, displayName: name }; persist(); };
 export function authMessage(e) {
   const c = String(e?.code || '');
   if (c.includes('permission-denied')) return 'The server refused that. The game’s security rules are probably out of date: run “npm run deploy:rules” in the Commons folder.';
@@ -82,7 +86,7 @@ export async function getWorld(id) {
   return w ? { id, ...w } : null;
 }
 export async function myWorlds(u) {   // (the fake has no worlds from before the reset)
-  const mine = Object.entries(db.docs).filter(([k, v]) => k.startsWith('memberships/') && v.uid === u.uid).map(([, v]) => v.world);
+  const mine = Object.entries(store.docs).filter(([k, v]) => k.startsWith('memberships/') && v.uid === u.uid).map(([, v]) => v.world);
   return [...Object.entries(OPEN_WORLDS).map(([id, name]) => ({ id, name, private: false })), ...(await Promise.all(mine.map(getWorld))).filter((w) => w && !OPEN_WORLDS[w.id])];
 }
 export async function createWorld(u, name) {
@@ -265,8 +269,8 @@ export function listenChat(world, cb) {
   return listen(() => cb(under(`worlds/${world}/chat`).sort((a, b) => a.createdAt.toMillis() - b.createdAt.toMillis()).slice(-60)));
 }
 export async function sendChat(world, u, name, city, text) {
-  if (now() - (db.lastChat || 0) < 3000) { const x = new Error('Slow down: one message every few seconds.'); x.code = 'slow'; throw x; }
-  db.lastChat = now();
+  if (now() - (store.lastChat || 0) < 3000) { const x = new Error('Slow down: one message every few seconds.'); x.code = 'slow'; throw x; }
+  store.lastChat = now();
   set(`worlds/${world}/chat/${newId()}`, { uid: u.uid, name, city, text, createdAt: now() });
   persist();
 }

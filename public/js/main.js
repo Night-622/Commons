@@ -370,12 +370,15 @@ function showBootError(text) {
 $('boot-retry').onclick = () => { $('boot-actions').classList.add('hidden'); $('boot-retry').textContent = 'Try again'; tabPaused = false; if (user) enter(user); else location.reload(); };
 $('boot-public').onclick = () => { $('boot-actions').classList.add('hidden'); setWorld({ id: WORLD_ID, name: OPEN_WORLDS[WORLD_ID] }); if (user) enter(user); };
 $('boot-out').onclick = () => { $('boot-actions').classList.add('hidden'); fb.signOutUser().catch(() => location.reload()); };
-fb.onAuth((u) => {
+fb.onAuth(async (u) => {
   const same = u && user && u.uid === user.uid && state;
   user = u;
   $('boot-actions').classList.add('hidden');
   if (!u) { stopLoops(); chatUnsub?.(); worldUnsub?.(); movesUnsub?.(); giftsUnsub?.(); worldUnsub = movesUnsub = chatUnsub = giftsUnsub = null; state = null; plotId = null; closeModal(); show('auth'); return; }
   if (same) return;   // linking a guest to an account keeps the same player: no need to reload the city
+  // A ban still only really bites at the next save (firestore.rules refuses it either way) - this just
+  // stops a banned player from getting back into a city at all, with a clearer reason than a save error.
+  if (await fb.checkBanned(u.uid)) { show('boot'); $('boot-msg').textContent = 'This account has been suspended.'; fb.signOutUser(); return; }
   enter(u);
 });
 
@@ -3292,7 +3295,7 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 2.18';
+const VERSION = 'Commons 2.19';
 const CHANGELOG = [
   ['2.18', [
     'Every account and every city was wiped at the project owner\'s request: a clean slate for everyone. Sign in again - guest, email or Google, it makes a fresh account either way - and found a new city.',
