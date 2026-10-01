@@ -222,3 +222,37 @@ main"):
          The Trade technology is gone; Finance and Retail stand on
          their own now instead of needing it first. Another fresh
          start (WORLD_ID is now s5). No firestore.rules change.
+   2.18  Every account and every city, at Michael's request. Two
+         things had to happen outside the usual "push to main" flow:
+           1. Firestore data: the usual fresh start only ever moves
+              WORLD_ID on (see "Fresh starts" above) - it doesn't
+              delete anything. This time the actual documents were
+              deleted too, with the Firebase CLI (already set up via
+              "npm run login"):
+                npx firebase-tools firestore:delete <collection> --recursive --force --project commons-ww
+              ...run once for each of: plots, plotState, worlds,
+              desks, legacy, worldCodes (cities), then users,
+              memberships, profiles, dms, inbox, feedback, reports,
+              chatLimits, admins (accounts).
+           2. Firebase Auth: deleting Firestore data doesn't delete
+              anyone's actual sign-in - that's a separate system with
+              no CLI command for "delete everyone". A one-off script
+              (scripts/wipe-all-auth-users.local.mjs, gitignored, not
+              part of the repo history) used firebase-admin to list
+              and delete every Auth user. It needs a service account
+              key: Firebase console > Project settings > Service
+              accounts > Generate new private key, then
+                GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json node scripts/wipe-all-auth-users.local.mjs
+         New: scripts/make-admin.mjs (npm run make-admin -- <email>)
+         grants admin.html access to an already-signed-in player by
+         email, using the same service account key, instead of doing
+         the "Admin page" steps above by hand every time.
+         Settings also has a Cheats tab (free money, full resources,
+         time skips), visible only when the signed-in email matches
+         the one hardcoded in main.js's isCheater() - nobody else
+         sees the tab exists. It writes straight into the open
+         city's own save client-side; nothing server-side trusts
+         money/resources/day for anyone, so this doesn't open up
+         anything a motivated player couldn't already do from the
+         browser console - it just gives one person a button for it.
+         No firestore.rules change.

@@ -9,12 +9,14 @@
     "serve": "npx --yes firebase-tools emulators:start --only hosting",
     "deploy:rules": "npx --yes firebase-tools deploy --only firestore:rules",
     "test:rules": "firebase emulators:exec --only firestore,auth --project demo-commons \"node --import ./test/rules/register.mjs --test --test-force-exit test/rules/rules.test.mjs\"",
-    "test:smoke": "playwright test -c test/smoke/playwright.config.mjs"
+    "test:smoke": "playwright test -c test/smoke/playwright.config.mjs",
+    "make-admin": "node scripts/make-admin.mjs"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.2",
     "@playwright/test": "^1.63.0",
     "firebase": "^12.19.0",
+    "firebase-admin": "^13.0.0",
     "firebase-tools": "^15.31.0"
   }
 }

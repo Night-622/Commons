@@ -4,3 +4,8 @@ node_modules/
 .DS_Store
 test-results/
 playwright-report/
+# Service account keys for scripts/*.mjs (Admin SDK) must never be committed.
+serviceAccountKey.json
+*.serviceaccount.json
+# One-off admin scripts that shouldn't live in history once they've been run.
+scripts/*.local.mjs

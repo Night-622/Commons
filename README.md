@@ -21,6 +21,13 @@ Guests can turn their guest city into a full account later (Account menu). Linki
 - Saves are split: `plots/{id}` is a small public summary everyone listens to; `plotState/{id}` holds the full city and is only fetched for adjacent neighbours.
 - `node test/balance.mjs` runs a scripted city for 100 days.
 
+## New in 2.18: every account and city wiped, and an admin-grant script
+
+- **A full wipe, not a fresh start**: the usual `WORLD_ID` bump (see every earlier entry below) only ever moves players off old data - nothing is deleted, by design (see "Fresh starts" in `HOW-TO-UPDATE.txt`). This time, at Michael's explicit request, the actual Firestore documents were deleted with `npx firebase-tools firestore:delete <collection> --recursive --force --project commons-ww` for every city- and account-shaped collection, and every Firebase Auth user (email/password, Google, guest) was deleted outright with a one-off `firebase-admin` script, since the Firebase CLI has no bulk-delete-users command. See `HOW-TO-UPDATE.txt`'s 2.18 notes for the exact collection list and commands.
+- **New: `scripts/make-admin.mjs`** (`npm run make-admin -- <email>`) looks a signed-in player up by email with the Admin SDK and adds them to the `admins` collection, so granting `admin.html` access is one command instead of the manual "sign in, copy the UID out of the console, add a document" steps.
+- **New: a Cheats tab in Settings**, visible only to one hardcoded email (`isCheater()` in `main.js`) - free money, a full-resources button, and day/week time skips, each just a direct `state` mutation through the same `advance()`/`afterChange()` path normal play already uses. Nothing server-side trusts a city's money, resources or day for anyone, so this doesn't add a new hole - it's the same thing a motivated player could already do from the browser console, just with a button for one person.
+- No firestore.rules change.
+
 ## New in 2.17: 400 of every starting resource, and the Market needs no research
 
 - A fresh start: `WORLD_ID` moved on again (`s4` → `s5`).

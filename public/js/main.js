@@ -3292,8 +3292,11 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 2.17';
+const VERSION = 'Commons 2.18';
 const CHANGELOG = [
+  ['2.18', [
+    'Every account and every city was wiped at the project owner\'s request: a clean slate for everyone. Sign in again - guest, email or Google, it makes a fresh account either way - and found a new city.',
+  ]],
   ['2.17', [
     'A fresh start: the open world moved on again (WORLD_ID s4 → s5). A new city now starts with 400 of each resource (water, power, wood, metal, stone), up from a mixed 90-200.',
     'The Market no longer needs research: trading with other mayors, the Exchange and lending/borrowing are all open from the very first day. The Trade technology is gone; Finance and Retail (shares and Stores) no longer need it first, just their own research as before.',
@@ -3696,11 +3699,29 @@ async function showBoard() {
 }
 
 let settingsTab = 'display';
+// A single trusted email gets a Cheats tab in Settings: free money, full resources, time skips.
+// Client-side only, like the rest of this file - the server never trusts money/res/day, so this opens
+// nothing a determined player couldn't already do from the console; it just gives one person a button for it.
+const isCheater = () => user?.email === 'g@katris.net';
+function runCheat(id) {
+  if (!state || !isCheater()) return;
+  if (id === 'money10k') state.money += 10000;
+  else if (id === 'money100k') state.money += 100000;
+  else if (id === 'money1m') state.money += 1000000;
+  else if (id === 'fillres') { const cap = sim.storeCap(state); for (const k of Object.keys(RES)) state.res[k] = cap; }
+  else if (id === 'skipday') advance(HOURS_PER_DAY);
+  else if (id === 'skipweek') advance(HOURS_PER_DAY * 7);
+  drainFinished();
+  checkGoals();
+  afterChange();
+  notify('Cheat applied.', 'act');
+  showSettings();
+}
 function showSettings() {
   const seg = (key, opts) => `<div class="seg" role="radiogroup">${opts.map(([v, l]) =>
     `<button type="button" role="radio" aria-checked="${prefs[key] === v}" data-pref="${key}" data-val='${JSON.stringify(v)}'>${l}</button>`).join('')}</div>`;
   const tgl = (key, label, note = '') => `<label class="tgl"><input type="checkbox" data-pref="${key}" ${prefs[key] ? 'checked' : ''}><span class="sw" aria-hidden="true"></span><span class="tl">${label}${note ? `<small>${note}</small>` : ''}</span></label>`;
-  const tabs = [['display', 'Display'], ['colours', 'Colours'], ['interface', 'Interface'], ['sound', 'Sound'], ['keys', 'Keys']];
+  const tabs = [['display', 'Display'], ['colours', 'Colours'], ['interface', 'Interface'], ['sound', 'Sound'], ['keys', 'Keys'], ...(isCheater() ? [['cheats', 'Cheats']] : [])];
   const panes = {
     display: `<div class="srow"><span>Theme</span>${seg('theme', [['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']])}</div>
       <div class="srow"><span>People on screen</span>${seg('density', [[0.5, 'Fewer'], [1, 'Everyone']])}</div>
@@ -3750,6 +3771,17 @@ function showSettings() {
       <div class="srow"><span>City sounds volume</span><input type="range" min="0" max="1" step="0.05" value="${prefs.ambientVolume}" data-pref="ambientVolume" aria-label="City sounds volume"></div>
       ${tgl('muteHidden', 'Quiet in the background', 'No sound while the game is in another tab')}
       ${tgl('haptics', 'Vibrate on phones', 'A small buzz when you build, finish a goal or hit an error')}`,
+    cheats: isCheater() ? (state ? `<p class="soft">Only you can see this tab. These write straight into your city's save, same as anything else here - there's nothing for the server to check.</p>
+      <div class="srow"><span>Money</span>
+        <button class="btn" type="button" data-cheat="money10k">+$10,000</button>
+        <button class="btn" type="button" data-cheat="money100k">+$100,000</button>
+        <button class="btn" type="button" data-cheat="money1m">+$1,000,000</button>
+      </div>
+      <div class="srow"><span>Resources</span><button class="btn" type="button" data-cheat="fillres">Fill every resource to capacity</button></div>
+      <div class="srow"><span>Time</span>
+        <button class="btn" type="button" data-cheat="skipday">Skip a day</button>
+        <button class="btn" type="button" data-cheat="skipweek">Skip a week</button>
+      </div>` : '<p class="soft">Open a city first.</p>') : '',
   };
   openModal(`${closeX}<h2 id="modal-title">Settings</h2>
     <div class="seg tabs" role="tablist">${tabs.map(([k, l]) => `<button type="button" role="tab" aria-selected="${settingsTab === k}" data-tab="${k}">${l}</button>`).join('')}</div>
@@ -3794,6 +3826,7 @@ function showSettings() {
     window.addEventListener('keydown', grab, true);
   }; });
   $('set-unblock')?.addEventListener('click', () => { try { localStorage.removeItem('commons-muted'); } catch { /* ignore */ } notify('Everyone is unblocked.', 'act'); showSettings(); });
+  modal.querySelectorAll('[data-cheat]').forEach((b) => { b.onclick = () => runCheat(b.dataset.cheat); });
   modal.querySelectorAll('input[type=range][data-pref]').forEach((r) => {
     r.oninput = () => { prefs[r.dataset.pref] = +r.value; savePrefs(prefs); setSound(prefs.sound, prefs.volume, prefs.ambientVolume, prefs.haptics); };
     r.onchange = () => play('coin');
