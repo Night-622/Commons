@@ -279,3 +279,35 @@ main"):
          new Firestore import, since it should keep coming from
          firebase.js rather than a fresh CDN import where it's
          already exported.
+   2.20  admin.html's Cities tab is now a real dashboard, not just a
+         flat list. A status line and filter (All/Live/Inactive/
+         Fallen, "live" meaning saved in the last 5 minutes) plus
+         search and sort make it usable with more than a handful of
+         cities. "Inspect" loads a city's full save and shows its
+         resources, policy, research count, military and last 8 news
+         items read-only, with the edit controls (money, resources,
+         rename) alongside - no more editing blind. New: a "Boost
+         morale" button, a policy editor (tax/funding/free transit),
+         and a Disasters panel (storm, fire, earthquake, flu,
+         blackout, civil unrest) via sim.js's new exported
+         adminDisaster(s, kind) - the same damage/illness/mood code
+         the random events and daily() already use, just triggered on
+         request. No firestore.rules change (these all go through the
+         admin override and banned/{uid} collection from 2.19).
+         Also fixed two real bugs 2.19 shipped, caught writing the
+         first Playwright coverage admin.html has ever had
+         (test/smoke/smoke.spec.mjs, "admin: sign in, inspect a
+         city..."): several city-edit controls (money, policy,
+         rename) used admin.js's getElementById-only $() helper with
+         a CSS attribute selector, which always returned null and
+         threw; and admin.js's raw Firestore calls (for feedback,
+         reports, chat moderation and bans) only ever worked against
+         a real backend, breaking instantly against the smoke tests'
+         fake one. Both needed admin.js to stop making its own
+         Firestore calls and go through new firebase.js exports
+         (checkAdmin, loadModeration, markHandled, adminDelete,
+         setBanned) instead - the same pattern main.js already
+         follows, now with a matching fake-firebase.js implementation
+         so admin.html can actually be tested at all. Worth deploying
+         rules again only if you skipped 2.19's deploy; nothing new
+         here needs it.

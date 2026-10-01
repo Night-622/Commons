@@ -19,8 +19,7 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 try { auth.useDeviceLanguage(); } catch { /* older SDKs */ }
 // A local copy of the database makes reloads quick and lets the game read while briefly offline.
-// Exported so admin.html can share this same app/connection instead of starting a second one.
-export let db;
+let db;
 try { db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); }
 catch (e) { console.warn('Offline cache unavailable', e); db = getFirestore(app); }
 const google = () => { const p = new GoogleAuthProvider(); p.setCustomParameters({ prompt: 'select_account' }); return p; };
@@ -61,6 +60,24 @@ export async function checkBanned(uid) {
   catch { return false; }
 }
 export const signOutUser = () => signOut(auth);
+
+// ---------- admin.html ----------
+export async function checkAdmin(uid) {
+  try { return (await getDoc(doc(db, 'admins', uid))).exists(); }
+  catch { return false; }
+}
+// Feedback and reports are flat collections; chat is per-world. Each item's `path` comes back too, so
+// markHandled/adminDelete below don't need to know which shape of collection it came from.
+export async function loadModeration(kind, world) {
+  const col = kind === 'chat' ? collection(db, 'worlds', world || 'main', 'chat') : collection(db, kind);
+  const snap = await getDocs(query(col, orderBy('createdAt', 'desc'), limit(200)));
+  return snap.docs.map((d) => ({ id: d.id, path: d.ref.path, ...d.data() }));
+}
+export const markHandled = (path) => updateDoc(doc(db, path), { status: 'done' });
+export const adminDelete = (path) => deleteDoc(doc(db, path));
+export function setBanned(uid, on, by = '') {
+  return on ? setDoc(doc(db, 'banned', uid), { at: serverTimestamp(), by }) : deleteDoc(doc(db, 'banned', uid));
+}
 
 // Turning a guest into a real account keeps the same user id, so the city comes along.
 export async function upgradeWithEmail(email, pass) {

@@ -2,6 +2,7 @@
 // Run with: npm run test:smoke
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { WORLD_ID } from '../../public/js/constants.js';
 
 // Any uncaught error or console error fails the test. Requests off this server are blocked so runs are offline.
 async function watch(page) {
@@ -673,5 +674,49 @@ test('styles: start as Frontier, unlock more as the hall grows, switch between t
     await expect(page.locator('html')).toHaveAttribute('data-style', id);
     if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/style-${id}.png` });
   }
+  expect(clean(errors)).toEqual([]);
+});
+
+test('admin: sign in, inspect a city, edit money, trigger a disaster, ban and unban', async ({ page }) => {
+  const errors = await watch(page);
+  await found(page, { mayor: 'Ada', city: 'Admintown' });
+  const uid = await page.evaluate(() => JSON.parse(sessionStorage.getItem('fakeuser')).uid);
+  const plotId = await page.evaluate(() => {
+    const db = JSON.parse(localStorage.getItem('fakefb'));
+    return Object.keys(db.docs).find((k) => k.startsWith('plots/') && db.docs[k].name === 'Admintown').split('/')[1];
+  });
+  // Grant admin access the way scripts/make-admin.mjs would, without needing a real Admin SDK here.
+  await page.evaluate((u) => {
+    const db = JSON.parse(localStorage.getItem('fakefb'));
+    db.docs[`admins/${u}`] = { name: 'test admin' };
+    localStorage.setItem('fakefb', JSON.stringify(db));
+  }, uid);
+  const money = (id) => page.evaluate((i) => JSON.parse(JSON.parse(localStorage.getItem('fakefb')).docs[`plotState/${i}`].state).money, id);
+  const blackout = (id) => page.evaluate((i) => JSON.parse(JSON.parse(localStorage.getItem('fakefb')).docs[`plotState/${i}`].state).flags?.blackout, id);
+  const isBanned = (u) => page.evaluate((x) => !!JSON.parse(localStorage.getItem('fakefb')).docs[`banned/${x}`], u);
+
+  await page.goto('/admin.html');
+  await expect(page.locator('#who')).toContainText('Signed in as');
+  await page.locator('[data-tab="cities"]').click();
+  await page.locator('#world').fill(WORLD_ID);
+  await page.locator('#loadchat').click();
+  await expect(page.locator('.item').first()).toContainText('Admintown');
+
+  await page.locator('[data-inspect]').click();
+  await expect(page.locator('.detail')).toBeVisible();
+
+  const before = await money(plotId);
+  await page.locator('[data-amt]').fill('500');
+  await page.locator('[data-addmoney]').click();
+  await expect.poll(() => money(plotId)).toBe(before + 500);
+
+  await page.locator('[data-disaster][data-kind="blackout"]').click();
+  await expect.poll(() => blackout(plotId)).toBe(1);
+
+  await page.locator(`[data-ban="${uid}"]`).click();
+  await expect.poll(() => isBanned(uid)).toBe(true);
+  await page.locator(`[data-unban="${uid}"]`).click();
+  await expect.poll(() => isBanned(uid)).toBe(false);
+
   expect(clean(errors)).toEqual([]);
 });

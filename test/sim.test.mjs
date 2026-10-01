@@ -1148,4 +1148,28 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   }
   console.log('resource prices ok:', TRADE_RES.length, 'tradeable resources all price and weight correctly');
 }
+// ---- admin.html: a deliberate disaster, the same damage/illness/mood effects as a random event, on demand
+{
+  seed = 55;
+  const s = sim.newCity('Disaster town', rng); s.money = 20000; s.land.fill(1);
+  for (let x = 2; x <= 13; x++) put(s, x, c + 1, T.ROAD);
+  [T.HOUSE, T.HOUSE, T.WORK, T.SHOP].forEach((t, k) => put(s, 3 + k * 2, c + 2, t));
+  finishAll(s);
+  const cond0 = [...s.cond];
+  sim.adminDisaster(s, 'storm', rng);
+  assert(s.cond.some((v, i) => v < cond0[i]), 'storm damaged at least one building');
+  sim.adminDisaster(s, 'fire', rng);
+  assert(s.log.some((n) => /fire/i.test(n.t)), 'fire logged a note');
+  sim.adminDisaster(s, 'earthquake', rng);
+  assert(s.log.some((n) => /earthquake/i.test(n.t)), 'earthquake logged a note');
+  sim.adminDisaster(s, 'flu', rng);
+  assert(s.people.some((p) => p.ill), 'flu made someone ill');
+  sim.adminDisaster(s, 'blackout', rng);
+  assert.equal(s.flags.blackout, 1, 'blackout flag set');
+  const moods = s.people.map((p) => p.m);
+  sim.adminDisaster(s, 'unrest', rng);
+  assert(s.people.every((p, i) => p.m <= moods[i]), 'unrest never raises mood');
+  assert(sim.adminDisaster({ ...s, grid: s.grid.map(() => T.EMPTY), people: [] }, 'storm', rng), 'a disaster on an empty city does not throw');
+  console.log('disasters ok: admin.html can trigger storm, fire, earthquake, flu, blackout and civil unrest on demand');
+}
 console.log('all tests passed');

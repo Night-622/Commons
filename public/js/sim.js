@@ -2814,6 +2814,39 @@ function randomEvent(s, rng, fire) {
   return text;
 }
 
+// A deliberate disaster from admin.html's Disasters panel - the same damage/illness/mood effects as the
+// random events above (and the earthquake/blackout logic in daily()), just triggered on request rather
+// than by chance, and without needing daily()'s full weather/season context to decide whether one could fire.
+export function adminDisaster(s, kind, rng = Math.random) {
+  const list = built(s);
+  if (kind === 'storm' && list.length) {
+    const n = Math.min(list.length, 1 + Math.floor(rng() * 3));
+    for (let k = 0; k < n; k++) { const i = list[Math.floor(rng() * list.length)]; s.cond[i] = Math.max(1, s.cond[i] - hurt(s, 20)); }
+    note(s, 'warn', `A storm damaged ${n} building${n > 1 ? 's' : ''}.`);
+  } else if (kind === 'fire' && list.length) {
+    const i = list[Math.floor(rng() * list.length)];
+    s.cond[i] = Math.max(1, s.cond[i] - hurt(s, 55));
+    note(s, 'warn', `A fire badly damaged a ${B[s.grid[i]].name.toLowerCase()}.`);
+  } else if (kind === 'earthquake' && list.length) {
+    const hit = Math.max(1, Math.round(list.length * 0.22)), pool = [...list];
+    for (let k = 0; k < hit && pool.length; k++) { const i = pool.splice(Math.floor(rng() * pool.length), 1)[0]; s.cond[i] = Math.max(1, s.cond[i] - hurt(s, 50)); }
+    let injured = 0;
+    for (const p of s.people) if (!p.ill && rng() < 0.07) { p.ill = 2; p.sd = 0; injured++; }
+    note(s, 'warn', `An earthquake damaged ${hit} building${hit > 1 ? 's' : ''}${injured ? ` and injured ${injured}` : ''}.`);
+  } else if (kind === 'flu') {
+    const n = Math.min(s.people.length, 1 + Math.floor(rng() * 4)), pool = s.people.filter((p) => !p.ill);
+    for (let k = 0; k < n && pool.length; k++) { const p = pool.splice(Math.floor(rng() * pool.length), 1)[0]; p.ill = 1; p.sd = 0; }
+    note(s, 'warn', `A flu outbreak: ${n} people are sick.`);
+  } else if (kind === 'blackout') {
+    s.flags.blackout = 1;
+    note(s, 'warn', 'A blackout hit the city.');
+  } else if (kind === 'unrest') {
+    for (const p of s.people) p.m = Math.max(0, p.m - 0.2);
+    note(s, 'warn', 'Civil unrest soured the city’s mood.');
+  }
+  return s;
+}
+
 // ---------- goals ----------
 const count = (tot, ...types) => types.reduce((a, t) => a + (tot.counts[t] || 0), 0);
 const GOAL_TESTS = {

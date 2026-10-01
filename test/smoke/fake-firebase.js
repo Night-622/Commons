@@ -10,9 +10,6 @@ const ctl = (window.__fakeFb = window.__fakeFb || { failSaves: null, saves: 0 })
 const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
 let store = load();
 store.docs ||= {};
-// admin.html's only use of this (raw Firestore calls) isn't exercised by these tests; exported just to
-// match the real firebase.js's exports (checked below).
-export const db = null;
 const persist = () => { localStorage.setItem(KEY, JSON.stringify(store)); fire(); };
 const TIME_KEYS = ['createdAt', 'updatedAt', 'endedAt', 'at'];
 const ts = (ms) => ({ toMillis: () => ms, toDate: () => new Date(ms), seconds: Math.floor(ms / 1000) });
@@ -67,6 +64,14 @@ export async function resetPassword(email) {
 }
 export const signOutUser = async () => setUser(null);
 export async function checkBanned(uid) { return !!get(`banned/${uid}`); }
+export async function checkAdmin(uid) { return !!get(`admins/${uid}`); }
+export async function loadModeration(kind, world) {
+  const col = kind === 'chat' ? `worlds/${world || 'main'}/chat` : kind;
+  return under(col).sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0)).map((d) => ({ ...d, path: `${col}/${d.id}` }));
+}
+export async function markHandled(path) { merge(path, { status: 'done' }); persist(); }
+export async function adminDelete(path) { del(path); persist(); }
+export async function setBanned(uid, on, by = '') { if (on) set(`banned/${uid}`, { at: now(), by }); else del(`banned/${uid}`); persist(); }
 export async function upgradeWithEmail(email) { setUser({ ...store.user, isAnonymous: false, email }); }
 export async function upgradeWithGoogle() { setUser({ ...store.user, isAnonymous: false, email: 'google@example.com' }); }
 export const setDisplayName = async (name) => { store.user = { ...store.user, displayName: name }; persist(); };
