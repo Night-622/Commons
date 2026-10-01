@@ -311,3 +311,15 @@ main"):
          so admin.html can actually be tested at all. Worth deploying
          rules again only if you skipped 2.19's deploy; nothing new
          here needs it.
+   2.21  Resources in a city's Inspect panel are now one input per
+         resource, prefilled with the real amount, instead of just a
+         read-only line and a single "fill everything to capacity"
+         button - "Save these amounts" writes exactly what's typed,
+         including setting something lower than it already is, which
+         Fill never could. Mood works the same way now too: a "Set
+         mood" field takes any 0-100%, alongside the existing "+20%
+         boost" button. Setting mood also sets every resident's own
+         mood to match, not just the city-wide number - daily() only
+         ever nudges happiness a quarter of the way towards the
+         population's real average each day, so without that it
+         would have drifted straight back. No firestore.rules change.

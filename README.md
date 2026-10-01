@@ -21,6 +21,12 @@ Guests can turn their guest city into a full account later (Account menu). Linki
 - Saves are split: `plots/{id}` is a small public summary everyone listens to; `plotState/{id}` holds the full city and is only fetched for adjacent neighbours.
 - `node test/balance.mjs` runs a scripted city for 100 days.
 
+## New in 2.21: exact resource and mood control, not just fill/boost
+
+- **Every resource gets its own input** in the Inspect panel, prefilled with the city's real amount - "Save these amounts" writes exactly what's there, which is the only way to set a resource *below* what it already has (the "Fill all to capacity" button from 2.20 is still there as a one-click shortcut, just no longer the only option).
+- **Mood works the same way**: a "Set to N%" field plus button, next to the existing "+20% boost". Setting it writes both `s.happiness` *and* every resident's own `p.m` - `daily()` (`public/js/sim.js`) only ever moves `s.happiness` a quarter of the way toward the population's real average each day, so setting just the city-wide number would have drifted back within a day or two.
+- No firestore.rules change - same `editState` → `fb.savePlot` path as every other city edit.
+
 ## New in 2.20: a real Cities dashboard, disasters, and admin.html's first test coverage
 
 - **Cities is now a dashboard, not a flat list**: a status line (`N cities · M live now · K inactive · J fallen`), a filter (All/Live/Inactive/Fallen - "live" means saved within `ACTIVE_MS` = 5 minutes), search, and sort (most recently active / most money / biggest population / name). Each card stays compact until you click **Inspect**.

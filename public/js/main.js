@@ -3295,7 +3295,7 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 2.20';
+const VERSION = 'Commons 2.21';
 const CHANGELOG = [
   ['2.18', [
     'Every account and every city was wiped at the project owner\'s request: a clean slate for everyone. Sign in again - guest, email or Google, it makes a fresh account either way - and found a new city.',

@@ -160,12 +160,21 @@ function cityDetail(c) {
   const s = details.get(c.id);
   if (s === undefined) return '<p class="soft">Loading…</p>';
   if (!s) return '<p class="soft">Couldn’t load this city’s save.</p>';
-  const res = Object.keys(RES).map((k) => `${esc(RES[k].name)}: ${Math.floor(s.res?.[k] || 0)}`).join(' · ');
   const news = (s.log || []).slice(-8).reverse().map((n) => `<div class="meta">Day ${esc(n.d)}: ${esc(n.t)}</div>`).join('') || '<p class="soft">No recent news.</p>';
   return `<div class="detail">
-    <div class="row"><b>${esc(HALL_LEVELS[sim.hallLevel(s)]?.name || 'City')}</b> · mood ${Math.round((s.happiness || 0) * 100)}% · ${(s.tech || []).length} technologies · ${sim.troopCount(s)} troops, defence ${Math.round(sim.defenseRating(s))}</div>
-    <div class="row"><b>Resources</b></div>
-    <div class="meta">${res || 'none'}</div>
+    <div class="row"><b>${esc(HALL_LEVELS[sim.hallLevel(s)]?.name || 'City')}</b> · ${(s.tech || []).length} technologies · ${sim.troopCount(s)} troops, defence ${Math.round(sim.defenseRating(s))}</div>
+    <div class="row">
+      <b>Resources</b>
+      <button class="btn" data-fillres="${c.id}">Fill all to capacity</button>
+      <button class="btn" data-saveres="${c.id}">Save these amounts</button>
+    </div>
+    <div class="row">${Object.keys(RES).map((k) => `<label>${esc(RES[k].name)} <input type="number" min="0" value="${Math.floor(s.res?.[k] || 0)}" data-res="${c.id}" data-reskey="${k}"></label>`).join('')}</div>
+    <div class="row">
+      <b>Mood</b>
+      <label>Set to <input type="number" min="0" max="100" value="${Math.round((s.happiness || 0) * 100)}" data-mood="${c.id}">%</label>
+      <button class="btn" data-setmood="${c.id}">Set mood</button>
+      <button class="btn" data-boostmood="${c.id}">+20% boost</button>
+    </div>
     <div class="row">
       <b>Policy</b>
       <label>Tax <input type="number" step="0.05" min="0.8" max="1.3" value="${s.policy?.tax ?? 1}" data-tax="${c.id}"></label>
@@ -174,12 +183,10 @@ function cityDetail(c) {
       <button class="btn" data-savepolicy="${c.id}">Save policy</button>
     </div>
     <div class="row">
-      <b>Money &amp; mood</b>
+      <b>Money</b>
       <input type="number" placeholder="Amount" data-amt="${c.id}">
       <button class="btn" data-addmoney="${c.id}">Add money</button>
       <button class="btn" data-removemoney="${c.id}">Remove money</button>
-      <button class="btn" data-fillres="${c.id}">Fill resources</button>
-      <button class="btn" data-boostmood="${c.id}">Boost morale</button>
     </div>
     <div class="row">
       <b>Rename</b>
@@ -208,7 +215,9 @@ function wireCityControls() {
   $('list').querySelectorAll('[data-addmoney]').forEach((b) => { b.onclick = () => adjustMoney(b.dataset.addmoney, 1); });
   $('list').querySelectorAll('[data-removemoney]').forEach((b) => { b.onclick = () => adjustMoney(b.dataset.removemoney, -1); });
   $('list').querySelectorAll('[data-fillres]').forEach((b) => { b.onclick = () => fillResources(b.dataset.fillres); });
+  $('list').querySelectorAll('[data-saveres]').forEach((b) => { b.onclick = () => saveResources(b.dataset.saveres); });
   $('list').querySelectorAll('[data-boostmood]').forEach((b) => { b.onclick = () => boostMood(b.dataset.boostmood); });
+  $('list').querySelectorAll('[data-setmood]').forEach((b) => { b.onclick = () => setMood(b.dataset.setmood); });
   $('list').querySelectorAll('[data-savepolicy]').forEach((b) => { b.onclick = () => savePolicy(b.dataset.savepolicy); });
   $('list').querySelectorAll('[data-disaster]').forEach((b) => { b.onclick = () => triggerDisaster(b.dataset.disaster, b.dataset.kind); });
 }
@@ -246,8 +255,27 @@ function adjustMoney(plotId, sign) {
 function fillResources(plotId) {
   editState(plotId, (s) => { const cap = sim.storeCap(s); for (const k of Object.keys(RES)) s.res[k] = cap; });
 }
+// Each resource's own input, exactly as typed - unlike fillResources, this can also set a resource to
+// anything, including below what's there now, not just top it up to capacity.
+function saveResources(plotId) {
+  const values = {};
+  for (const el of document.querySelectorAll(`[data-res="${plotId}"]`)) {
+    const v = Number(el.value);
+    if (Number.isFinite(v) && v >= 0) values[el.dataset.reskey] = v;
+  }
+  editState(plotId, (s) => { s.res = { ...s.res, ...values }; });
+}
 function boostMood(plotId) {
   editState(plotId, (s) => { for (const p of s.people) p.m = Math.min(1, p.m + 0.2); });
+}
+// Unlike boostMood, this sets an exact level and sticks: daily() only ever nudges s.happiness a quarter
+// of the way toward the population's average mood each day, so without also setting every resident's own
+// mood, a direct s.happiness assignment would just drift back to wherever it already was.
+function setMood(plotId) {
+  const pct = Number(qs(`[data-mood="${plotId}"]`).value);
+  if (!Number.isFinite(pct) || pct < 0 || pct > 100) { $('msg').textContent = 'Enter a mood between 0 and 100 first.'; return; }
+  const v = pct / 100;
+  editState(plotId, (s) => { s.happiness = v; for (const p of s.people) p.m = v; });
 }
 function savePolicy(plotId) {
   const tax = Number(qs(`[data-tax="${plotId}"]`).value), funding = Number(qs(`[data-funding="${plotId}"]`).value), transit = qs(`[data-transit="${plotId}"]`).checked;

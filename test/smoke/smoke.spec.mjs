@@ -691,8 +691,9 @@ test('admin: sign in, inspect a city, edit money, trigger a disaster, ban and un
     db.docs[`admins/${u}`] = { name: 'test admin' };
     localStorage.setItem('fakefb', JSON.stringify(db));
   }, uid);
-  const money = (id) => page.evaluate((i) => JSON.parse(JSON.parse(localStorage.getItem('fakefb')).docs[`plotState/${i}`].state).money, id);
-  const blackout = (id) => page.evaluate((i) => JSON.parse(JSON.parse(localStorage.getItem('fakefb')).docs[`plotState/${i}`].state).flags?.blackout, id);
+  const stateOf = (id) => page.evaluate((i) => JSON.parse(JSON.parse(localStorage.getItem('fakefb')).docs[`plotState/${i}`].state), id);
+  const money = (id) => stateOf(id).then((s) => s.money);
+  const blackout = (id) => stateOf(id).then((s) => s.flags?.blackout);
   const isBanned = (u) => page.evaluate((x) => !!JSON.parse(localStorage.getItem('fakefb')).docs[`banned/${x}`], u);
 
   await page.goto('/admin.html');
@@ -709,6 +710,14 @@ test('admin: sign in, inspect a city, edit money, trigger a disaster, ban and un
   await page.locator('[data-amt]').fill('500');
   await page.locator('[data-addmoney]').click();
   await expect.poll(() => money(plotId)).toBe(before + 500);
+
+  await page.locator('[data-reskey="wood"]').fill('777');
+  await page.locator('[data-saveres]').click();
+  await expect.poll(() => stateOf(plotId).then((s) => s.res.wood)).toBe(777);
+
+  await page.locator('[data-mood]').fill('42');
+  await page.locator('[data-setmood]').click();
+  await expect.poll(() => stateOf(plotId).then((s) => Math.round(s.happiness * 100))).toBe(42);
 
   await page.locator('[data-disaster][data-kind="blackout"]').click();
   await expect.poll(() => blackout(plotId)).toBe(1);
