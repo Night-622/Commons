@@ -1998,9 +1998,9 @@ export function plan(s, rng = Math.random) {
   const kids = s.people.filter((p) => p.a < ADULT);
   const pollution = new Set(), parks = new Set(), police = new Set();
   for (const [h] of byHome) {
-    if (all((d) => !!d.pollution).some((f) => dist1(f, h) <= (B[s.grid[f]].pollution >= 2 ? 3 : 1))) pollution.add(h);
-    if ((byType.get(T.PARK) || []).some((f) => dist1(f, h) <= 3)) parks.add(h);
-    if ((byType.get(T.POLICE) || []).some((f) => staffing(s, f) > 0 && dist1(f, h) <= B[T.POLICE].radius)) police.add(h);
+    if (all((d) => !!d.pollution).some((f) => councilDist1(s, f, h) <= (B[s.grid[f]].pollution >= 2 ? 3 : 1))) pollution.add(h);
+    if ((byType.get(T.PARK) || []).some((f) => councilDist1(s, f, h) <= 3)) parks.add(h);
+    if ((byType.get(T.POLICE) || []).some((f) => staffing(s, f) > 0 && councilDist1(s, f, h) <= B[T.POLICE].radius)) police.add(h);
   }
   const homes = totals(s, uc).homes, pop = s.people.length;
   const sick = s.people.filter((p) => p.ill);
@@ -2049,7 +2049,7 @@ export function plan(s, rng = Math.random) {
   const pets = new Set();
   for (const [h, m] of byHome) if (hasPet(s, m)) pets.add(h);
   const vets = byType.get(T.VET) || [];
-  const vetFor = new Set([...pets].filter((h) => vets.some((v) => staffing(s, v) > 0 && dist1(v, h) <= B[T.VET].radius)));
+  const vetFor = new Set([...pets].filter((h) => vets.some((v) => staffing(s, v) > 0 && councilDist1(s, v, h) <= B[T.VET].radius)));
   const p = {
     value, pets, vetFor, waste: ws,
     load, cap, trips, needs, careFor, shopFor, pollution, parks, police, byHome, served,
@@ -2425,7 +2425,7 @@ function daily(s, plan, rng) {
   // Growing up and learning. Tutors and libraries speed it up.
   const birthday = s.day % YEAR_DAYS === YEAR_DAYS - 1;
   const libraries = s.grid.map((t, i) => (t === T.LIBRARY && active(s, i, uc) && staffing(s, i) > 0 ? i : -1)).filter((i) => i >= 0);
-  const libraryNear = (h) => libraries.some((l) => dist1(l, h) <= 8);
+  const libraryNear = (h) => libraries.some((l) => councilDist1(s, l, h) <= 8);
   for (const p of s.people) {
     if (birthday) p.a++;
     // Children without a school place learn at home: slower and less certain, better with a library nearby.
@@ -2797,7 +2797,7 @@ function daily(s, plan, rng) {
   st.cars = carTrips;
   st.commuters = s.people.filter((p) => p.oj).length;
   // Residents ask for things. Build what they ask for near their home in time and they'll thank you.
-  const near = (h, t, r) => s.grid.some((g, i) => g === t && active(s, i, uc) && dist1(i, h) <= r);
+  const near = (h, t, r) => s.grid.some((g, i) => g === t && active(s, i, uc) && councilDist1(s, i, h) <= r);
   s.wants = (s.wants || []).filter((w) => {
     const p = s.people.find((x) => x.i === w.p);
     if (!p) return false;
@@ -2965,11 +2965,17 @@ function daily(s, plan, rng) {
 export function collapse(s, outcome = 'collapsed') {
   const record = { name: s.name, cityNo: s.cityNo, peakPop: s.peakPop, daysSurvived: s.day, outcome };
   s.fallen = record;
-  for (let i = 0; i < N; i++) {
-    if (s.grid[i] !== T.EMPTY) { s.grid[i] = T.RUBBLE; s.cond[i] = 0; }
-    s.lv[i] = 1;
+  // Every suburb falls, reset directly on each one's own real storage - for a combined view,
+  // s.queue/batches/lease are live Proxies over each suburb's own objects, so Object.assign-ing a
+  // plain {} onto s would just disconnect the temporary view, not clear the real suburbs.
+  for (const { ref: su } of s._council.suburbs) {
+    for (let i = 0; i < N; i++) {
+      if (su.grid[i] !== T.EMPTY) { su.grid[i] = T.RUBBLE; su.cond[i] = 0; }
+      su.lv[i] = 1;
+    }
+    Object.assign(su, { queue: [], batches: {}, lease: {} });
   }
-  Object.assign(s, { queue: [], people: [], status: 'ruins', happiness: 0, cases: 0, _plan: null, batches: {}, lease: {}, leasesIn: [], leasesOut: [], savings: 0 });
+  Object.assign(s, { people: [], status: 'ruins', happiness: 0, cases: 0, _plan: null, leasesIn: [], leasesOut: [], savings: 0 });
   return record;
 }
 
@@ -3006,7 +3012,7 @@ const EVENTS = [
 ];
 function built(s) {
   const out = [];
-  for (let i = 0; i < N; i++) {
+  for (let i = 0; i < s.grid.length; i++) {
     const t = s.grid[i];
     if (B[t]?.cat && s.cond[i] > 0 && !s.queue.some((q) => q.i === i && !q.up)) out.push(i);
   }
@@ -3122,7 +3128,7 @@ export function tick(s, rng = Math.random) {
   s.wk = 0;
   // Power and water plants build up a harvest to collect by tapping.
   const ready = (s.ready ||= {});
-  for (let i = 0; i < N; i++) {
+  for (let i = 0; i < s.grid.length; i++) {
     if (!B[s.grid[i]]?.makes || !active(s, i) || !(staffing(s, i) > 0)) { if (ready[i]) delete ready[i]; continue; }
     ready[i] = Math.min(HARVEST.max, (ready[i] || 0) + 1);
   }
@@ -3150,7 +3156,7 @@ export function offer(st) {
   if (st.status !== 'alive') return { fun: 0, care: 0, shop: 0, school: 0, homesFree: 0, happiness: 0 };
   const uc = underConstruction(st);
   let fun = 0, care = 0, shop = 0, school = 0;
-  for (let i = 0; i < N; i++) {
+  for (let i = 0; i < st.grid.length; i++) {
     if (!active(st, i, uc)) continue;
     const d = B[st.grid[i]], k = staffing(st, i);
     if (d.visits) fun += capacity(st, i, 'visits') * k;
@@ -3172,7 +3178,7 @@ export function welcome(s, people, from) {
   const homes = new Map();
   for (const p of s.people) homes.set(p.h, (homes.get(p.h) || 0) + 1);
   let home = -1;
-  for (let i = 0; i < N; i++) if (isHome(s.grid[i]) && active(s, i) && homeCap(s, i) - (homes.get(i) || 0) >= people.length) { home = i; break; }
+  for (let i = 0; i < s.grid.length; i++) if (isHome(s.grid[i]) && active(s, i) && homeCap(s, i) - (homes.get(i) || 0) >= people.length) { home = i; break; }
   if (home < 0 || s.status !== 'alive') return 0;
   const made = people.map((o) => person(s, { f: o.f, l: o.l, a: o.a, e: o.e, sp: o.sp, hp: o.hp ?? 100, m: Math.max(0.55, o.m ?? 0.6), h: home }));
   const adults = made.filter((p) => p.a >= ADULT);
@@ -3202,7 +3208,7 @@ export function advice(s, plan) {
   if (s.unpaidDays) add(10, 'You can’t pay upkeep. Raise tax a little, cut service funding, or demolish what nobody uses.', null);
   // Buildings with no staff still cost upkeep; that's the usual reason a young town slides into debt.
   let idle = 0;
-  for (let i = 0; i < N; i++) { const d = B[s.grid[i]]; if (d?.jobs && d.cat && s.grid[i] !== T.HALL && active(s, i) && staffing(s, i) === 0) idle++; }
+  for (let i = 0; i < s.grid.length; i++) { const d = B[s.grid[i]]; if (d?.jobs && d.cat && s.grid[i] !== T.HALL && active(s, i) && staffing(s, i) === 0) idle++; }
   if ((s.stats.income || 0) < (s.stats.upkeep || 0)) {
     if (idle) add(6.5, `You’re losing money, and ${idle} building${idle > 1 ? 's have' : ' has'} no staff but still cost upkeep. Grow the town before building more, or demolish what nobody works at.`, T.HOUSE);
     else if (c.seeking > 4) add(6, 'You’re losing money. People want work: a factory hires anyone and sells goods.', T.FACTORY);
@@ -3225,7 +3231,7 @@ export function advice(s, plan) {
   if (rsd?.importCost >= 8 && s.people.length >= 30) add(2.5, `Imported food costs ${'$'}${rsd.importCost} a day. A farm or greenhouse grows it here, and more kinds of food make people happier.`, T.FARM);
   {
     let idlePicks = 0, ready = 0;
-    for (let i = 0; i < N; i++) {
+    for (let i = 0; i < s.grid.length; i++) {
       if (!picksAt(s, i) || !active(s, i) || !(staffing(s, i) > 0)) continue;
       if (batchReady(s, i)) ready++;
       else if (!s.batches?.[i]) idlePicks++;
