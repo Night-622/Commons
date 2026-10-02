@@ -346,3 +346,19 @@ main"):
          (found a 2nd city, opened it, switched back to the 1st) and
          passes. If it happens again, get the exact error text and
          what was clicked - there's nothing to fix without that.
+   2.24  Found the real bug behind "can't edit my own city" with a
+         screenshot: it wasn't switchCity() at all - it was that
+         tapping a second city of your own council, without having
+         gone through Account > Cities first, showed otherPlot()'s
+         read-only stranger's-city panel (Like this city, Guestbook,
+         send a gift...), because that panel only ever checked
+         "p.owner === user.uid" to decide whether to show owner-only
+         actions, never to offer the one action that actually matters
+         there: switching to it. Now it does, as a new "Switch to
+         this city" button (data-do="switchcity" -> switchCity(arg)
+         in main.js). New smoke test ("a second city can also be
+         switched to straight from the map...") buys a second city,
+         declines to open it, reloads (so it's not just in-memory
+         state from the buy), then finds and switches to it purely
+         from the map. No firestore.rules change - switchCity() was
+         already fully permitted, just unreachable from here.

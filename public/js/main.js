@@ -2890,6 +2890,7 @@ function inspectorAction(what, arg) {
   else if (what === 'follow') { follow(+arg); return; }
   else if (what === 'home') { const { x, y } = sim.xy(+arg); select({ px: me.px, py: me.py, tx: x, ty: y, i: +arg }); goTo(me.px, me.py, x, y, 18); return; }
   else if (what === 'moveto') { confirmMove(arg); return; }
+  else if (what === 'switchcity') { switchCity(arg); return; }
   renderDrawer();
 }
 // A summary for the auto-fill button: what got filled, and why anyone left over is still jobless.
@@ -3198,7 +3199,8 @@ function otherPlot(h) {
   return `<h2>${esc(p.name)}</h2>${badges.length ? `<p class="badges">${badges.map((b) => `<span class="badge b-${b.id}">${b.name}</span>`).join('')}</p>` : ''}<p class="soft">Mayor ${esc(p.ownerName)}. Running for ${p.day} day${p.day === 1 ? '' : 's'}${p.cityNo > 1 ? `, city number ${p.cityNo} on this plot` : ''}.</p>
     <p class="${idle ? 'warn' : 'good-t'} small">${idle ? `Last active ${ago(p.active)}. Paused until the mayor returns, so it isn't sharing facilities.` : 'Active now'}</p>
     <div class="likes" id="likes" data-plot="${p.id}"></div>
-    ${p.owner && p.owner !== user.uid && state.status === 'alive' ? `<div class="actions"><button class="btn" type="button" data-gift="${p.id}">${icon('i-coin')}Send a gift</button>${friends().some((f) => f.uid === p.owner) ? '' : `<button class="btn" type="button" data-do="friend" data-arg="${p.id}">${icon('i-people')}Add ${esc(p.ownerName)} as a friend</button>`}<button class="btn" type="button" data-do="dm" data-arg="${p.id}">${icon('i-chat')}Message ${esc(p.ownerName)}</button></div>` : ''}
+    ${p.owner === user.uid ? `<div class="actions"><button class="btn primary" type="button" data-do="switchcity" data-arg="${p.id}">${icon('i-flag')}Switch to this city</button></div><p class="soft small">Another city of your council. Only one loads at a time - switching saves ${esc(state.name)} first.</p>`
+      : p.owner && state.status === 'alive' ? `<div class="actions"><button class="btn" type="button" data-gift="${p.id}">${icon('i-coin')}Send a gift</button>${friends().some((f) => f.uid === p.owner) ? '' : `<button class="btn" type="button" data-do="friend" data-arg="${p.id}">${icon('i-people')}Add ${esc(p.ownerName)} as a friend</button>`}<button class="btn" type="button" data-do="dm" data-arg="${p.id}">${icon('i-chat')}Message ${esc(p.ownerName)}</button></div>` : ''}
     ${t && B[t] ? `<p class="soft small">You tapped their ${B[t].name.toLowerCase()}.</p>` : ''}
     ${row('People', p.pop)}${row('Peak', p.peakPop)}${row('Days running', p.day)}${meter('Mood', p.happiness || 0)}
     ${n ? row('Road links with you', n.links || 'None yet') : ''}
@@ -3308,8 +3310,11 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 2.23';
+const VERSION = 'Commons 2.24';
 const CHANGELOG = [
+  ['2.24', [
+    'Fixed a real bug: tapping another city of your own council (one you own but aren\'t currently playing) showed it like a stranger\'s, with no way to actually get into it - you had to know to go through Account, Cities instead. It now offers "Switch to this city" right there.',
+  ]],
   ['2.23', [
     'Hovering or stepping the keyboard cursor onto another city - a neighbour\'s, or anyone else\'s on the map - now pops up its name at the top of the screen, so you always know whose land you\'re looking at.',
   ]],

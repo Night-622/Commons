@@ -387,6 +387,41 @@ test('council: buy the plot next door and switch between cities', async ({ page 
   expect(clean(errors)).toEqual([]);
 });
 
+test('council: a second city can also be switched to straight from the map, not just Account > Cities', async ({ page }) => {
+  const errors = await newGame(page);
+  await unlockAll(page);
+  await page.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plotState/')) { const s = JSON.parse(v.state); s.money = 5000; v.state = JSON.stringify(s); } for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plots/')) v.money = 5000; localStorage.setItem('fakefb', JSON.stringify(db)); });
+  await page.reload();
+  await expect(page.locator('#game')).toBeVisible();
+  await closeModal(page);
+  await page.locator('#map').focus();
+  await page.keyboard.press('e');
+  for (let k = 0; k < 14; k++) await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#drawer [data-do="buyplot"]')).toBeVisible();
+  await page.locator('#buy-name').fill('Eastfield');
+  await page.locator('#drawer [data-do="buyplot"]').click();
+  await expect(page.locator('#modal[open]')).toContainText('Eastfield is founded');
+  // Decline to open it - stay on the original city, the way someone just scouting out the new land would.
+  await closeModal(page);
+  await expect(page.locator('#city-name')).toContainText('Testhaven');
+  // A fresh load, same as actually coming back to the game later: confirms this isn't just leftover
+  // in-memory state from the buy, but something that holds up once Eastfield is real, loaded data.
+  await page.reload();
+  await expect(page.locator('#game')).toBeVisible();
+  await closeModal(page);
+  await expect(page.locator('#city-name')).toContainText('Testhaven');
+  await page.locator('#map').focus();
+  await page.keyboard.press('e');
+  for (let k = 0; k < 14; k++) await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#drawer')).toContainText('Eastfield');
+  await expect(page.locator('#drawer [data-do="switchcity"]')).toBeVisible();
+  await page.locator('#drawer [data-do="switchcity"]').click();
+  await expect(page.locator('#city-name')).toContainText('Eastfield', { timeout: 20_000 });
+  expect(clean(errors)).toEqual([]);
+});
+
 test('co-mayors: befriend a neighbour, make them co-mayor, watch and take the desk', async ({ browser }) => {
   test.setTimeout(120_000);
   const ctx = await browser.newContext();

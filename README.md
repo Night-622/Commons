@@ -21,6 +21,13 @@ Guests can turn their guest city into a full account later (Account menu). Linki
 - Saves are split: `plots/{id}` is a small public summary everyone listens to; `plotState/{id}` holds the full city and is only fetched for adjacent neighbours.
 - `node test/balance.mjs` runs a scripted city for 100 days.
 
+## New in 2.24: the real "can't edit my own city" bug, found from a screenshot
+
+- **Root cause**: `otherPlot(h)` (main.js) builds the drawer panel for any tile that isn't part of your *currently loaded* city - including a second city of your own council, before you've gone through Account > Cities to open it. It only ever checked `p.owner !== user.uid` to decide whether to show the stranger's-city actions (gift/friend/message); when the plot *was* yours, none of that showed, and nothing replaced it - just a read-only People/Peak/Mood/Guestbook panel with no way in. 2.23's "couldn't reproduce" conclusion was about `switchCity()` itself, which was never actually broken; this is a different gap, one level up, that a screenshot made obvious once I had it.
+- **Fix**: a `p.owner === user.uid` branch now renders a primary "Switch to this city" button (`data-do="switchcity"` → `switchCity(arg)`), instead of falling through to the stranger's-city block or nothing at all.
+- **New smoke test**: buys a second city, explicitly declines to open it (stays on the original), reloads the page so it's working from real persisted data rather than in-memory buy-flow state, then navigates there purely via the map and switches in - the exact path the bug report's screenshot showed, not just the "open immediately after buying" path the existing council test already covered.
+- No firestore.rules change - `switchCity()`/`fb.setHome()` were already fully permitted; they just weren't reachable from this screen.
+
 ## New in 2.23: whose city is this? - a name pops up as you look around
 
 - **New `#hover-city` element** (`public/index.html`, styled in `styles.css` with the same `:empty { display: none }` auto-hide trick as `.objective`): shows the name of whatever city is under the cursor, mouse or keyboard, whenever it isn't your own (your own is already always on screen via `#city-name`).
