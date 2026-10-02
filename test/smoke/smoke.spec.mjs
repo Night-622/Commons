@@ -353,7 +353,7 @@ test('world: neighbours touch, with borders', async ({ browser }) => {
   await b.waitForTimeout(800);
   if (process.env.SHOTS) await b.screenshot({ path: `${process.env.SHOTS}/world-borders.png` });
   const plots = await b.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('fakefb')).docs).filter((k) => k.startsWith('plots/')));
-  expect(plots).toEqual(expect.arrayContaining([expect.stringMatching(/^plots\/s5_/)]));
+  expect(plots).toEqual(expect.arrayContaining([expect.stringMatching(new RegExp(`^plots/${WORLD_ID}_`))]));
   expect(plots.length).toBe(2);
   expect(clean(errors)).toEqual([]);
   await ctx.close();
@@ -375,7 +375,7 @@ test('council: buy the plot next door and switch between cities', async ({ page 
   if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/buy-plot.png` });
   await page.locator('#buy-name').fill('Eastfield');
   await page.locator('#drawer [data-do="buyplot"]').click();
-  await expect(page.locator('#modal[open]')).toContainText('Eastfield is founded');
+  await expect(page.locator('#modal[open]')).toContainText('Eastfield is yours');
   await page.locator('#open-new').click();
   await expect(page.locator('#city-name')).toContainText('Eastfield', { timeout: 20_000 });
   await closeModal(page);
@@ -401,7 +401,7 @@ test('council: a second city can also be switched to straight from the map, not 
   await expect(page.locator('#drawer [data-do="buyplot"]')).toBeVisible();
   await page.locator('#buy-name').fill('Eastfield');
   await page.locator('#drawer [data-do="buyplot"]').click();
-  await expect(page.locator('#modal[open]')).toContainText('Eastfield is founded');
+  await expect(page.locator('#modal[open]')).toContainText('Eastfield is yours');
   // Decline to open it - stay on the original city, the way someone just scouting out the new land would.
   await closeModal(page);
   await expect(page.locator('#city-name')).toContainText('Testhaven');
@@ -491,7 +491,7 @@ test('giving a city away: offered, declined, offered again, accepted', async ({ 
   await a.keyboard.press('Enter');
   await a.locator('#buy-name').fill('Eastfield');
   await a.locator('#drawer [data-do="buyplot"]').click();
-  await expect(a.locator('#modal[open]')).toContainText('Eastfield is founded');
+  await expect(a.locator('#modal[open]')).toContainText('Eastfield is yours');
   await closeModal(a);
   // Nia founds her own city in another tab.
   await a.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); db.user = null; localStorage.setItem('fakefb', JSON.stringify(db)); });

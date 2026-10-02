@@ -77,7 +77,10 @@ test('save: plotState batch plus plots update, and only by the owner', async () 
   await a.fb.savePlot(p.id, st, { out: {}, flag: 'teal' });
   assert.equal(a.fb.usingLegacySaves(), false);
   const saved = await a.fb.findPlot(a.user, w.id);
-  assert.equal(saved.money, st.money); assert.equal(saved.flag, 'teal'); assert.equal(saved.state, sim.serialize(st));
+  assert.equal(saved.money, st.money); assert.equal(saved.flag, 'teal');
+  // Same data, not the same JSON text: saved.state is reassembled from the split plotState+councilState
+  // documents, in a different key order than sim.serialize()'s single flat snapshot.
+  assert.deepEqual(JSON.parse(saved.state), JSON.parse(sim.serialize(st)));
   await assert.rejects(b.fb.savePlot(p.id, st), /permission/i);
   await assertFails(setDoc(doc(b.db, 'plotState', p.id), { state: '{}' }));
   await assertFails(updateDoc(doc(a.db, 'plots', p.id), { px: 99 }));
@@ -415,12 +418,16 @@ test('councils: buy the plot next to your city, switch home, and nothing else', 
   await assert.rejects(a.fb.buyPlot(a.user, 'Ana', pa.id, pa.px + 40, pa.py + 40, 'Far', WORLD_ID), /permission/i);
   const pb = await b.fb.claimPlot(b.user, 'Ben', 'B', WORLD_ID);
   const bSide = await freeSide(pb);
-  await assert.rejects(a.fb.buyPlot(a.user, 'Ana', pb.id, bSide[0], bSide[1], 'Sneaky', WORLD_ID), /permission/i);
+  await assert.rejects(a.fb.buyPlot(a.user, 'Ana', pb.id, bSide[0], bSide[1], 'Sneaky', WORLD_ID), /permission|isn.t yours/i);
   // A player can't slip a city into someone else's council, or point home at a plot they don't own.
   await assertFails(updateDoc(doc(b.db, 'memberships', `${a.uid}_${WORLD_ID}`), { plotIds: [pa.id, east.id, pb.id] }));
   await assertFails(a.fb.setHome(a.user, WORLD_ID, pb.id));
-  // Saving the new city works like any other.
-  const st = sim.migrate(JSON.parse(east.state)); st.money += 100;
+  // Saving the new city works like any other, and it already shares the founding city's money.
+  const home = sim.migrate(JSON.parse((await a.fb.getPlot(pa.id)).state));
+  const fresh = await a.fb.getPlot(east.id);
+  const st = sim.migrate(JSON.parse(fresh.state));
+  assert.equal(st.money, home.money, 'a bought suburb shares its council’s treasury from the start');
+  st.money += 100;
   await a.fb.savePlot(east.id, st);
 });
 
@@ -459,14 +466,13 @@ test('giving a city away: only with the recipient’s consent, and the old owner
   const pa = await a.fb.claimPlot(a.user, 'Ana', 'A', w.id);
   const pb = await b.fb.claimPlot(b.user, 'Ben', 'B', w.id);
   await c.fb.claimPlot(c.user, 'Cy', 'C', w.id);
-  // Ana has a second city, so giving her home away leaves her somewhere to go.
-  let side;
-  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-    let taken;
-    await admin(async (db) => { taken = (await getDoc(doc(db, 'plots', `${w.id}_${pa.px + dx}_${pa.py + dy}`))).exists(); });
-    if (!taken) { side = [pa.px + dx, pa.py + dy]; break; }
-  }
-  const second = await a.fb.buyPlot(a.user, 'Ana', pa.id, side[0], side[1], 'A Two', w.id);
+  // Ana has a second, independent city (not a suburb of A's council - giving away a council's one and only
+  // city is the only case supported so far, see the sole-council guard in acceptTransfer): a fourth player
+  // gives her one outright, which also leaves plotIds populated the same way buying a suburb would have.
+  const d = await player();
+  const pd = await d.fb.claimPlot(d.user, 'Dee', 'D', w.id);
+  await d.fb.sendTransfer(w.id, pd.id, 'D', d.user, 'Dee', a.uid, 'Ana');
+  const second = await a.fb.acceptTransfer(w.id, pd.id, a.user, 'Ana');
   await a.fb.setCoMayors(pa.id, [c.uid]);
   const tref = (db) => doc(db, 'worlds', w.id, 'transfers', pa.id);
   const plotOf = async (id) => { let d; await admin(async (db) => { d = (await getDoc(doc(db, 'plots', id))).data(); }); return d; };

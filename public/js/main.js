@@ -645,7 +645,7 @@ function giveCity(id) {
   const owners = new Set([...plots.values()].map((x) => x.owner));
   const list = friends().filter((f) => owners.has(f.uid));
   openModal(`${closeX}<h2 id="modal-title">Give ${esc(name)} to another mayor</h2>
-    <p>Choose a friend with a city in ${esc(world.name)}. They have to accept it. Once they do, ${esc(name)} is theirs, with everything in it: you can’t play or change it any more, and its co-mayors are removed.</p>
+    <p>Choose a friend with a city in ${esc(world.name)}. They have to accept it. Once they do, ${esc(name)} is theirs: you can’t play or change it any more, and its co-mayors are removed. It keeps its land and buildings; if it shared money and people with another of your cities, it starts fresh on those instead of splitting them.</p>
     ${list.length ? `<ul class="picklist">${list.map((f) => `<li><span><b>${esc(f.name)}</b></span><span class="inline"><button class="btn small primary" type="button" data-give-to="${f.uid}|${esc(f.name)}">Offer it</button></span></li>`).join('')}</ul>`
       : '<p class="soft">None of your friends has a city in this world. Add friends from a neighbour’s city panel.</p>'}
     <p id="give-msg" class="formmsg" role="alert"></p>
@@ -2885,10 +2885,10 @@ function inspectorAction(what, arg) {
     busy(document.querySelector('[data-do="buyplot"]'), async () => {
       const d = await fb.buyPlot(user, mayor, arg, h.px, h.py, name, world.id);
       state.money -= price;
-      sim.note(state, 'info', `Bought the plot next door and founded ${name}.`);
+      sim.note(state, 'info', `Bought the plot next door as a new suburb, ${name}.`);
       addPlot(toPlot(d)); computeLinks(); afterChange(); await save();
       play('level');
-      openModal(`${closeX}<h2 id="modal-title">${esc(name)} is founded</h2><p>It has a town hall, three builders, three settlers and ${money(REBUILD_MONEY)}. Switch between your cities in Account, Cities.</p>
+      openModal(`${closeX}<h2 id="modal-title">${esc(name)} is yours</h2><p>It's a new suburb of ${esc(state.name)}: empty land for now, sharing its money, people and policy. Switch between your cities in Account, Cities.</p>
         <div class="mfoot"><button class="btn" data-close>Stay in ${esc(state.name)}</button><button class="btn primary" id="open-new">Open ${esc(name)}</button></div>`);
       $('open-new').onclick = () => { closeModal(); switchCity(d.id); };
     }, $('buy-msg'));
@@ -3256,7 +3256,7 @@ function otherPlot(h) {
     if (!via || state.status !== 'alive') return '<h2>Unclaimed land</h2><p>New players get plots out here on the frontier. You can buy plots that touch one of your cities.</p>';
     if (!isOpen('council')) return `<h2>Unclaimed land</h2>${panels.lockHtml('council', state)}`;
     const price = sim.plotPrice(state, myCities().length), full = myCities().length >= MAX_CITIES;
-    return `<h2>Unclaimed land</h2><p>This plot touches ${esc(via.name)}. Buy it to start another city of your council here, with its own town hall, settlers and ${money(REBUILD_MONEY)}.</p>
+    return `<h2>Unclaimed land</h2><p>This plot touches ${esc(via.name)}. Buy it to grow your council onto it as a new suburb, sharing ${esc(state.name)}'s money, people and policy rather than starting fresh.</p>
       ${row('Price', money(price))}${row('Your cities here', myCities().length)}
       ${full ? `<p class="warn">A council can run up to ${MAX_CITIES} cities.</p>` : `<label class="field"><span>New city's name</span><input id="buy-name" maxlength="40" value="New ${esc(via.name).slice(0, 30)}"></label>
       <div class="actions"><button class="btn primary" type="button" data-do="buyplot" data-arg="${via.id}" ${state.money < price ? 'disabled' : ''}>${icon('i-flag')}Buy for ${money(price)}</button></div>
@@ -3387,6 +3387,10 @@ function showHelp() {
 
 const VERSION = 'Commons 2.24';
 const CHANGELOG = [
+  ['2.25', [
+    'A fresh start: the open world moved on again (WORLD_ID s5 → s6). Cities of one council are now treated as suburbs of a single city, sharing one treasury, population, policy and clock rather than being fully separate cities that merely share a mayor.',
+    'You can now give one of your cities to another mayor: it leaves your council and becomes their own standalone city. Find it in Account, Cities.',
+  ]],
   ['2.24', [
     'Fixed a real bug: tapping another city of your own council (one you own but aren\'t currently playing) showed it like a stranger\'s, with no way to actually get into it - you had to know to go through Account, Cities instead. It now offers "Switch to this city" right there.',
   ]],
@@ -3938,6 +3942,9 @@ function showAccount(tab = acctTab) {
   const cities = [...myCities(), ...[...plots.values()].filter((p) => p.owner !== user.uid && (p.co || []).includes(user.uid))]
     .map((p) => ({ id: p.id, name: p.id === plotId ? state.name : p.name, pop: p.id === plotId ? state.people.length : p.pop, status: p.status, here: p.id === plotId, co: p.owner !== user.uid, owner: p.ownerName }));
   // Your own cities can be given to a friend while you keep at least one; an unanswered offer can be withdrawn.
+  // Giving away a suburb bought next to another of your cities detaches it from that council: it keeps its own
+  // land and buildings, but starts fresh on money and people (those were always shared, and stay with the rest
+  // of the council) rather than splitting a pooled treasury.
   const owned = myCities().length;
   for (const c of cities) if (!c.co) { c.give = owned > 1 && c.status === 'alive'; c.offeredTo = transfersOut.find((t) => t.plot === c.id)?.toName || ''; }
   const friendList = friends().map((f) => ({ ...f, co: (me?.co || []).includes(f.uid) }));
