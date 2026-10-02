@@ -1236,7 +1236,7 @@ export const hasPet = (s, members) => members.length > 0 && h32(Math.min(...memb
 export function wasteStatus(s, uc = underConstruction(s)) {
   const pop = s.people.length;
   let waste = 0, sewage = 0;
-  for (let i = 0; i < N; i++) {
+  for (let i = 0; i < s.grid.length; i++) {
     const d = B[s.grid[i]];
     if (!d || !(d.waste || d.sewage) || !active(s, i, uc) || !(staffing(s, i) > 0)) continue;
     if (d.waste) waste += scale(s, i, d.waste);
@@ -1497,7 +1497,7 @@ export function recruit(s, i, k, rng = Math.random) {
   const byHome = new Map();
   for (const p of s.people) byHome.set(p.h, (byHome.get(p.h) || 0) + 1);
   let home = -1;
-  for (let h = 0; h < N; h++) if (isHome(s.grid[h]) && active(s, h) && homeCap(s, h) - (byHome.get(h) || 0) >= 1) { home = h; break; }
+  for (let h = 0; h < s.grid.length; h++) if (isHome(s.grid[h]) && active(s, h) && homeCap(s, h) - (byHome.get(h) || 0) >= 1) { home = h; break; }
   if (home < 0) return { ok: false, reason: 'No home with room for them' };
   s.money -= cost;
   const p = person(s, { f: Math.floor(rng() * FIRST.length), l: Math.floor(rng() * SURNAMES.length), a: 24 + Math.floor(rng() * 20), h: home, e: d.jobs[k][1], sp: 10, j: i, jt: k, lk: 1 });
@@ -1517,14 +1517,14 @@ export function autoFill(s, i = null, { dry = false } = {}) {
   const uc = underConstruction(s);
   if (i != null && !B[s.grid[i]]?.jobs) return { ok: false, reason: 'No jobs here' };
   if (i != null && s.lease?.[i]?.k === 'civ') return { ok: false, reason: 'Leased: its operator hires its own staff' };
-  const buildings = i != null ? [i] : (() => { const out = []; for (let j = 0; j < N; j++) if (B[s.grid[j]]?.jobs && active(s, j, uc) && s.lease?.[j]?.k !== 'civ') out.push(j); return out; })();
+  const buildings = i != null ? [i] : (() => { const out = []; for (let j = 0; j < s.grid.length; j++) if (B[s.grid[j]]?.jobs && active(s, j, uc) && s.lease?.[j]?.k !== 'civ') out.push(j); return out; })();
   const slots = [];
   for (const j of buildings) { const d = B[s.grid[j]]; for (let k = 0; k < d.jobs.length; k++) for (let n = 0; n < openSlot(s, j, k); n++) slots.push({ j, k, need: d.jobs[k][1] }); }
   slots.sort((a, b) => b.need - a.need);
   const walkNet = network(s, uc, false), homeDist = new Map();
   const distTo = (h, j) => {
     let m = homeDist.get(h);
-    if (!m) { m = bfs(walkNet, doorsteps(s, walkNet, h)); homeDist.set(h, m); }
+    if (!m) { m = bfs(s, walkNet, doorsteps(s, walkNet, h)); homeDist.set(h, m); }
     let best = -1;
     for (const d of doorsteps(s, walkNet, j)) if (m.dist[d] >= 0 && (best < 0 || m.dist[d] < best)) best = m.dist[d];
     return best;
@@ -1557,7 +1557,7 @@ export function autoFill(s, i = null, { dry = false } = {}) {
 
 export function totals(s, uc = underConstruction(s)) {
   const t = { homes: 0, jobs: 0, seats: {}, serves: 0, upkeep: 0, roads: 0, counts: {}, upkeepBy: {} };
-  for (let i = 0; i < N; i++) {
+  for (let i = 0; i < s.grid.length; i++) {
     const type = s.grid[i];
     if (type === T.EMPTY || type === T.RUBBLE || uc.has(i)) continue;
     const d = B[type];
@@ -1578,25 +1578,25 @@ export function totals(s, uc = underConstruction(s)) {
 // ---------- the daily plan: who goes where, and how ----------
 
 function network(s, uc, cars) {
-  const ok = new Uint8Array(N);
-  for (let i = 0; i < N; i++) {
+  const ok = new Uint8Array(s.grid.length);
+  for (let i = 0; i < s.grid.length; i++) {
     const t = s.grid[i];
     if (uc.has(i)) continue;
     if (isRoad(t) || t === T.HALL || (!cars && t === T.PATH)) ok[i] = 1;
   }
   return ok;
 }
-function bfs(ok, starts) {
-  const dist = new Int16Array(N).fill(-1), prev = new Int32Array(N).fill(-1);
+function bfs(s, ok, starts) {
+  const dist = new Int16Array(ok.length).fill(-1), prev = new Int32Array(ok.length).fill(-1);
   const q = [];
   for (const st of starts) if (ok[st] && dist[st] < 0) { dist[st] = 0; q.push(st); }
   for (let k = 0; k < q.length; k++) {
     const u = q[k];
-    for (const v of neighbours(u)) if (ok[v] && dist[v] < 0) { dist[v] = dist[u] + 1; prev[v] = u; q.push(v); }
+    for (const v of councilNeighbours(s, u)) if (ok[v] && dist[v] < 0) { dist[v] = dist[u] + 1; prev[v] = u; q.push(v); }
   }
   return { dist, prev };
 }
-const doorsteps = (s, ok, i) => (s.grid[i] === T.HALL ? [i] : neighbours(i).filter((n) => ok[n]));
+const doorsteps = (s, ok, i) => (s.grid[i] === T.HALL ? [i] : councilNeighbours(s, i).filter((n) => ok[n]));
 function route(map, ok, s, to) {
   let best = -1, bd = Infinity;
   for (const d of doorsteps(s, ok, to)) if (map.dist[d] >= 0 && map.dist[d] < bd) { bd = map.dist[d]; best = d; }
@@ -1623,7 +1623,7 @@ export function plan(s, rng = Math.random) {
   const mapFor = (h) => {
     let m = homeMaps.get(h);
     if (!m) {
-      const w = bfs(walkNet, doorsteps(s, walkNet, h)), c = bfs(carNet, doorsteps(s, carNet, h));
+      const w = bfs(s, walkNet, doorsteps(s, walkNet, h)), c = bfs(s, carNet, doorsteps(s, carNet, h));
       const doorD = (map, ok, to) => { let bd = -1; for (const d of doorsteps(s, ok, to)) if (map.dist[d] >= 0 && (bd < 0 || map.dist[d] < bd)) bd = map.dist[d]; return bd; };
       m = { w, c, d: (to) => doorD(w, walkNet, to) };
       homeMaps.set(h, m);
@@ -1768,7 +1768,7 @@ export function plan(s, rng = Math.random) {
   const metroCap = metros.length >= 2 ? metros.reduce((a, i) => a + scale(s, i, B[T.METRO].seats), 0) : 0;
   const within = (h, list, r) => { let best = -1, bd = r + 1; for (const i of list) { const d = mapFor(h).d(i); if (d >= 0 && d < bd) { bd = d; best = i; } } return best; };
   const fromMaps = new Map();
-  const mapFrom = (i) => { let m = fromMaps.get(i); if (!m) { m = { w: bfs(walkNet, doorsteps(s, walkNet, i)), c: bfs(carNet, doorsteps(s, carNet, i)) }; fromMaps.set(i, m); } return m; };
+  const mapFrom = (i) => { let m = fromMaps.get(i); if (!m) { m = { w: bfs(s, walkNet, doorsteps(s, walkNet, i)), c: bfs(s, carNet, doorsteps(s, carNet, i)) }; fromMaps.set(i, m); } return m; };
   const distFrom = (i, to) => { const m = mapFrom(i).w; let bd = -1; for (const d of doorsteps(s, walkNet, to)) if (m.dist[d] >= 0 && (bd < 0 || m.dist[d] < bd)) bd = m.dist[d]; return bd; };
 
   // Out-of-town jobs over links to neighbours: rail links need a station, bus links a bus service.
@@ -1871,7 +1871,7 @@ export function plan(s, rng = Math.random) {
   const riders = { bus: 0, train: 0, metro: 0 }, stopUse = new Map(), railPairs = new Map();
   const railPath = (a, b) => {
     const key = a < b ? `${a}-${b}` : `${b}-${a}`;
-    if (!railPairs.has(key)) { const m = bfs(railNet, [a]); const path = []; for (let v = b; v !== -1; v = m.prev[v]) path.push(v); railPairs.set(key, m.dist[b] >= 0 ? path.reverse() : null); }
+    if (!railPairs.has(key)) { const m = bfs(s, railNet, [a]); const path = []; for (let v = b; v !== -1; v = m.prev[v]) path.push(v); railPairs.set(key, m.dist[b] >= 0 ? path.reverse() : null); }
     const r = railPairs.get(key);
     return r && r[0] !== a ? [...r].reverse() : r;
   };
@@ -1964,7 +1964,7 @@ export function plan(s, rng = Math.random) {
         const list = dests[kind];
         if (!list.length) break;
         const to = list[Math.floor(h32(k, s.day + 3) * list.length)];
-        const map = edgeMaps.get(v.edge) || bfs(carNet[v.edge] ? carNet : walkNet, [v.edge]);
+        const map = edgeMaps.get(v.edge) || bfs(s, carNet[v.edge] ? carNet : walkNet, [v.edge]);
         edgeMaps.set(v.edge, map);
         const path = route(map, carNet[v.edge] ? carNet : walkNet, s, to);
         if (!path) continue;
