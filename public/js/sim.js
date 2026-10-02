@@ -295,20 +295,27 @@ export function newSuburb() {
   for (const c of START_CHUNKS) land[c] = 1;
   return { v: 4, grid, cond: new Array(N).fill(0), lv: new Array(N).fill(1), land, queue: [], zone: new Array(N).fill(0), bday: new Array(N).fill(-1), protect: [], links: 0 };
 }
-export function newCity(name, rng = Math.random) {
-  const suburb = newSuburb();
-  suburb.grid[HALL_INDEX] = T.HALL;
-  suburb.cond[HALL_INDEX] = 100;
-  const council = {
-    name, money: START_MONEY, res: { ...STARTING_RES }, people: [], nextId: 1, hall: 0, hallDone: {},
-    happiness: 0.65, hour: 0, day: 0, peakPop: 10, unpaidDays: 0, waterShortDays: 0, trafficBadDays: 0, debtDays: 0, cityNo: 1, status: 'alive', lastTick: Date.now(),
+// A fresh government for a brand new council of one: starting money, an empty treasury of everything else.
+// Used both for a genuinely new city (below) and for a suburb that's been given away out from under a bigger
+// council (see acceptTransfer in firebase.js) - it keeps its own land and buildings, but had no money or
+// residents of its own (those were always shared), so it starts one the same way any new city does.
+export function newCouncil(name, money = START_MONEY) {
+  return {
+    name, money, res: { ...STARTING_RES }, people: [], nextId: 1, hall: 0, hallDone: {},
+    happiness: 0.65, hour: 0, day: 0, peakPop: 0, unpaidDays: 0, waterShortDays: 0, trafficBadDays: 0, debtDays: 0, cityNo: 1, status: 'alive', lastTick: Date.now(),
     goalsDone: [], history: [], log: [], flags: {}, graves: 0, cases: 0, clock: 1, wants: [],
     policy: { tax: 1, funding: 1, freeTransit: false, nightGuard: false },
     troops: {}, trainQueue: [],
     counters: { births: 0, deaths: 0, graduates: 0, crimes: 0, cases: 0, treated: 0, arrivals: 0, departures: 0, built: 0, land: 0, moved: 0 },
     stats: { income: 0, upkeep: 0, failedTrips: 0, arrivals: 0, departures: 0, graduates: 0 },
   };
-  const s = linkCouncil(suburb, council);
+}
+export function newCity(name, rng = Math.random) {
+  const suburb = newSuburb();
+  suburb.grid[HALL_INDEX] = T.HALL;
+  suburb.cond[HALL_INDEX] = 100;
+  const s = linkCouncil(suburb, newCouncil(name));
+  s.peakPop = 10;
   s.lastTick = Math.floor(Date.now() / TICK_MS) * TICK_MS;
   s.hour = worldHour(s.lastTick);
   settle(s, rng);
@@ -450,7 +457,12 @@ export function serializeSuburb(s) {
   return JSON.stringify(own, (k, v) => (k.startsWith('_') ? undefined : v));
 }
 export function serializeCouncil(s) {
-  return JSON.stringify(s._council, (k, v) => (k.startsWith('_') ? undefined : k === 'people' && Array.isArray(v) ? v.map(pack) : v));
+  // suburbs/suburbAt are the in-memory registry of which real suburb objects make up this council
+  // and where - runtime links, not shared state, and suburbs[].ref would otherwise embed every
+  // suburb's full grid (circularly) into the one document meant to hold just the shared government.
+  // Which plots belong to a council is already recoverable from plots.councilId, so nothing is lost.
+  const { suburbs, suburbAt, ...rest } = s._council;
+  return JSON.stringify(rest, (k, v) => (k.startsWith('_') ? undefined : k === 'people' && Array.isArray(v) ? v.map(pack) : v));
 }
 
 export const totalPop = (s) => s.people.length;

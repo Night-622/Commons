@@ -45,12 +45,21 @@ service cloud.firestore {
         && get(docPath('plots', d.via)).data.owner == me()
         && plotId in getAfter(linkPath(w)).data.plotIds;
     }
+    // A brand new standalone city is its own council (the founding suburb's id is the council id);
+    // a suburb bought next to an existing city joins that city's council, whatever it already is -
+    // so a third, fourth... suburb all end up in the same council as the first, not a new one each
+    // time.
+    function councilOk(d, plotId) {
+      return d.councilId == (d.get('via', null) != null ? get(docPath('plots', d.via)).data.councilId : plotId);
+    }
     // Up to 3 co-mayors, never the owner themselves.
     function coOk(d) { return !('co' in d) || (d.co is list && d.co.size() <= 3 && !(d.owner in d.co)); }
     function runs(plot) { return plot.owner == me() || me() in plot.get('co', []); }
     // Giving a city away: worlds/{w}/transfers/{plotId} is the owner's offer. The one it names takes the city by
     // making themselves owner and deleting the offer in the same write; nothing else about the city changes, and
-    // co-mayors don't carry over. The offer must still come from whoever owns the city now.
+    // co-mayors don't carry over. The offer must still come from whoever owns the city now. A suburb of a council
+    // leaves it and becomes its own standalone council (councilId becomes its own id) - the recipient can buy
+    // further suburbs next to it to grow a new council of their own, same as founding any other first city.
     function transferPath(w, plotId) { return /databases/$(database)/documents/worlds/$(w)/transfers/$(plotId); }
     function acceptsTransfer(after, before, plotId) {
       return exists(transferPath(before.world, plotId))
@@ -58,7 +67,8 @@ service cloud.firestore {
         && get(transferPath(before.world, plotId)).data.status == 'pending'
         && get(transferPath(before.world, plotId)).data.fromOwner == before.owner
         && !existsAfter(transferPath(before.world, plotId))
-        && after.diff(before).affectedKeys().hasOnly(['owner', 'ownerName', 'co', 'updatedAt'])
+        && after.diff(before).affectedKeys().hasOnly(['owner', 'ownerName', 'co', 'councilId', 'updatedAt'])
+        && after.councilId == plotId
         && !('co' in after);
     }
     // Moving onto ruins keeps half the money of the city being left (see MOVE_KEEP and REBUILD_MONEY).
@@ -134,6 +144,7 @@ service cloud.firestore {
         && plotId == request.resource.data.world + '_' + string(request.resource.data.px) + '_' + string(request.resource.data.py)
         && ((!exists(linkPath(request.resource.data.world)) && getAfter(linkPath(request.resource.data.world)).data.plotId == plotId)
           || boughtNextTo(request.resource.data, plotId))
+        && councilOk(request.resource.data, plotId)
         && !('state' in request.resource.data)
         && nameOk(request.resource.data)
         && stamped(request.resource.data)
@@ -152,10 +163,12 @@ service cloud.firestore {
           // The owner saving. Money, people and days can't jump faster than a busy city could manage (a cheap
           // guard against edits). The flat allowance covers undo refunds, goal rewards and grants in the same save.
           || (resource.data.owner == me() && request.resource.data.owner == me() && !banned()
+            && request.resource.data.councilId == resource.data.councilId
             && riseOk(request.resource.data, resource.data)
             && coOk(request.resource.data))
           // A co-mayor at the desk saves like the owner, but can't change who owns or co-runs it, except to leave.
           || (me() in resource.data.get('co', []) && request.resource.data.owner == resource.data.owner && !banned()
+            && request.resource.data.councilId == resource.data.councilId
             && riseOk(request.resource.data, resource.data)
             && (request.resource.data.get('co', []) == resource.data.get('co', [])
               || request.resource.data.get('co', []).toSet() == resource.data.get('co', []).toSet().difference([me()].toSet())))
@@ -164,19 +177,38 @@ service cloud.firestore {
             && acceptsTransfer(request.resource.data, resource.data, plotId))
           || (resource.data.status == 'ruins'
             && request.resource.data.owner == me() && !banned()
+            && request.resource.data.councilId == plotId
             && getAfter(linkPath(resource.data.world)).data.plotId == plotId
             && freshCity(request.resource.data, rebuildMoney(resource.data.world)))
         );
       allow delete: if false;
     }
 
-    // The full save for each plot. Anyone can read it; only the plot's owner (or an admin) can write it.
+    // The suburb-only save for each plot: land and buildings, not money/people/policy - those are
+    // shared with the rest of its council, in councilState below. Anyone can read it; only the
+    // plot's owner (or an admin) can write it.
     match /plotState/{plotId} {
       allow read: if signedIn();
       // Only in the same write as the plot's summary, so the summary's limits apply to it too.
       allow create, update: if signedIn()
         && (isAdmin() || (runs(getAfter(docPath('plots', plotId)).data) && !banned()))
         && getAfter(docPath('plots', plotId)).data.updatedAt == request.time
+        && request.resource.data.keys().hasOnly(['state'])
+        && request.resource.data.state is string && request.resource.data.state.size() < 900000;
+      allow delete: if false;
+    }
+
+    // The shared half of a council's save: money, residents, policy, research, the clock - one
+    // government for every suburb of the council, keyed by the founding suburb's own plot id. A
+    // save of ANY of its suburbs must also touch that founding plot in the same batch (even just
+    // restamping updatedAt, if it isn't the one actually being played) - rules can't see what else
+    // is in a write batch except by checking a specific, known path, and the founding plot's id is
+    // the one thing every suburb of a council can always point to.
+    match /councilState/{councilId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn()
+        && (isAdmin() || (runs(getAfter(docPath('plots', councilId)).data) && !banned()))
+        && getAfter(docPath('plots', councilId)).data.updatedAt == request.time
         && request.resource.data.keys().hasOnly(['state'])
         && request.resource.data.state is string && request.resource.data.state.size() < 900000;
       allow delete: if false;
