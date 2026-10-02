@@ -474,6 +474,78 @@ test('co-mayors: befriend a neighbour, make them co-mayor, watch and take the de
   await ctx.close();
 });
 
+test('giving a city away: offered, declined, offered again, accepted', async ({ browser }) => {
+  test.setTimeout(120_000);
+  const ctx = await browser.newContext();
+  const a = await ctx.newPage();
+  const errors = await newGame(a);   // Mona, Testhaven
+  // Mona buys Eastfield next door, so she has a city to give and one to keep.
+  await unlockAll(a);
+  await a.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plotState/')) { const s = JSON.parse(v.state); s.money = 5000; v.state = JSON.stringify(s); } for (const [k, v] of Object.entries(db.docs)) if (k.startsWith('plots/')) v.money = 5000; localStorage.setItem('fakefb', JSON.stringify(db)); });
+  await a.reload();
+  await expect(a.locator('#game')).toBeVisible();
+  await closeModal(a);
+  await a.locator('#map').focus();
+  await a.keyboard.press('e');
+  for (let k = 0; k < 14; k++) await a.keyboard.press('ArrowRight');
+  await a.keyboard.press('Enter');
+  await a.locator('#buy-name').fill('Eastfield');
+  await a.locator('#drawer [data-do="buyplot"]').click();
+  await expect(a.locator('#modal[open]')).toContainText('Eastfield is founded');
+  await closeModal(a);
+  // Nia founds her own city in another tab.
+  await a.evaluate(() => { const db = JSON.parse(localStorage.getItem('fakefb')); db.user = null; localStorage.setItem('fakefb', JSON.stringify(db)); });
+  const b = await ctx.newPage();
+  errors.push(...await watch(b));
+  await b.addInitScript(() => { try { localStorage.setItem('commons-seen-help', '1'); } catch { /* ignore */ } });
+  await found(b, { mayor: 'Nia', city: 'Nextdoor' });
+  await closeModal(b);
+  const uid = (p) => p.evaluate(() => JSON.parse(sessionStorage.getItem('fakeuser')).uid);
+  const mona = await uid(a), nia = await uid(b);
+  // They're friends (Mona adds Nia, as from a neighbour's panel).
+  await a.evaluate(([m, n]) => { const db = JSON.parse(localStorage.getItem('fakefb')); db.docs[`profiles/${m}`] = { ...(db.docs[`profiles/${m}`] || {}), friends: [{ uid: n, name: 'Nia' }] }; localStorage.setItem('fakefb', JSON.stringify(db)); }, [mona, nia]);
+  await a.reload();
+  await expect(a.locator('#game')).toBeVisible();
+  await closeModal(a);
+  const eastfield = await a.evaluate(() => Object.entries(JSON.parse(localStorage.getItem('fakefb')).docs).find(([k, v]) => k.startsWith('plots/') && v.name === 'Eastfield')[0].slice(6));
+  const ownerOf = (p, id) => p.evaluate((i) => JSON.parse(localStorage.getItem('fakefb')).docs[`plots/${i}`].owner, id);
+  const offer = async () => {
+    await a.locator('#btn-account').click();
+    await a.locator('#modal [data-acct-tab="cities"]').click();
+    await a.locator('#modal li', { hasText: 'Eastfield' }).locator('[data-give-city]').click();
+    await expect(a.locator('#modal')).toContainText('Give Eastfield to another mayor');
+    await a.locator('#modal [data-give-to]').click();
+    await expect(a.locator('#modal li', { hasText: 'Eastfield' })).toContainText('offered to Nia');
+    await closeModal(a);
+  };
+  // Mona offers Eastfield; Nia declines. Nothing changes hands.
+  await offer();
+  await expect(b.locator('#modal')).toContainText('Mona wants to give you Eastfield', { timeout: 10_000 });
+  await b.locator('#transfer-decline').click();
+  await expect(b.locator('#modal[open]')).toHaveCount(0);
+  expect(await ownerOf(a, eastfield)).toBe(mona);
+  // Mona offers again; this time Nia accepts and opens it.
+  await expect.poll(() => a.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('fakefb')).docs).filter((k) => k.includes('/transfers/')).length)).toBe(0);
+  await offer();
+  await expect(b.locator('#modal')).toContainText('Mona wants to give you Eastfield', { timeout: 10_000 });
+  await b.locator('#transfer-accept').click();
+  await expect(b.locator('#modal')).toContainText('Eastfield is yours');
+  expect(await ownerOf(b, eastfield)).toBe(nia);
+  await b.locator('#open-given').click();
+  await expect(b.locator('#city-name')).toContainText('Eastfield', { timeout: 20_000 });
+  await closeModal(b);
+  // Nia can save it; Mona can't any more, and it's gone from her cities.
+  const trySave = (p, id) => p.evaluate(async (i) => { const fb = await import('/js/firebase.js'); try { await fb.savePlot(i, JSON.parse(await fb.getState(i))); return 'ok'; } catch (e) { return e.code; } }, id);
+  expect(await trySave(b, eastfield)).toBe('ok');
+  expect(await trySave(a, eastfield)).toBe('permission-denied');
+  await a.locator('#btn-account').click();
+  await a.locator('#modal [data-acct-tab="cities"]').click();
+  await expect(a.locator('#modal .picklist')).toContainText('Testhaven');
+  await expect(a.locator('#modal .picklist')).not.toContainText('Eastfield');
+  expect(clean(errors)).toEqual([]);
+  await ctx.close();
+});
+
 test('resources: the Resources tab and research tree after a day', async ({ page }) => {
   const errors = await newGame(page);
   // Pretend a day has passed with some figures, then look at the tab.

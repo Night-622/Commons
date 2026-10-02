@@ -323,6 +323,11 @@ export function note(s, kind, text) {
 
 // Bring older saves up to the current shape. Head counts become real people.
 export function migrate(s, rng = Math.random) {
+  // A plain JSON.parse() of a save (old single-document format, or serialize()'s flat combined
+  // snapshot) is never linked to a council object - this makes it self-healing the same way the
+  // rest of migrate() brings an old save up to the current shape, instead of requiring every call
+  // site to remember to call linkCouncil() first.
+  if (!s._council) linkCouncil(s, {});
   if (!s.lv) s.lv = new Array(N).fill(1);
   for (const k of ['goalsDone', 'history', 'log']) if (!s[k]) s[k] = [];
   if (!s.flags) s.flags = {};
