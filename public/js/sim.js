@@ -22,7 +22,7 @@ export const idx = (x, y) => y * PLOT + x;
 export const xy = (i) => ({ x: i % PLOT, y: Math.floor(i / PLOT) });
 export const HALL_INDEX = idx(PLOT >> 1, PLOT >> 1);
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
-const dist1 = (a, b) => Math.abs(a % PLOT - b % PLOT) + Math.abs(((a / PLOT) | 0) - ((b / PLOT) | 0));
+export const dist1 = (a, b) => Math.abs(a % PLOT - b % PLOT) + Math.abs(((a / PLOT) | 0) - ((b / PLOT) | 0));
 
 export function neighbours(i) {
   const x = i % PLOT, y = (i / PLOT) | 0, out = [];
@@ -93,13 +93,55 @@ const COUNCIL_KEYS = [
   'counters', 'stats', 'tech', 'rp', 'savings', 'loan', 'bond', 'debts', 'contracts', 'leasesIn', 'leasesOut',
   'listed', 'decision', 'letter', 'pledge', 'approval', 'fallen', 'shares', 'path', 'pop', 'cohorts',
 ];
-export function linkCouncil(suburb, council) {
+// dx/dy are this suburb's position relative to the founding suburb, in whole plot-widths (the
+// founding suburb is always 0,0) - the same relative layout boughtNextTo() in firestore.rules
+// already requires in the real world, just recorded here too so the simulation can use it for
+// routing across suburb edges (see councilNeighbours/councilDist1 below).
+export function linkCouncil(suburb, council, dx = 0, dy = 0) {
   for (const key of COUNCIL_KEYS) {
     if (!(key in council) && key in suburb) { council[key] = suburb[key]; delete suburb[key]; }
     Object.defineProperty(suburb, key, { get: () => council[key], set: (v) => { council[key] = v; }, enumerable: true, configurable: true });
   }
+  council.suburbs ||= [];
+  council.suburbAt ||= new Map();
+  const suburbIndex = council.suburbs.length;
+  council.suburbs.push({ ref: suburb, dx, dy });
+  council.suburbAt.set(`${dx},${dy}`, suburbIndex);
   Object.defineProperty(suburb, '_council', { value: council, enumerable: false, configurable: true });
+  Object.defineProperty(suburb, '_suburbIndex', { value: suburbIndex, enumerable: false, configurable: true });
   return suburb;
+}
+
+// A tile index across a whole council: suburbIndex*N + the tile's own local index (0..N-1), same
+// tile-index space a lone suburb has always used, just extended once a second suburb exists. A
+// council-wide index for a lone suburb (suburbIndex 0) is numerically identical to its local one.
+export const councilTile = (s, i) => (s._suburbIndex ?? 0) * N + i;
+// Like neighbours(), but can step from one suburb's edge into a sibling suburb's matching edge,
+// using each suburb's real relative position (linkCouncil's dx/dy) rather than assuming they're
+// laid out in any particular shape - a council can be an L, a cluster, a line, anything
+// boughtNextTo() allows. For a council with only one suburb this returns exactly what neighbours()
+// would, since there's never a sibling to step into.
+export function councilNeighbours(s, i) {
+  const { suburbs, suburbAt } = s._council;
+  const si = (i / N) | 0, local = i % N, { dx, dy } = suburbs[si];
+  const x = local % PLOT, y = (local / PLOT) | 0, out = [];
+  const step = (nx, ny, ddx, ddy) => {
+    if (nx >= 0 && nx < PLOT && ny >= 0 && ny < PLOT) { out.push(si * N + idx(nx, ny)); return; }
+    const sibling = suburbAt.get(`${dx + ddx},${dy + ddy}`);
+    if (sibling === undefined) return;
+    out.push(sibling * N + idx((nx + PLOT) % PLOT, (ny + PLOT) % PLOT));
+  };
+  step(x - 1, y, -1, 0); step(x + 1, y, 1, 0); step(x, y - 1, 0, -1); step(x, y + 1, 0, 1);
+  return out;
+}
+// Real Manhattan distance between two council-wide tile indices, accounting for which suburb each
+// is in - unlike dist1(), which only means anything within a single suburb's own 0..N-1 indices.
+export function councilDist1(s, a, b) {
+  const { suburbs } = s._council;
+  const sa = suburbs[(a / N) | 0], la = a % N, sb = suburbs[(b / N) | 0], lb = b % N;
+  const ax = sa.dx * PLOT + (la % PLOT), ay = sa.dy * PLOT + ((la / PLOT) | 0);
+  const bx = sb.dx * PLOT + (lb % PLOT), by = sb.dy * PLOT + ((lb / PLOT) | 0);
+  return Math.abs(ax - bx) + Math.abs(ay - by);
 }
 
 function person(s, o) {

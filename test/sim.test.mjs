@@ -1177,7 +1177,7 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
 {
   seed = 66;
   const a = sim.newCity('Twin Town', rng); a.money = 20000;
-  const b = sim.linkCouncil(sim.newSuburb(), a._council);
+  const b = sim.linkCouncil(sim.newSuburb(), a._council, 1, 0);   // one plot east of the founding suburb
   assert.equal(b.name, 'Twin Town', 'the second suburb sees the same council name');
   assert.equal(b.money, a.money, 'and the same money');
   assert.equal(b.people, a.people, 'literally the same people array, not a copy');
@@ -1212,5 +1212,32 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   const flat = JSON.parse(sim.serialize(solo));
   assert.equal(flat.money, solo.money); assert.equal(flat.grid.length, solo.grid.length); assert.equal(flat.people.length, solo.people.length);
   console.log('councils ok: suburbs of one council share money, people, policy and the clock; each keeps its own grid');
+}
+// ---- councilNeighbours()/councilDist1(): routing that crosses from one suburb's edge into the
+// adjacent suburb's matching edge, using their real relative positions - and is identical to
+// neighbours()/dist1() for a lone suburb, since there's never a sibling to step into
+{
+  const solo = sim.newCity('Lonely', rng);
+  for (let i = 0; i < 50; i++) {
+    assert.deepEqual(sim.councilNeighbours(solo, i), sim.neighbours(i), `tile ${i}: no suburbs to cross into`);
+  }
+  assert.equal(sim.councilDist1(solo, 0, 100), sim.dist1(0, 100));
+
+  // b sits one plot east of a (dx 1, dy 0) - a's east edge (x=23) should connect to b's west edge (x=0).
+  const a = sim.newCity('West Side', rng);
+  const b = sim.linkCouncil(sim.newSuburb(), a._council, 1, 0);
+  const N = PLOT * PLOT;
+  const edgeTile = sim.idx(PLOT - 1, 10);   // a's east edge, row 10
+  const across = sim.councilNeighbours(a, edgeTile).find((n) => n >= N);
+  assert(across !== undefined, 'a tile on the shared edge has a neighbour in the next suburb');
+  assert.equal(across, N + sim.idx(0, 10), 'it lands on the matching row of b\'s west edge, not just any tile');
+  // The far (west) edge of a and the far (east) edge of b have no suburb to cross into - same as
+  // the edge of a single plot today.
+  assert(sim.councilNeighbours(a, sim.idx(0, 10)).every((n) => n < N), 'a\'s west edge has nothing beyond it');
+  assert(sim.councilNeighbours(b, N + sim.idx(PLOT - 1, 10)).every((n) => n >= N), 'b\'s east edge has nothing beyond it');
+  // A tile just inside a, next to the seam, is genuinely 1 step from the matching tile just inside b.
+  assert.equal(sim.councilDist1(a, edgeTile, N + sim.idx(0, 10)), 1, 'adjacent across the seam is distance 1');
+  assert.equal(sim.councilDist1(a, sim.idx(0, 10), N + sim.idx(PLOT - 1, 10)), 2 * PLOT - 1, 'opposite far edges are a real Manhattan distance apart, not a shortcut through the seam');
+  console.log('council geometry ok: neighbours/distance correctly cross a shared suburb edge, and match the single-suburb case exactly when there\'s nothing to cross into');
 }
 console.log('all tests passed');
