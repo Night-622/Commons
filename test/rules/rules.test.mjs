@@ -453,6 +453,87 @@ test('co-mayors: the owner adds friends, who can save and take the desk; others 
   await assert.rejects(b.fb.savePlot(pa.id, st), /permission/i);
 });
 
+test('giving a city away: only with the recipient’s consent, and the old owner loses it the moment they accept', async () => {
+  const a = await player(), b = await player(), c = await player();
+  const w = await newWorld(a);
+  const pa = await a.fb.claimPlot(a.user, 'Ana', 'A', w.id);
+  const pb = await b.fb.claimPlot(b.user, 'Ben', 'B', w.id);
+  await c.fb.claimPlot(c.user, 'Cy', 'C', w.id);
+  // Ana has a second city, so giving her home away leaves her somewhere to go.
+  let side;
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    let taken;
+    await admin(async (db) => { taken = (await getDoc(doc(db, 'plots', `${w.id}_${pa.px + dx}_${pa.py + dy}`))).exists(); });
+    if (!taken) { side = [pa.px + dx, pa.py + dy]; break; }
+  }
+  const second = await a.fb.buyPlot(a.user, 'Ana', pa.id, side[0], side[1], 'A Two', w.id);
+  await a.fb.setCoMayors(pa.id, [c.uid]);
+  const tref = (db) => doc(db, 'worlds', w.id, 'transfers', pa.id);
+  const plotOf = async (id) => { let d; await admin(async (db) => { d = (await getDoc(doc(db, 'plots', id))).data(); }); return d; };
+
+  // Nobody can simply reassign the owner: not the owner, not the would-be recipient, not a co-mayor.
+  await assertFails(updateDoc(doc(a.db, 'plots', pa.id), { owner: b.uid, ownerName: 'Ben', co: deleteField(), updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(b.db, 'plots', pa.id), { owner: b.uid, ownerName: 'Ben', co: deleteField(), updatedAt: serverTimestamp() }));
+  // Only the owner can offer a city, and not to themselves; the offer has a fixed shape.
+  await assertFails(b.fb.sendTransfer(w.id, pa.id, 'A', b.user, 'Ben', c.uid, 'Cy'));
+  await assertFails(c.fb.sendTransfer(w.id, pa.id, 'A', c.user, 'Cy', b.uid, 'Ben'));   // a co-mayor isn't the owner
+  await assertFails(a.fb.sendTransfer(w.id, pa.id, 'A', a.user, 'Ana', a.uid, 'Ana'));
+  await assertFails(setDoc(tref(a.db), { plot: pa.id, plotName: 'A', fromOwner: a.uid, fromName: 'Ana', toUid: b.uid, toName: 'Ben', status: 'accepted', createdAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(a.db, 'worlds', w.id, 'transfers', pb.id), { plot: pb.id, plotName: 'B', fromOwner: a.uid, fromName: 'Ana', toUid: c.uid, toName: 'Cy', status: 'pending', createdAt: serverTimestamp() }));
+
+  // Ana offers A to Ben. Only the two of them can see it; Cy can't read, accept or delete it.
+  await a.fb.sendTransfer(w.id, pa.id, 'A', a.user, 'Ana', b.uid, 'Ben');
+  await assertFails(updateDoc(tref(a.db), { toUid: c.uid }));
+  assert.equal((await getDoc(tref(a.db))).data().toUid, b.uid);
+  await assertFails(getDoc(tref(c.db)));
+  await assertFails(getDocs(query(collection(c.db, 'worlds', w.id, 'transfers'), where('toUid', '==', b.uid))));
+  await assert.rejects(c.fb.acceptTransfer(w.id, pa.id, c.user, 'Cy'), /permission/i);
+  { const bt = writeBatch(c.db); bt.update(doc(c.db, 'plots', pa.id), { owner: c.uid, ownerName: 'Cy', co: deleteField(), updatedAt: serverTimestamp() }); bt.delete(tref(c.db)); await assertFails(bt.commit()); }
+  await assertFails(deleteDoc(tref(c.db)));
+  // Ben can't take it while leaving the offer behind, or change anything else about the city on the way.
+  await assertFails(updateDoc(doc(b.db, 'plots', pa.id), { owner: b.uid, ownerName: 'Ben', co: deleteField(), updatedAt: serverTimestamp() }));
+  { const bt = writeBatch(b.db); bt.update(doc(b.db, 'plots', pa.id), { owner: b.uid, ownerName: 'Ben', co: deleteField(), money: 999999, updatedAt: serverTimestamp() }); bt.delete(tref(b.db)); await assertFails(bt.commit()); }
+  { const bt = writeBatch(b.db); bt.update(doc(b.db, 'plots', pa.id), { owner: b.uid, ownerName: 'Ben', updatedAt: serverTimestamp() }); bt.delete(tref(b.db)); await assertFails(bt.commit()); }   // co-mayors must go
+
+  // Ben sees the offer and declines: nothing changes hands, and Ana keeps playing.
+  const inbox = await first((cb) => b.fb.listenTransfers(w.id, b.uid, cb));
+  assert.deepEqual(inbox.map((t) => [t.id, t.plot, t.fromName, t.status]), [[pa.id, pa.id, 'Ana', 'pending']]);
+  assert.equal((await first((cb) => a.fb.listenSentTransfers(w.id, a.uid, cb))).length, 1);
+  await b.fb.declineTransfer(w.id, pa.id);
+  assert.equal((await getDoc(tref(a.db))).exists(), false);
+  assert.equal((await plotOf(pa.id)).owner, a.uid);
+  await assert.rejects(b.fb.acceptTransfer(w.id, pa.id, b.user, 'Ben'), /withdrawn|permission/i);
+  const st = sim.migrate(JSON.parse(pa.state)); st.money += 100;
+  await a.fb.savePlot(pa.id, st);
+  // The giver can withdraw an offer too.
+  await a.fb.sendTransfer(w.id, pa.id, 'A', a.user, 'Ana', b.uid, 'Ben');
+  await a.fb.declineTransfer(w.id, pa.id);
+
+  // Ana offers again and Ben accepts: one transaction moves the owner, clears co-mayors, joins Ben's council.
+  await a.fb.sendTransfer(w.id, pa.id, 'A', a.user, 'Ana', b.uid, 'Ben');
+  const r = await b.fb.acceptTransfer(w.id, pa.id, b.user, 'Ben');
+  assert.equal(r.id, pa.id);
+  const after = await plotOf(pa.id);
+  assert.equal(after.owner, b.uid); assert.equal(after.ownerName, 'Ben'); assert.equal('co' in after, false);
+  assert.equal((await getDoc(doc(b.db, 'memberships', `${b.uid}_${w.id}`))).data().plotIds.includes(pa.id), true);
+  assert.equal((await b.fb.findPlot(b.user, w.id)).id, pb.id, 'Ben’s home is unchanged');
+  let gone; await admin(async (db) => { gone = !(await getDoc(doc(db, 'worlds', w.id, 'transfers', pa.id))).exists(); });
+  assert.ok(gone, 'the offer is deleted');
+  // Ben can run it; Ana and her old co-mayor can't any more.
+  st.money += 100;
+  await b.fb.savePlot(pa.id, st);
+  await assert.rejects(a.fb.savePlot(pa.id, st), /permission/i);
+  await assert.rejects(c.fb.savePlot(pa.id, st), /permission/i);
+  await assertFails(setDoc(doc(a.db, 'plotState', pa.id), { state: '{}' }));
+  await assertFails(a.fb.setCoMayors(pa.id, [a.uid]));
+  // Ana's home was A, so she lands on her other city (and it becomes home); her council list keeps the stale id.
+  assert.equal((await a.fb.findPlot(a.user, w.id)).id, second.id);
+  const aLink = (await getDoc(doc(a.db, 'memberships', `${a.uid}_${w.id}`))).data();
+  assert.equal(aLink.plotId, second.id);
+  // Ana can't take it back by offering it to herself or anyone, now that it isn't hers.
+  await assertFails(a.fb.sendTransfer(w.id, pa.id, 'A', a.user, 'Ana', c.uid, 'Cy'));
+});
+
 // ---------- the market (1.13) ----------
 test('market: sell, buy and loan offers; deals only between the two sides', async () => {
   const a = await player(), b = await player(), c = await player();

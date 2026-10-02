@@ -48,6 +48,19 @@ service cloud.firestore {
     // Up to 3 co-mayors, never the owner themselves.
     function coOk(d) { return !('co' in d) || (d.co is list && d.co.size() <= 3 && !(d.owner in d.co)); }
     function runs(plot) { return plot.owner == me() || me() in plot.get('co', []); }
+    // Giving a city away: worlds/{w}/transfers/{plotId} is the owner's offer. The one it names takes the city by
+    // making themselves owner and deleting the offer in the same write; nothing else about the city changes, and
+    // co-mayors don't carry over. The offer must still come from whoever owns the city now.
+    function transferPath(w, plotId) { return /databases/$(database)/documents/worlds/$(w)/transfers/$(plotId); }
+    function acceptsTransfer(after, before, plotId) {
+      return exists(transferPath(before.world, plotId))
+        && get(transferPath(before.world, plotId)).data.toUid == me()
+        && get(transferPath(before.world, plotId)).data.status == 'pending'
+        && get(transferPath(before.world, plotId)).data.fromOwner == before.owner
+        && !existsAfter(transferPath(before.world, plotId))
+        && after.diff(before).affectedKeys().hasOnly(['owner', 'ownerName', 'co', 'updatedAt'])
+        && !('co' in after);
+    }
     // Moving onto ruins keeps half the money of the city being left (see MOVE_KEEP and REBUILD_MONEY).
     function rebuildMoney(world) {
       return 3500 + (exists(linkPath(world)) ? get(docPath('plots', get(linkPath(world)).data.plotId)).data.get('money', 0) / 2 : 0);
@@ -146,6 +159,9 @@ service cloud.firestore {
             && riseOk(request.resource.data, resource.data)
             && (request.resource.data.get('co', []) == resource.data.get('co', [])
               || request.resource.data.get('co', []).toSet() == resource.data.get('co', []).toSet().difference([me()].toSet())))
+          // Accepting a city its owner offered to me (see acceptsTransfer): the only way a live city changes owner.
+          || (request.resource.data.owner == me() && resource.data.owner != me() && !banned()
+            && acceptsTransfer(request.resource.data, resource.data, plotId))
           || (resource.data.status == 'ruins'
             && request.resource.data.owner == me() && !banned()
             && getAfter(linkPath(resource.data.world)).data.plotId == plotId
@@ -362,6 +378,30 @@ service cloud.firestore {
         && request.resource.data.note is string && request.resource.data.note.size() <= 120
         && request.resource.data.createdAt == request.time;
       allow delete: if signedIn() && resource.data.toOwner == me();
+      allow update: if false;
+    }
+
+    // Giving a city to another mayor. The owner offers it (one offer per city, keyed by the plot's id); only the
+    // two of them can see it; either can delete it (withdraw or decline), and so can whoever owns the city now.
+    // It's never updated: accepting changes the plot's owner and deletes this in one write (acceptsTransfer).
+    match /worlds/{worldId}/transfers/{plotId} {
+      // (Asking for an offer that doesn't exist is allowed: it tells nobody anything.)
+      allow get: if signedIn() && (resource == null || resource.data.toUid == me() || resource.data.fromOwner == me());
+      allow list: if signedIn() && (resource.data.toUid == me() || resource.data.fromOwner == me());
+      allow create: if signedIn() && !banned()
+        && request.resource.data.keys().hasOnly(['plot', 'plotName', 'fromOwner', 'fromName', 'toUid', 'toName', 'status', 'createdAt'])
+        && request.resource.data.plot == plotId
+        && request.resource.data.fromOwner == me()
+        && request.resource.data.toUid is string && request.resource.data.toUid.size() > 0 && request.resource.data.toUid != me()
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.plotName is string && request.resource.data.plotName.size() <= 40
+        && request.resource.data.fromName is string && request.resource.data.fromName.size() <= 24
+        && request.resource.data.toName is string && request.resource.data.toName.size() <= 24
+        && get(docPath('plots', plotId)).data.owner == me()
+        && get(docPath('plots', plotId)).data.world == worldId;
+      allow delete: if signedIn() && (resource.data.toUid == me() || resource.data.fromOwner == me()
+        || get(docPath('plots', resource.data.plot)).data.owner == me());
       allow update: if false;
     }
 

@@ -158,8 +158,18 @@ export async function findWorldByCode(raw) {
 export async function findPlot(user, world = WORLD_ID) {
   const link = await getDoc(linkRef(user.uid, world));
   if (!link.exists()) return null;
-  const p = await getDoc(doc(db, 'plots', link.data().plotId));
-  if (!p.exists() || p.data().owner !== user.uid) return null;
+  let p = await getDoc(doc(db, 'plots', link.data().plotId));
+  if (!p.exists() || p.data().owner !== user.uid) {
+    // Home was a city given to another mayor (acceptTransfer): open another city of the council instead, and make it home.
+    p = null;
+    for (const id of link.data().plotIds || []) {
+      if (id === link.data().plotId) continue;
+      const c = await getDoc(doc(db, 'plots', id));
+      if (c.exists() && c.data().owner === user.uid) { p = c; break; }
+    }
+    if (!p) return null;
+    await updateDoc(linkRef(user.uid, world), { plotId: p.id }).catch((e) => console.warn('Couldn’t move home', e));
+  }
   const data = { id: p.id, ...p.data() };
   if (!data.state) data.state = await getState(p.id);
   if (!data.state) throw new Error('Your city’s save couldn’t be read. Reload the page; if it keeps happening, deploy the latest firestore.rules.');
@@ -547,6 +557,49 @@ export function listenGifts(world, uid, cb) {
   return onSnapshot(q, (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), (e) => console.error('Gifts listener', e));
 }
 export const finishGift = (world, id) => deleteDoc(doc(db, 'worlds', world, 'gifts', id));
+
+// ---------- giving a city to another mayor ----------
+// worlds/{w}/transfers/{plotId}: the owner's offer. Nothing changes hands until the other mayor accepts.
+export function sendTransfer(world, plotId, plotName, fromUser, fromName, toUid, toName) {
+  return setDoc(doc(db, 'worlds', world, 'transfers', plotId), {
+    plot: plotId, plotName: truncateUtf8(plotName, 40), fromOwner: fromUser.uid, fromName: truncateUtf8(fromName, 24),
+    toUid, toName: truncateUtf8(toName, 24), status: 'pending', createdAt: serverTimestamp(),
+  });
+}
+// Offers made to this player, and offers this player has made and not had answered yet.
+export function listenTransfers(world, uid, cb) {
+  const q = query(collection(db, 'worlds', world, 'transfers'), where('toUid', '==', uid), limit(20));
+  return onSnapshot(q, (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), (e) => console.error('Transfers listener', e));
+}
+export function listenSentTransfers(world, uid, cb) {
+  const q = query(collection(db, 'worlds', world, 'transfers'), where('fromOwner', '==', uid), limit(20));
+  return onSnapshot(q, (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), (e) => console.error('Sent transfers listener', e));
+}
+// One transaction: the city becomes mine (co-mayors don't carry over), joins my council, and the offer is gone.
+// The old owner's council list keeps the id; everything that opens a city checks the live owner, so it's harmless.
+export async function acceptTransfer(world, transferId, user, mayorName) {
+  const tref = doc(db, 'worlds', world, 'transfers', transferId), lref = linkRef(user.uid, world);
+  return runTransaction(db, async (tx) => {
+    const t = await tx.get(tref);
+    if (!t.exists()) throw new Error('That offer has been withdrawn.');
+    const d = t.data();
+    if (d.toUid !== user.uid || d.status !== 'pending') throw new Error('That offer isn’t for you.');
+    const pref = doc(db, 'plots', d.plot);
+    const p = await tx.get(pref);
+    const link = await tx.get(lref);
+    if (!p.exists() || p.data().owner !== d.fromOwner) throw new Error('That city has changed hands since it was offered.');
+    const ids = link.exists() ? link.data().plotIds || [link.data().plotId] : [];
+    if (!ids.includes(d.plot) && ids.length >= 9) throw new Error('Your council already has 9 cities, the most it can run.');
+    const ownerName = truncateUtf8(mayorName, 24);
+    tx.update(pref, { owner: user.uid, ownerName, co: deleteField(), updatedAt: serverTimestamp() });
+    if (!link.exists()) tx.set(lref, world === 'public' ? { plotId: d.plot, createdAt: serverTimestamp() } : { uid: user.uid, world, plotId: d.plot, createdAt: serverTimestamp() });
+    else if (!ids.includes(d.plot)) tx.update(lref, { plotIds: [...ids, d.plot] });
+    tx.delete(tref);
+    return { id: d.plot, name: d.plotName, fromName: d.fromName };
+  });
+}
+// Declining (the recipient) and withdrawing (the giver) are the same: the offer is deleted and nothing changes hands.
+export const declineTransfer = (world, transferId) => deleteDoc(doc(db, 'worlds', world, 'transfers', transferId));
 export const renameWorld = (id, name) => updateDoc(doc(db, 'worlds', id), { name });
 
 // ---------- regional projects ----------

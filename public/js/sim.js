@@ -93,21 +93,29 @@ const COUNCIL_KEYS = [
   'counters', 'stats', 'tech', 'rp', 'savings', 'loan', 'bond', 'debts', 'contracts', 'leasesIn', 'leasesOut',
   'listed', 'decision', 'letter', 'pledge', 'approval', 'fallen', 'shares', 'path', 'pop', 'cohorts',
 ];
+// The accessor-linking half of linkCouncil(), without registering a suburb position - used for a
+// council's real suburbs (via linkCouncil below) and also for the temporary combined view
+// buildCombinedView() makes for one tick/plan/daily pass, which doesn't correspond to any single
+// suburb's position.
+function attachCouncil(suburb, council) {
+  for (const key of COUNCIL_KEYS) {
+    if (!(key in council) && key in suburb) { council[key] = suburb[key]; delete suburb[key]; }
+    Object.defineProperty(suburb, key, { get: () => council[key], set: (v) => { council[key] = v; }, enumerable: true, configurable: true });
+  }
+  Object.defineProperty(suburb, '_council', { value: council, enumerable: false, configurable: true });
+  return suburb;
+}
 // dx/dy are this suburb's position relative to the founding suburb, in whole plot-widths (the
 // founding suburb is always 0,0) - the same relative layout boughtNextTo() in firestore.rules
 // already requires in the real world, just recorded here too so the simulation can use it for
 // routing across suburb edges (see councilNeighbours/councilDist1 below).
 export function linkCouncil(suburb, council, dx = 0, dy = 0) {
-  for (const key of COUNCIL_KEYS) {
-    if (!(key in council) && key in suburb) { council[key] = suburb[key]; delete suburb[key]; }
-    Object.defineProperty(suburb, key, { get: () => council[key], set: (v) => { council[key] = v; }, enumerable: true, configurable: true });
-  }
+  attachCouncil(suburb, council);
   council.suburbs ||= [];
   council.suburbAt ||= new Map();
   const suburbIndex = council.suburbs.length;
   council.suburbs.push({ ref: suburb, dx, dy });
   council.suburbAt.set(`${dx},${dy}`, suburbIndex);
-  Object.defineProperty(suburb, '_council', { value: council, enumerable: false, configurable: true });
   Object.defineProperty(suburb, '_suburbIndex', { value: suburbIndex, enumerable: false, configurable: true });
   return suburb;
 }
@@ -142,6 +150,89 @@ export function councilDist1(s, a, b) {
   const ax = sa.dx * PLOT + (la % PLOT), ay = sa.dy * PLOT + ((la / PLOT) | 0);
   const bx = sb.dx * PLOT + (lb % PLOT), by = sb.dy * PLOT + ((lb / PLOT) | 0);
   return Math.abs(ax - bx) + Math.abs(ay - by);
+}
+// Whether a council-wide tile index's own suburb has bought that land - like owns(), but for a
+// combined-view index rather than one suburb's own 0..N-1 indices (land itself is never combined;
+// this just reaches into the right suburb's real land array directly).
+export function councilOwns(s, i) {
+  const si = (i / N) | 0;
+  return !!s._council.suburbs[si].ref.land[chunkOf(i % N)];
+}
+// A combined index's position in the council's whole footprint, in tiles - not clipped to any one
+// suburb's 0..PLOT-1 range, since a tile near one suburb's edge needs a position that keeps making
+// sense as it crosses into a neighbour's.
+export function councilGlobalXY(s, i) {
+  const si = (i / N) | 0, local = i % N, { dx, dy } = s._council.suburbs[si];
+  return { x: dx * PLOT + (local % PLOT), y: dy * PLOT + ((local / PLOT) | 0) };
+}
+// The reverse of councilGlobalXY: which combined index (if any) sits at a global position - -1 if
+// no suburb of this council has land there. Used to walk a radius/box in real council-wide space
+// (land value, waterfront bonus) without it being clipped to one suburb's own bounds.
+export function councilTileAt(s, gx, gy) {
+  const si = s._council.suburbAt.get(`${Math.floor(gx / PLOT)},${Math.floor(gy / PLOT)}`);
+  if (si === undefined) return -1;
+  return si * N + idx(((gx % PLOT) + PLOT) % PLOT, ((gy % PLOT) + PLOT) % PLOT);
+}
+// terrainAt(), but for a combined index - reaches into the right suburb's own terrain string.
+export function councilTerrainAt(s, i) {
+  const su = s._council.suburbs[(i / N) | 0].ref;
+  return su.terr ? su.terr.charCodeAt(i % N) - 48 : 0;
+}
+
+// A per-tile array (grid/cond/lv/zone/bday), combined across every suburb of a council: index
+// si*N + localI reads and writes straight through to suburb si's own real array, live - there is
+// no separate combined copy to keep in sync, so nothing needs writing back after a tick.
+function combinedArrayView(suburbs, key) {
+  return new Proxy(new Array(suburbs.length * N), {
+    get(t, p, r) {
+      if (typeof p === 'string' && /^\d+$/.test(p)) { const i = Number(p); return suburbs[(i / N) | 0][key][i % N]; }
+      return Reflect.get(t, p, r);
+    },
+    set(t, p, v, r) {
+      if (typeof p === 'string' && /^\d+$/.test(p)) { const i = Number(p); suburbs[(i / N) | 0][key][i % N] = v; return true; }
+      return Reflect.set(t, p, v, r);
+    },
+  });
+}
+// A tile-keyed object (ready/batches/lease/rec/shopTerms/landmarks), combined the same way - each
+// suburb's own object is the real storage, this just translates a combined key to (suburb, local).
+function combinedKeyedView(suburbs, key) {
+  return new Proxy({}, {
+    get(t, p) { const i = Number(p); if (!Number.isInteger(i)) return Reflect.get(t, p); return (suburbs[(i / N) | 0][key] || {})[i % N]; },
+    set(t, p, v) { const i = Number(p); if (!Number.isInteger(i)) return Reflect.set(t, p, v); (suburbs[(i / N) | 0][key] ||= {})[i % N] = v; return true; },
+    has(t, p) { const i = Number(p); if (!Number.isInteger(i)) return Reflect.has(t, p); return (i % N) in (suburbs[(i / N) | 0][key] || {}); },
+    deleteProperty(t, p) { const i = Number(p); if (!Number.isInteger(i)) return Reflect.deleteProperty(t, p); const su = suburbs[(i / N) | 0]; if (su[key]) delete su[key][i % N]; return true; },
+    ownKeys() { const keys = []; suburbs.forEach((su, si) => { for (const k of Object.keys(su[key] || {})) keys.push(String(si * N + Number(k))); }); return keys; },
+    getOwnPropertyDescriptor(t, p) { return { enumerable: true, configurable: true, value: this.get(t, p) }; },
+  });
+}
+// The queue is a growable list of {i, ...} job entries, not a fixed per-tile slot, so unlike the
+// arrays/keyed objects above it can't be a live view - this concatenates every suburb's queue with
+// each entry's `i` translated to a combined index, and splitCombinedQueue() below undoes that,
+// routing each remaining entry back to the suburb its (now combined) `i` falls into.
+function combinedQueue(suburbs) {
+  const out = [];
+  suburbs.forEach((su, si) => { for (const q of su.queue) out.push({ ...q, i: si * N + q.i }); });
+  return out;
+}
+function splitCombinedQueue(queue, suburbs) {
+  for (const su of suburbs) su.queue = [];
+  for (const q of queue) { const si = (q.i / N) | 0; suburbs[si].queue.push({ ...q, i: q.i % N }); }
+}
+// A temporary view of every suburb of a council at once, for one tick()/plan()/daily() pass - same
+// shape as a single suburb, so none of the existing per-tile logic needs to change, it just sees
+// more tiles. grid/cond/lv/zone/bday/ready/batches/lease/rec/shopTerms/landmarks read and write
+// straight through to each real suburb; only the queue needs splitCombinedView() afterward.
+function buildCombinedView(council) {
+  const suburbs = council.suburbs.map((e) => e.ref);
+  const view = { v: 4, land: [], protect: [], links: 0 };
+  for (const key of ['grid', 'cond', 'lv', 'zone', 'bday']) view[key] = combinedArrayView(suburbs, key);
+  for (const key of ['ready', 'batches', 'lease', 'rec', 'shopTerms', 'landmarks']) view[key] = combinedKeyedView(suburbs, key);
+  view.queue = combinedQueue(suburbs);
+  return attachCouncil(view, council);
+}
+function splitCombinedView(view, council) {
+  splitCombinedQueue(view.queue, council.suburbs.map((e) => e.ref));
 }
 
 function person(s, o) {
@@ -417,7 +508,7 @@ export function plotPrice(s, owned = 1) {
 // ---------- resources ----------
 export function storeCap(s, uc = underConstruction(s)) {
   let cap = STORE_BASE + (HALL_LEVELS[hallLevel(s)]?.store || 0);
-  for (let i = 0; i < N; i++) { const d = B[s.grid[i]]; if (d?.store && active(s, i, uc) && staffing(s, i) > 0) cap += scale(s, i, d.store); }
+  for (let i = 0; i < s.grid.length; i++) { const d = B[s.grid[i]]; if (d?.store && active(s, i, uc) && staffing(s, i) > 0) cap += scale(s, i, d.store); }
   return cap;
 }
 // Tapping a producing building collects its harvest bonus.
@@ -436,7 +527,7 @@ export function harvest(s, i) {
 // What the city's buildings make in a day.
 export function production(s, uc = underConstruction(s)) {
   const out = Object.fromEntries(Object.keys(RES).map((k) => [k, 0]));
-  for (let i = 0; i < N; i++) {
+  for (let i = 0; i < s.grid.length; i++) {
     const d = B[s.grid[i]];
     if (!d?.makes || !active(s, i, uc)) continue;
     const k = staffing(s, i) * LEVEL.capacity[level(s, i)] * (s.grid[i] === T.FARM && hasTech(s, 'vertical') ? 2 : 1);
@@ -449,7 +540,7 @@ export function production(s, uc = underConstruction(s)) {
 function resourcesDay(s, uc) {
   const res = (s.res ||= {}), pop = s.people.length, prod = production(s, uc), cap = storeCap(s, uc);
   let staffed = 0;
-  for (let i = 0; i < N; i++) { const d = B[s.grid[i]]; if (d?.jobs && d.cat && active(s, i, uc) && staffing(s, i) > 0) staffed++; }
+  for (let i = 0; i < s.grid.length; i++) { const d = B[s.grid[i]]; if (d?.jobs && d.cat && active(s, i, uc) && staffing(s, i) > 0) staffed++; }
   const need = { water: pop * USE.water + staffed * USE.waterPerBuilding, power: pop * USE.power + staffed * USE.powerPerBuilding, food: pop * USE.food };
   const short = { water: 0, power: 0 };
   for (const k of ['water', 'power']) {
@@ -482,7 +573,7 @@ export function productsDay(s, uc) {
   const made = {}, used = {};
   // Automated factories (the "robots" council decision) make 30% more; a carbon tax policy trims 15% off.
   const factoryK = (s.flags.robots ? 1.3 : 1) * (s.policy?.carbon ? 0.85 : 1);
-  for (let i = 0; i < N; i++) {
+  for (let i = 0; i < s.grid.length; i++) {
     if (!B[s.grid[i]]?.makesProducts || !active(s, i, uc)) continue;
     const id = rec[i], p = id && PRODUCTS[id];
     if (!p || !hasTech(s, p.tech)) continue;
@@ -503,7 +594,7 @@ export function productsDay(s, uc) {
     if (res[id] > cap) { sold += (res[id] - cap) * PRODUCTS[id].import * SURPLUS_SALE; res[id] = cap; }
   }
   let storeK = 0;
-  for (let i = 0; i < N; i++) if (s.grid[i] === T.STORE && active(s, i, uc)) storeK += staffing(s, i) * LEVEL.capacity[level(s, i)];
+  for (let i = 0; i < s.grid.length; i++) if (s.grid[i] === T.STORE && active(s, i, uc)) storeK += staffing(s, i) * LEVEL.capacity[level(s, i)];
   if (storeK > 0) for (const id of PRODUCT_IDS) {
     const sell = Math.min(res[id] || 0, storeK * FACTORY_BATCHES);
     if (sell > 0) { res[id] -= sell; sold += sell * PRODUCTS[id].import * STORE_SALE_SHARE; }
@@ -949,10 +1040,10 @@ export function utilities(s) {
   const need = s.flags?.utilSince !== undefined && s.day - s.flags.utilSince >= 5;
   const power = new Set(), water = new Set();
   const src = [];
-  for (let i = 0; i < N; i++) { const d = B[s.grid[i]]; if ((d?.power || d?.water) && active(s, i) && staffing(s, i) > 0) src.push(i); }
-  for (let i = 0; i < N; i++) {
+  for (let i = 0; i < s.grid.length; i++) { const d = B[s.grid[i]]; if ((d?.power || d?.water) && active(s, i) && staffing(s, i) > 0) src.push(i); }
+  for (let i = 0; i < s.grid.length; i++) {
     if (!B[s.grid[i]]?.cat && s.grid[i] !== T.HALL) continue;
-    for (const j of src) if (dist1(i, j) <= B[s.grid[j]].supply + (hasTech(s, 'smartgrid') ? 3 : 0)) (B[s.grid[j]].power ? power : water).add(i);
+    for (const j of src) if (councilDist1(s, i, j) <= B[s.grid[j]].supply + (hasTech(s, 'smartgrid') ? 3 : 0)) (B[s.grid[j]].power ? power : water).add(i);
   }
   if (s.flags?.blackout > 0) power.clear();
   return { need, power, water };
@@ -962,7 +1053,7 @@ const utilK = (s, i) => (s._util?.need && B[s.grid[i]]?.cat && B[s.grid[i]].cat 
 // Air quality, 0 (smog) to 1 (clean). Fossil power and factories foul it, cars add a little, trees and farms help.
 export function airQuality(s, carTrips = s._plan ? s._plan.trips.filter((t) => t.mode === 'car').length : 0) {
   let dirt = 0, fresh = 0;
-  for (let i = 0; i < N; i++) {
+  for (let i = 0; i < s.grid.length; i++) {
     const d = B[s.grid[i]];
     if (!d || s.cond[i] <= 0) continue;
     if (d.smog && !(d.fossil && hasTech(s, 'fusion'))) dirt += d.smog * (s.flags?.robots && s.grid[i] === T.FACTORY ? 1.2 : 1);
@@ -976,7 +1067,7 @@ export function airQuality(s, carTrips = s._plan ? s._plan.trips.filter((t) => t
 // Share of power capacity that comes from clean sources (1 when the town needs none yet).
 export function greenShare(s) {
   let clean = 0, all = 0;
-  for (let i = 0; i < N; i++) { const d = B[s.grid[i]]; if (d?.power && s.cond[i] > 0) { all += d.supply; if (!d.fossil) clean += d.supply; } }
+  for (let i = 0; i < s.grid.length; i++) { const d = B[s.grid[i]]; if (d?.power && s.cond[i] > 0) { all += d.supply; if (!d.fossil) clean += d.supply; } }
   return all ? clean / all : 1;
 }
 
@@ -1069,21 +1160,29 @@ export function buildPrice(s, i, type) {
 // Land value, 0..1 per tile. Parks, services, transit and clean air raise it; noise lowers it.
 // byType: active buildings by type (from plan). Cheap enough to redo every plan.
 export function landValue(s, byType, stops = [], air = 1) {
-  const v = new Float32Array(N);
+  const v = new Float32Array(s.grid.length);
+  // A radius/box in real council-wide tile space, not clipped to one suburb's own 0..PLOT-1 bounds -
+  // councilTileAt() returns -1 for a position with no suburb there, same effect the old PLOT clamp
+  // had for a single plot, just correctly open across a shared suburb edge instead of stopping at it.
   const near = (list, r, amt, staffed) => {
     for (const f of list || []) {
       if (staffed && !(staffing(s, f) > 0)) continue;
-      const fx = f % PLOT, fy = (f / PLOT) | 0;
-      for (let y = Math.max(0, fy - r); y <= Math.min(PLOT - 1, fy + r); y++) for (let x = Math.max(0, fx - r); x <= Math.min(PLOT - 1, fx + r); x++) {
+      const { x: fx, y: fy } = councilGlobalXY(s, f);
+      for (let y = fy - r; y <= fy + r; y++) for (let x = fx - r; x <= fx + r; x++) {
         const d = Math.abs(x - fx) + Math.abs(y - fy);
-        if (d <= r) v[y * PLOT + x] += amt * (1 - d / (r + 1));
+        if (d > r) continue;
+        const j = councilTileAt(s, x, y);
+        if (j >= 0) v[j] += amt * (1 - d / (r + 1));
       }
     }
   };
-  for (let i = 0; i < N; i++) v[i] = 0.25 + 0.15 * air + (terrainAt(s, i) === 1 ? 0.08 : 0);
-  if (s.terr) for (let i = 0; i < N; i++) if (terrainAt(s, i) === 2) {
-    const fx = i % PLOT, fy = (i / PLOT) | 0;
-    for (let y = Math.max(0, fy - 2); y <= Math.min(PLOT - 1, fy + 2); y++) for (let x = Math.max(0, fx - 2); x <= Math.min(PLOT - 1, fx + 2); x++) { const j = y * PLOT + x; if (terrainAt(s, j) !== 2) v[j] = Math.max(v[j], 0.25 + 0.15 * air) + 0.05; }
+  for (let i = 0; i < s.grid.length; i++) v[i] = 0.25 + 0.15 * air + (councilTerrainAt(s, i) === 1 ? 0.08 : 0);
+  for (let i = 0; i < s.grid.length; i++) if (councilTerrainAt(s, i) === 2) {
+    const { x: fx, y: fy } = councilGlobalXY(s, i);
+    for (let y = fy - 2; y <= fy + 2; y++) for (let x = fx - 2; x <= fx + 2; x++) {
+      const j = councilTileAt(s, x, y);
+      if (j >= 0 && councilTerrainAt(s, j) !== 2) v[j] = Math.max(v[j], 0.25 + 0.15 * air) + 0.05;
+    }
   }
   near(byType.get(T.PARK), 4, 0.22);
   near(byType.get(T.PLAYGROUND), 3, 0.08);
@@ -1093,12 +1192,12 @@ export function landValue(s, byType, stops = [], air = 1) {
   for (const t of [T.MUSEUM, T.POOL, T.CINEMA]) near(byType.get(t), 5, 0.08, true);
   near(stops, 4, 0.12);
   const heritage = [];
-  for (let i = 0; i < N; i++) if (isHistoric(s, i)) heritage.push(i);
+  for (let i = 0; i < s.grid.length; i++) if (isHistoric(s, i)) heritage.push(i);
   near(heritage, 2, 0.05);
   near(byType.get(T.MONUMENT), 5, 0.2);
   near(byType.get(T.STATION), 5, 0.12, true);
   for (const [t, list] of byType) if (B[t]?.pollution) near(list, B[t].pollution >= 2 ? 4 : 1, -0.25 * (B[t].pollution >= 2 ? 1 : 0.4));
-  for (let i = 0; i < N; i++) v[i] = clamp(v[i]);
+  for (let i = 0; i < s.grid.length; i++) v[i] = clamp(v[i]);
   return v;
 }
 // Who feels the rent: households with little schooling living on dear land.

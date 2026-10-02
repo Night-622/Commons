@@ -124,10 +124,13 @@ export function accountHtml(ctx, tab) {
         <div class="kv"><span>Money</span><b class="num">${money(s.money)}</b></div><div class="kv"><span>Goals</span><b class="num">${s.goalsDone.length}</b></div>
       </div>`;
   } else if (tab === 'cities') {
-    const list = ctx.cities || [];
-    body = `<p class="soft small">Your council's cities in ${esc(world.name)}. Buy more by selecting unclaimed land that touches one of them (up to ${ctx.maxCities}).</p>
-      <ul class="picklist">${list.map((c) => `<li><span><b>${esc(c.name)}</b> <small class="soft">${c.co ? `Co-mayor with ${esc(c.owner)}; ` : ''}${c.status === 'ruins' ? 'Ruins' : `${c.pop} people`}${c.here ? ', open now' : ''}</small></span>
-        <span class="inline">${c.here ? '' : `<button class="btn small" type="button" data-open-city="${c.id}">Open</button>`}${c.co ? `<button class="btn small" type="button" data-leave-co="${c.id}">Step down</button>` : ''}</span></li>`).join('')}</ul>`;
+    const list = ctx.cities || [], offers = ctx.transfersIn || [];
+    body = `${offers.length ? `<div class="callout"><h3>Cities offered to you</h3><ul class="picklist">${offers.map((t) => `<li><span><b>${esc(t.plotName)}</b> <small class="soft">from ${esc(t.fromName)}</small></span>
+        <span class="inline"><button class="btn small" type="button" data-transfer-decline="${t.id}">Decline</button><button class="btn small primary" type="button" data-transfer-accept="${t.id}">Accept</button></span></li>`).join('')}</ul></div>` : ''}
+      <p class="soft small">Your council's cities in ${esc(world.name)}. Buy more by selecting unclaimed land that touches one of them (up to ${ctx.maxCities}).</p>
+      <ul class="picklist">${list.map((c) => `<li><span><b>${esc(c.name)}</b> <small class="soft">${c.co ? `Co-mayor with ${esc(c.owner)}; ` : ''}${c.status === 'ruins' ? 'Ruins' : `${c.pop} people`}${c.here ? ', open now' : ''}${c.offeredTo ? `; offered to ${esc(c.offeredTo)}` : ''}</small></span>
+        <span class="inline">${c.here ? '' : `<button class="btn small" type="button" data-open-city="${c.id}">Open</button>`}${c.co ? `<button class="btn small" type="button" data-leave-co="${c.id}">Step down</button>` : ''}${c.offeredTo ? `<button class="btn small" type="button" data-transfer-cancel="${c.id}">Withdraw offer</button>` : c.give ? `<button class="btn small" type="button" data-give-city="${c.id}">Give away</button>` : ''}</span></li>`).join('')}</ul>
+      <p id="acct-msg" class="formmsg" role="alert"></p>`;
   } else if (tab === 'friends') {
     const list = ctx.friends || [];
     body = `${ctx.coLocked ? '<p class="warn small">Co-mayors open when you finish chapter 4 of your path (Goals). You can add friends and message them now.</p>' : ''}<p class="soft small">Add friends from a neighbour’s city panel. Press Co to make a friend a co-mayor of ${esc(s.name)} (up to ${ctx.maxCo}): they can run it too. One of you plays at a time; the others watch, and can take over when the one playing is idle.</p>

@@ -117,9 +117,11 @@ export async function findPlot(u, world = WORLD_ID) {
   await tick();
   const link = get(linkPath(u.uid, world));
   if (!link) return null;
-  const p = get(`plots/${link.plotId}`);
-  if (!p || p.owner !== u.uid) return null;
-  return { ...out(link.plotId, p), state: get(`plotState/${link.plotId}`)?.state };
+  // Like the real one: if home was given away, open another city of the council and make it home.
+  const id = [link.plotId, ...(link.plotIds || [])].find((x) => get(`plots/${x}`)?.owner === u.uid);
+  if (!id) return null;
+  if (id !== link.plotId) { link.plotId = id; persist(); }
+  return { ...out(id, get(`plots/${id}`)), state: get(`plotState/${id}`)?.state };
 }
 export function truncateUtf8(str, maxBytes) {
   const s = String(str ?? '');
@@ -294,6 +296,33 @@ export const deleteNote = async (world, id) => { del(`worlds/${world}/guestbook/
 export async function sendGift(world, gift) { set(`worlds/${world}/gifts/${newId()}`, { ...gift, createdAt: now() }); persist(); }
 export const listenGifts = (world, uid, cb) => listen(() => cb(under(`worlds/${world}/gifts`).filter((g) => g.toOwner === uid)));
 export const finishGift = async (world, id) => { del(`worlds/${world}/gifts/${id}`); persist(); };
+// Giving a city away, with the same checks the rules make: only the owner offers, only the one named accepts.
+export async function sendTransfer(world, plotId, plotName, fromUser, fromName, toUid, toName) {
+  const p = get(`plots/${plotId}`);
+  if (!p || p.owner !== fromUser.uid || toUid === fromUser.uid || get(`worlds/${world}/transfers/${plotId}`)) throw fail('permission-denied');
+  set(`worlds/${world}/transfers/${plotId}`, { plot: plotId, plotName, fromOwner: fromUser.uid, fromName, toUid, toName, status: 'pending', createdAt: now() });
+  persist();
+}
+export const listenTransfers = (world, uid, cb) => listen(() => cb(under(`worlds/${world}/transfers`).filter((t) => t.toUid === uid)));
+export const listenSentTransfers = (world, uid, cb) => listen(() => cb(under(`worlds/${world}/transfers`).filter((t) => t.fromOwner === uid)));
+export async function acceptTransfer(world, transferId, u, mayorName) {
+  await tick();
+  const t = get(`worlds/${world}/transfers/${transferId}`);
+  if (!t) throw new Error('That offer has been withdrawn.');
+  if (t.toUid !== u.uid || t.status !== 'pending') throw new Error('That offer isn’t for you.');
+  const p = get(`plots/${t.plot}`);
+  if (!p || p.owner !== t.fromOwner) throw new Error('That city has changed hands since it was offered.');
+  const link = get(linkPath(u.uid, world));
+  const ids = link ? link.plotIds || [link.plotId] : [];
+  if (!ids.includes(t.plot) && ids.length >= 9) throw new Error('Your council already has 9 cities, the most it can run.');
+  p.owner = u.uid; p.ownerName = truncateUtf8(mayorName, 24); delete p.co; p.updatedAt = now();
+  if (!link) set(linkPath(u.uid, world), world === 'public' ? { plotId: t.plot, createdAt: now() } : { uid: u.uid, world, plotId: t.plot, createdAt: now() });
+  else if (!ids.includes(t.plot)) link.plotIds = [...ids, t.plot];
+  del(`worlds/${world}/transfers/${transferId}`);
+  persist();
+  return { id: t.plot, name: t.plotName, fromName: t.fromName };
+}
+export const declineTransfer = async (world, transferId) => { del(`worlds/${world}/transfers/${transferId}`); persist(); };
 export const renameWorld = async (id, name) => { merge(`worlds/${id}`, { name }); persist(); };
 export const listenProjects = (world, cb) => listen(() => cb(under(`worlds/${world}/projects`)));
 export async function startProject(world, u, byName, type, name, goal) {

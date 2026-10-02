@@ -48,6 +48,8 @@ let saveTimer = null, lastSave = Date.now(), loopTimer = null, worldTimer = null
 let spaceHeld = false, dirty = true, lastFrame = performance.now(), warnedDay = -1;
 let worldTrains = [];
 let giftsUnsub = null, worldNews = [];
+let transfersUnsub = null, sentTransfersUnsub = null, transfersIn = [], transfersOut = [];
+const transferSeen = new Set();
 let worldUnsub = null, movesUnsub = null, lastSaved = '', offerCache = new Map(), live = false, liveTimer = null, fetching = new Set();
 const INACTIVE_MS = 10 * 60 * 1000;   // a neighbour idle this long stops sharing facilities
 let profile = null, profileDirty = false, chatUnsub = null, chatMessages = [], chatUnread = 0, chatDraft = '', lastChat = 0;
@@ -334,6 +336,7 @@ async function enter(u, openId = null) {
   stopDesk();
   worldUnsub?.(); movesUnsub?.(); worldUnsub = movesUnsub = null;
   chatUnsub?.(); chatUnsub = null; giftsUnsub?.(); giftsUnsub = null; worldNews = [];
+  transfersUnsub?.(); sentTransfersUnsub?.(); transfersUnsub = sentTransfersUnsub = null; transfersIn = []; transfersOut = [];
   projUnsub?.(); allyUnsub?.(); allyChatUnsub?.(); projUnsub = allyUnsub = allyChatUnsub = null; projects = []; alliances = []; allyChat = []; allyChatFor = null;
   marketUnsub?.(); myOffersUnsub?.(); dealsUnsub?.(); stocksUnsub?.(); marketUnsub = myOffersUnsub = dealsUnsub = stocksUnsub = null; offers = []; myOffers = []; stocks = new Map();
   threadsUnsub?.(); dmUnsub?.(); threadsUnsub = dmUnsub = null; threads = []; dmWith = null;
@@ -374,7 +377,7 @@ fb.onAuth(async (u) => {
   const same = u && user && u.uid === user.uid && state;
   user = u;
   $('boot-actions').classList.add('hidden');
-  if (!u) { stopLoops(); chatUnsub?.(); worldUnsub?.(); movesUnsub?.(); giftsUnsub?.(); worldUnsub = movesUnsub = chatUnsub = giftsUnsub = null; state = null; plotId = null; closeModal(); show('auth'); return; }
+  if (!u) { stopLoops(); chatUnsub?.(); worldUnsub?.(); movesUnsub?.(); giftsUnsub?.(); transfersUnsub?.(); sentTransfersUnsub?.(); worldUnsub = movesUnsub = chatUnsub = giftsUnsub = transfersUnsub = sentTransfersUnsub = null; state = null; plotId = null; closeModal(); show('auth'); return; }
   if (same) return;   // linking a guest to an account keeps the same player: no need to reload the city
   // A ban still only really bites at the next save (firestore.rules refuses it either way) - this just
   // stops a banned player from getting back into a city at all, with a clearer reason than a save error.
@@ -413,6 +416,7 @@ async function startGame(doc) {
   startLive();
   startChat();
   startGifts();
+  startTransfers();
   startRegion();
   startMarket();
   startDMs();
@@ -489,7 +493,15 @@ function startLive() {
     const firstBatch = !live;
     live = true;
     for (const d of docs) {
-      if (d.id === plotId) continue;
+      if (d.id === plotId) {
+        // The city open here was just given to another mayor (they accepted): it isn't ours to play any more.
+        if (!coMode && d.owner && d.owner !== user.uid && state?.status === 'alive') {
+          notifyLater = `${d.ownerName || 'The other mayor'} accepted ${d.name || 'your city'}. It’s theirs now.`;
+          enter(user);
+          return;
+        }
+        continue;
+      }
       const isNew = !firstBatch && !plots.has(d.id) && me && Math.abs(d.px - me.px) + Math.abs(d.py - me.py) === 1;
       if (!firstBatch) worldEvent(plots.get(d.id), d);
       addPlot(toPlot(d));
@@ -604,6 +616,69 @@ function giveGift(p) {
     sim.note(state, 'info', `Sent $${amt} to ${p.name}.`);
     closeModal(); play('coin'); notify(`Sent ${money(amt)} to ${p.name}.`, 'act'); afterChange();
   }, $('gift-msg'));
+}
+
+// Giving a city to another mayor. The owner offers it to a friend; nothing changes hands until the friend accepts.
+// Incoming offers pop up once, and stay in Account, Cities until answered.
+function startTransfers() {
+  transfersUnsub?.(); sentTransfersUnsub?.();
+  transfersUnsub = fb.listenTransfers(world.id, user.uid, (list) => {
+    transfersIn = list.filter((t) => t.status === 'pending' && !muted().has(t.fromOwner));
+    for (const t of transfersIn) {
+      const key = `${t.id}|${t.createdAt?.toMillis?.() ?? ''}`;
+      if (transferSeen.has(key)) continue;
+      transferSeen.add(key);
+      if (!modal.open && state) showTransferOffer(t);
+      else notify(`${t.fromName} wants to give you ${t.plotName}. Accept or decline in Account, Cities.`, 'good');
+    }
+  });
+  sentTransfersUnsub = fb.listenSentTransfers(world.id, user.uid, (list) => { transfersOut = list; });
+}
+function giveCity(id) {
+  const p = plots.get(id), here = id === plotId && !coMode;
+  const name = here ? state.name : p?.name || 'this city';
+  if (!p || p.owner !== user.uid) { notify('Only a city’s owner can give it away.', 'act'); return; }
+  if ((here ? state.status : p.status) !== 'alive') { notify('Ruins can’t be given away.', 'act'); return; }
+  if (myCities().length < 2) { notify('You can’t give away your only city. Buy land next to it for another first.', 'act'); return; }
+  if (here ? state.listed : p.listed) { notify(`Take ${name} off the stock exchange before giving it away.`, 'act'); return; }
+  // Only friends with a city in this world: they'll see the offer the next time they play here.
+  const owners = new Set([...plots.values()].map((x) => x.owner));
+  const list = friends().filter((f) => owners.has(f.uid));
+  openModal(`${closeX}<h2 id="modal-title">Give ${esc(name)} to another mayor</h2>
+    <p>Choose a friend with a city in ${esc(world.name)}. They have to accept it. Once they do, ${esc(name)} is theirs, with everything in it: you can’t play or change it any more, and its co-mayors are removed.</p>
+    ${list.length ? `<ul class="picklist">${list.map((f) => `<li><span><b>${esc(f.name)}</b></span><span class="inline"><button class="btn small primary" type="button" data-give-to="${f.uid}|${esc(f.name)}">Offer it</button></span></li>`).join('')}</ul>`
+      : '<p class="soft">None of your friends has a city in this world. Add friends from a neighbour’s city panel.</p>'}
+    <p id="give-msg" class="formmsg" role="alert"></p>
+    <div class="mfoot"><button class="btn" type="button" data-close>Cancel</button></div>`);
+  modal.querySelectorAll('[data-give-to]').forEach((b) => { b.onclick = () => busy(b, async () => {
+    const [uid, ...n] = b.dataset.giveTo.split('|'), to = n.join('|');
+    await fb.sendTransfer(world.id, id, name, user, mayor, uid, to);
+    notify(`Offered ${name} to ${to}. It’s theirs once they accept.`, 'act');
+    showAccount('cities');
+  }, $('give-msg')); });
+}
+function showTransferOffer(t) {
+  openModal(`${closeX}<h2 id="modal-title">${esc(t.fromName)} wants to give you ${esc(t.plotName)}</h2>
+    <p>If you accept, ${esc(t.plotName)} joins your council with everything in it, and you run it from now on. ${esc(t.fromName)} won’t be able to play it any more.</p>
+    <p id="transfer-msg" class="formmsg" role="alert"></p>
+    <div class="mfoot"><button class="btn" type="button" id="transfer-decline">Decline</button><button class="btn primary" type="button" id="transfer-accept">Accept</button></div>`);
+  $('transfer-accept').onclick = () => busy($('transfer-accept'), () => acceptCity(t), $('transfer-msg'));
+  $('transfer-decline').onclick = () => busy($('transfer-decline'), () => declineCity(t), $('transfer-msg'));
+}
+async function acceptCity(t) {
+  const r = await fb.acceptTransfer(world.id, t.id, user, mayor);
+  transfersIn = transfersIn.filter((x) => x.id !== t.id);
+  play('goal');
+  openModal(`${closeX}<h2 id="modal-title">${esc(r.name)} is yours</h2>
+    <p>${esc(r.fromName)} gave you ${esc(r.name)}. It’s part of your council now: open it any time from Account, Cities.</p>
+    <div class="mfoot"><button class="btn" type="button" data-close>Later</button><button class="btn primary" type="button" id="open-given">Open it</button></div>`);
+  $('open-given').onclick = async () => { closeModal(); await save().catch(() => {}); await fb.setHome(user, world.id, r.id); enter(user); };
+}
+async function declineCity(t) {
+  await fb.declineTransfer(world.id, t.id);
+  transfersIn = transfersIn.filter((x) => x.id !== t.id);
+  closeModal();
+  notify(`You declined ${t.plotName}.`, 'act');
 }
 
 // Guestbook on other cities (and your own, in the World panel).
@@ -3862,9 +3937,16 @@ function showAccount(tab = acctTab) {
   profile ||= { name: mayor, colour: acct.COLOURS[0], stats: acct.emptyLife(), achievements: {}, base: {} };
   const cities = [...myCities(), ...[...plots.values()].filter((p) => p.owner !== user.uid && (p.co || []).includes(user.uid))]
     .map((p) => ({ id: p.id, name: p.id === plotId ? state.name : p.name, pop: p.id === plotId ? state.people.length : p.pop, status: p.status, here: p.id === plotId, co: p.owner !== user.uid, owner: p.ownerName }));
+  // Your own cities can be given to a friend while you keep at least one; an unanswered offer can be withdrawn.
+  const owned = myCities().length;
+  for (const c of cities) if (!c.co) { c.give = owned > 1 && c.status === 'alive'; c.offeredTo = transfersOut.find((t) => t.plot === c.id)?.toName || ''; }
   const friendList = friends().map((f) => ({ ...f, co: (me?.co || []).includes(f.uid) }));
-  openModal(`${closeX}<h2 id="modal-title">Account</h2>${acct.accountHtml({ user, mayor, profile, s: state, world, colour: profile.colour || acct.COLOURS[0], cities, maxCities: MAX_CITIES, friends: friendList, canCo: !coMode && isOpen('co'), coLocked: !isOpen('co'), maxCo: MAX_CO }, tab)}`, 'wide');
+  openModal(`${closeX}<h2 id="modal-title">Account</h2>${acct.accountHtml({ user, mayor, profile, s: state, world, colour: profile.colour || acct.COLOURS[0], cities, maxCities: MAX_CITIES, friends: friendList, canCo: !coMode && isOpen('co'), coLocked: !isOpen('co'), maxCo: MAX_CO, transfersIn }, tab)}`, 'wide');
   modal.querySelectorAll('[data-open-city]').forEach((b) => { b.onclick = () => { closeModal(); switchCity(b.dataset.openCity); }; });
+  modal.querySelectorAll('[data-give-city]').forEach((b) => { b.onclick = () => giveCity(b.dataset.giveCity); });
+  modal.querySelectorAll('[data-transfer-cancel]').forEach((b) => { b.onclick = () => busy(b, async () => { await fb.declineTransfer(world.id, b.dataset.transferCancel); transfersOut = transfersOut.filter((t) => t.id !== b.dataset.transferCancel); notify('Offer withdrawn.', 'act'); showAccount('cities'); }, $('acct-msg')); });
+  modal.querySelectorAll('[data-transfer-accept]').forEach((b) => { b.onclick = () => { const t = transfersIn.find((x) => x.id === b.dataset.transferAccept); if (t) busy(b, () => acceptCity(t), $('acct-msg')); }; });
+  modal.querySelectorAll('[data-transfer-decline]').forEach((b) => { b.onclick = () => { const t = transfersIn.find((x) => x.id === b.dataset.transferDecline); if (t) busy(b, async () => { await declineCity(t); showAccount('cities'); }, $('acct-msg')); }; });
   modal.querySelectorAll('[data-co]').forEach((b) => { b.onclick = () => busy(b, async () => { await toggleCo(b.dataset.co); showAccount('friends'); }, $('acct-msg')); });
   modal.querySelectorAll('[data-dm-friend]').forEach((b) => { b.onclick = () => { const [uid, ...n] = b.dataset.dmFriend.split('|'); closeModal(); openDM(uid, n.join('|')); }; });
   modal.querySelectorAll('[data-unfriend]').forEach((b) => { b.onclick = () => { profile.friends = friends().filter((f) => f.uid !== b.dataset.unfriend); profileDirty = true; save(); showAccount('friends'); }; });
