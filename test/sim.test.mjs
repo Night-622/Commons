@@ -1240,4 +1240,29 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert.equal(sim.councilDist1(a, sim.idx(0, 10), N + sim.idx(PLOT - 1, 10)), 2 * PLOT - 1, 'opposite far edges are a real Manhattan distance apart, not a shortcut through the seam');
   console.log('council geometry ok: neighbours/distance correctly cross a shared suburb edge, and match the single-suburb case exactly when there\'s nothing to cross into');
 }
+// ---- tickCouncil(): a real two-suburb council, ticked end to end - a resident actually commutes
+// from a home in one suburb to a job in the other, over a road that crosses the shared edge
+{
+  seed = 77;
+  const a = sim.newCity('Dual City', rng); a.money = 50000; a.land.fill(1);
+  const b = sim.linkCouncil(sim.newSuburb(), a._council, 1, 0); b.land.fill(1);
+  // A road from the hall (12,12) east to a's edge, continuing from b's west edge to a workplace there.
+  for (let x = 13; x <= 23; x++) put(a, x, 12, T.ROAD);
+  for (let x = 0; x <= 10; x++) put(b, x, 12, T.ROAD);
+  put(b, 11, 12, T.WORK);
+  put(a, 13, 11, T.HOUSE);
+  finishAll(a); finishAll(b);
+  const N = PLOT * PLOT;
+  for (let h = 0; h < 72; h++) sim.tickCouncil(a._council, rng);   // 3 days
+  assert.equal(a.money, b.money, 'money still shared after many combined ticks');
+  assert.equal(a.day, b.day, 'clock still shared');
+  assert(a.day > 0, 'days actually passed');
+  assert.equal(b.grid[sim.idx(11, 12)], T.WORK, 'the workplace is still there, finished');
+  const commuter = a.people.find((p) => p.j >= N);
+  assert(commuter, 'at least one resident has a job indexed into the OTHER suburb - routing genuinely crossed the seam, not just a bigger loop bound');
+  assert.equal(commuter.j, N + sim.idx(11, 12), 'specifically, at the workplace in suburb b');
+  // The construction queue correctly came back split: b's own queue has nothing stray from a's tiles.
+  assert(b.queue.every((q) => q.i >= 0 && q.i < N), 'suburb b\'s queue only ever holds its own local indices');
+  console.log('tickCouncil ok: two suburbs tick as one city - shared economy, and a resident\'s commute genuinely crosses the seam');
+}
 console.log('all tests passed');

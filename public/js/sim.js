@@ -243,6 +243,17 @@ function buildCombinedView(council) {
 function splitCombinedView(view, council) {
   splitCombinedQueue(view.queue, council.suburbs.map((e) => e.ref));
 }
+// The one entry point the game loop needs: ticks every suburb of a council together as one city.
+// A lone suburb (the overwhelmingly common case) ticks directly, no combined view at all - only a
+// real council of two or more pays for building one, and even then it's index translation over
+// live data, not a copy.
+export function tickCouncil(council, rng = Math.random) {
+  if (council.suburbs.length <= 1) return tick(council.suburbs[0].ref, rng);
+  const view = buildCombinedView(council);
+  const result = tick(view, rng);
+  splitCombinedView(view, council);
+  return result;
+}
 
 function person(s, o) {
   const p = { i: s.nextId++, f: 0, l: 0, a: 30, h: HALL_INDEX, e: 0, sp: 0, us: 0, j: -1, jt: 0, sc: -1, tu: -1, hp: 100, ill: 0, sd: 0,
