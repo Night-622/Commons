@@ -1172,4 +1172,45 @@ const finishAll = (s) => { for (const q of s.queue) if (!q.up) s.cond[q.i] = 100
   assert(sim.adminDisaster({ ...s, grid: s.grid.map(() => T.EMPTY), people: [] }, 'storm', rng), 'a disaster on an empty city does not throw');
   console.log('disasters ok: admin.html can trigger storm, fire, earthquake, flu, blackout and civil unrest on demand');
 }
+// ---- councils: linkCouncil() shares money, people, policy, research and the clock across suburbs,
+// while each suburb keeps its own separate grid - and splits cleanly back into two save documents
+{
+  seed = 66;
+  const a = sim.newCity('Twin Town', rng); a.money = 20000;
+  const b = sim.linkCouncil(sim.newSuburb(), a._council);
+  assert.equal(b.name, 'Twin Town', 'the second suburb sees the same council name');
+  assert.equal(b.money, a.money, 'and the same money');
+  assert.equal(b.people, a.people, 'literally the same people array, not a copy');
+  a.money += 500;
+  assert.equal(b.money, a.money, 'spending or earning on one suburb is visible on the other instantly');
+  assert.equal(a.day, b.day, 'one shared clock');
+  // A second suburb has no town hall of its own - there's one hall level for the whole council now.
+  assert.equal(a.grid[sim.HALL_INDEX], T.HALL, 'the founding suburb has the hall');
+  assert.equal(b.grid[sim.HALL_INDEX], T.EMPTY, 'a second suburb does not');
+  // Each suburb's land is its own: building on b never touches a's grid.
+  assert.notEqual(a.grid, b.grid, 'separate grid arrays');
+  const gridBefore = [...a.grid];
+  b.land.fill(1);
+  put(b, 5, 5, T.HOUSE);
+  assert.deepEqual(a.grid, gridBefore, 'building on the second suburb left the first one untouched');
+  assert.equal(b.grid[sim.idx(5, 5)], T.HOUSE);
+  // tick()/daily() still work on either suburb, and the shared council keeps moving regardless of
+  // which suburb's name is passed through sim's per-tile functions.
+  for (let h = 0; h < 24; h++) sim.tick(a, rng);
+  assert.equal(a.day, 1, 'a day passed');
+  assert.equal(b.day, 1, 'the second suburb saw the same day pass, with no tick of its own');
+  // The two save documents: serializeSuburb has no money/people; serializeCouncil has nothing spatial.
+  const savedSuburb = JSON.parse(sim.serializeSuburb(b));
+  assert(!('money' in savedSuburb) && !('people' in savedSuburb), 'a suburb save carries no council fields');
+  assert.equal(savedSuburb.grid[sim.idx(5, 5)], T.HOUSE, 'but does carry its own buildings');
+  const savedCouncil = JSON.parse(sim.serializeCouncil(a));
+  assert(!('grid' in savedCouncil) && !('land' in savedCouncil), 'a council save carries no spatial fields');
+  assert.equal(savedCouncil.money, a.money);
+  // serialize() (the old single-document shape) still returns everything flattened together, for a
+  // lone city with no second suburb - unchanged from before this split existed.
+  const solo = sim.newCity('Solo', rng);
+  const flat = JSON.parse(sim.serialize(solo));
+  assert.equal(flat.money, solo.money); assert.equal(flat.grid.length, solo.grid.length); assert.equal(flat.people.length, solo.people.length);
+  console.log('councils ok: suburbs of one council share money, people, policy and the clock; each keeps its own grid');
+}
 console.log('all tests passed');

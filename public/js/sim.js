@@ -78,6 +78,29 @@ export function weather(day) {
 const cityDay = (s) => worldDay(s.lastTick);
 
 // ---------- state ----------
+// A council's suburbs share one government: money, residents, policy, research, the clock - call
+// it "the council" - while each suburb keeps its own land, buildings and queue. Rather than thread
+// two objects through every function that touches money or people, linkCouncil() makes the shared
+// fields transparent accessors on the suburb object: `s.money` still reads and writes exactly as
+// it always has, it just resolves through to the (possibly shared) council object underneath. A
+// fresh newCity() calls this once; loading a save does too, whether from the old single-document
+// shape (everything lands on `suburb`, then gets hoisted into a fresh `council`) or the new
+// two-document shape (each half already holds only its own fields).
+const COUNCIL_KEYS = [
+  'name', 'money', 'res', 'people', 'nextId', 'hall', 'hallDone', 'happiness', 'hour', 'day', 'peakPop',
+  'unpaidDays', 'waterShortDays', 'trafficBadDays', 'debtDays', 'cityNo', 'status', 'lastTick', 'clock',
+  'goalsDone', 'history', 'log', 'flags', 'graves', 'cases', 'wants', 'policy', 'troops', 'trainQueue',
+  'counters', 'stats', 'tech', 'rp', 'savings', 'loan', 'bond', 'debts', 'contracts', 'leasesIn', 'leasesOut',
+  'listed', 'decision', 'letter', 'pledge', 'approval', 'fallen', 'shares', 'path', 'pop', 'cohorts',
+];
+export function linkCouncil(suburb, council) {
+  for (const key of COUNCIL_KEYS) {
+    if (!(key in council) && key in suburb) { council[key] = suburb[key]; delete suburb[key]; }
+    Object.defineProperty(suburb, key, { get: () => council[key], set: (v) => { council[key] = v; }, enumerable: true, configurable: true });
+  }
+  Object.defineProperty(suburb, '_council', { value: council, enumerable: false, configurable: true });
+  return suburb;
+}
 
 function person(s, o) {
   const p = { i: s.nextId++, f: 0, l: 0, a: 30, h: HALL_INDEX, e: 0, sp: 0, us: 0, j: -1, jt: 0, sc: -1, tu: -1, hp: 100, ill: 0, sd: 0,
@@ -109,22 +132,30 @@ function household(s, home, rng, kind) {
   return out;
 }
 
-export function newCity(name, rng = Math.random) {
+// A suburb's own land: buildings, condition, zoning, queue - everything spatial to one physical
+// plot, with no government of its own. Used both for a brand new city's first suburb (below, with
+// a town hall added) and for a second (or further) suburb bought for an existing council, which
+// doesn't get its own hall - there's one hall level for the whole council now, not one each.
+export function newSuburb() {
   const grid = new Array(N).fill(T.EMPTY);
-  const cond = new Array(N).fill(0);
-  grid[HALL_INDEX] = T.HALL;
-  cond[HALL_INDEX] = 100;
   const land = new Array(CHUNKS * CHUNKS).fill(0);
   for (const c of START_CHUNKS) land[c] = 1;
-  const s = {
-    v: 4, name, grid, cond, lv: new Array(N).fill(1), land, queue: [], money: START_MONEY, res: { ...STARTING_RES }, people: [], nextId: 1, hall: 0, hallDone: {},
+  return { v: 4, grid, cond: new Array(N).fill(0), lv: new Array(N).fill(1), land, queue: [], zone: new Array(N).fill(0), bday: new Array(N).fill(-1), protect: [], links: 0 };
+}
+export function newCity(name, rng = Math.random) {
+  const suburb = newSuburb();
+  suburb.grid[HALL_INDEX] = T.HALL;
+  suburb.cond[HALL_INDEX] = 100;
+  const council = {
+    name, money: START_MONEY, res: { ...STARTING_RES }, people: [], nextId: 1, hall: 0, hallDone: {},
     happiness: 0.65, hour: 0, day: 0, peakPop: 10, unpaidDays: 0, waterShortDays: 0, trafficBadDays: 0, debtDays: 0, cityNo: 1, status: 'alive', lastTick: Date.now(),
-    goalsDone: [], history: [], log: [], links: 0, flags: {}, graves: 0, cases: 0, clock: 1, wants: [], zone: new Array(N).fill(0), bday: new Array(N).fill(-1), protect: [],
+    goalsDone: [], history: [], log: [], flags: {}, graves: 0, cases: 0, clock: 1, wants: [],
     policy: { tax: 1, funding: 1, freeTransit: false, nightGuard: false },
     troops: {}, trainQueue: [],
     counters: { births: 0, deaths: 0, graduates: 0, crimes: 0, cases: 0, treated: 0, arrivals: 0, departures: 0, built: 0, land: 0, moved: 0 },
     stats: { income: 0, upkeep: 0, failedTrips: 0, arrivals: 0, departures: 0, graduates: 0 },
   };
+  const s = linkCouncil(suburb, council);
   s.lastTick = Math.floor(Date.now() / TICK_MS) * TICK_MS;
   s.hour = worldHour(s.lastTick);
   settle(s, rng);
@@ -247,8 +278,21 @@ export function migrate(s, rng = Math.random) {
 const PKEYS = ['i', 'f', 'l', 'a', 'h', 'e', 'sp', 'us', 'j', 'jt', 'sc', 'tu', 'hp', 'ill', 'sd', 'm', 'pt', 'pa', 'cs', 'fun', 'st', 'vt', 'gr', 'jy', 'b', 'oj', 'hol', 'hto', 'hcity', 'hi', 'lk', 'nf', 'nfu', 'xp', 'oc'];
 const pack = (p) => PKEYS.map((k) => (k === 'm' ? Math.round(p.m * 1000) / 1000 : k === 'sp' || k === 'us' ? Math.round((p[k] || 0) * 10) / 10 : p[k] ?? null));
 const unpack = (a) => { const p = {}; PKEYS.forEach((k, n) => { p[k] = a[n]; }); for (const k of ['j', 'sc', 'tu', 'fun']) if (p[k] === null) p[k] = -1; return p; };
+// A full, flat snapshot of everything - suburb and council fields both - for tests and debugging.
+// `{ ...s }` resolves every linkCouncil() accessor to its real current value, same as reading
+// s.money/s.people directly would, so this is exactly what the old single-document save looked like.
 export function serialize(s) {
-  return JSON.stringify(s, (k, v) => (k.startsWith('_') ? undefined : k === 'people' && Array.isArray(v) ? v.map(pack) : v));
+  return JSON.stringify({ ...s }, (k, v) => (k.startsWith('_') ? undefined : k === 'people' && Array.isArray(v) ? v.map(pack) : v));
+}
+// The two real save documents: only this suburb's land and buildings, and only the council's
+// shared government - each a strict subset of serialize()'s full snapshot, not a separate shape.
+export function serializeSuburb(s) {
+  const own = {};
+  for (const k of Object.keys(s)) if (!COUNCIL_KEYS.includes(k)) own[k] = s[k];
+  return JSON.stringify(own, (k, v) => (k.startsWith('_') ? undefined : v));
+}
+export function serializeCouncil(s) {
+  return JSON.stringify(s._council, (k, v) => (k.startsWith('_') ? undefined : k === 'people' && Array.isArray(v) ? v.map(pack) : v));
 }
 
 export const totalPop = (s) => s.people.length;
