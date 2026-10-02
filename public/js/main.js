@@ -3385,7 +3385,7 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 2.24';
+const VERSION = 'Commons 2.25';
 const CHANGELOG = [
   ['2.25', [
     'A fresh start: the open world moved on again (WORLD_ID s5 → s6). Cities of one council are now treated as suburbs of a single city, sharing one treasury, population, policy and clock rather than being fully separate cities that merely share a mayor.',
