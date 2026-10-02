@@ -178,6 +178,15 @@ export function councilTerrainAt(s, i) {
   const su = s._council.suburbs[(i / N) | 0].ref;
   return su.terr ? su.terr.charCodeAt(i % N) - 48 : 0;
 }
+// Whether a tile sits on the true outer boundary of the WHOLE council, not just its own suburb's
+// local edge - a rail tile at x=0 of one suburb isn't really "leaving town" if another suburb is
+// registered one plot to the west; it only counts once there's genuinely nothing further that way.
+export function councilIsEdge(s, i) {
+  const si = (i / N) | 0, local = i % N, { dx, dy } = s._council.suburbs[si], at = s._council.suburbAt;
+  const x = local % PLOT, y = (local / PLOT) | 0;
+  return (x === 0 && !at.has(`${dx - 1},${dy}`)) || (x === PLOT - 1 && !at.has(`${dx + 1},${dy}`))
+    || (y === 0 && !at.has(`${dx},${dy - 1}`)) || (y === PLOT - 1 && !at.has(`${dx},${dy + 1}`));
+}
 
 // A per-tile array (grid/cond/lv/zone/bday), combined across every suburb of a council: index
 // si*N + localI reads and writes straight through to suburb si's own real array, live - there is
@@ -1612,7 +1621,7 @@ export function plan(s, rng = Math.random) {
   const uc = underConstruction(s);
   const walkNet = network(s, uc, false), carNet = network(s, uc, true);
   const byType = new Map();
-  for (let i = 0; i < N; i++) {
+  for (let i = 0; i < s.grid.length; i++) {
     if (!active(s, i, uc)) continue;
     const t = s.grid[i];
     if (!byType.has(t)) byType.set(t, []);
@@ -1750,17 +1759,17 @@ export function plan(s, rng = Math.random) {
   }
 
   // Public transport. Stations must touch the railway; buses need a staffed depot and at least two stops.
-  const railNet = new Uint8Array(N);
-  for (let i = 0; i < N; i++) if ((isRail(s.grid[i]) && !uc.has(i)) || (s.grid[i] === T.STATION && active(s, i, uc))) railNet[i] = 1;
-  const railComp = new Int16Array(N).fill(-1);
+  const railNet = new Uint8Array(s.grid.length);
+  for (let i = 0; i < s.grid.length; i++) if ((isRail(s.grid[i]) && !uc.has(i)) || (s.grid[i] === T.STATION && active(s, i, uc))) railNet[i] = 1;
+  const railComp = new Int16Array(s.grid.length).fill(-1);
   let comps = 0;
-  for (let i = 0; i < N; i++) {
+  for (let i = 0; i < s.grid.length; i++) {
     if (!railNet[i] || railComp[i] >= 0) continue;
     const q = [i]; railComp[i] = comps;
-    for (let k = 0; k < q.length; k++) for (const v of neighbours(q[k])) if (railNet[v] && railComp[v] < 0) { railComp[v] = comps; q.push(v); }
+    for (let k = 0; k < q.length; k++) for (const v of councilNeighbours(s, q[k])) if (railNet[v] && railComp[v] < 0) { railComp[v] = comps; q.push(v); }
     comps++;
   }
-  const stations = (byType.get(T.STATION) || []).filter((i) => staffing(s, i) > 0 && neighbours(i).some((n) => isRail(s.grid[n]) && railNet[n]));
+  const stations = (byType.get(T.STATION) || []).filter((i) => staffing(s, i) > 0 && councilNeighbours(s, i).some((n) => isRail(s.grid[n]) && railNet[n]));
   const drivers = s.people.filter((p) => p.j >= 0 && s.grid[p.j] === T.DEPOT && !p.ill).length;
   const stops = drivers > 0 && (byType.get(T.STOP) || []).length >= 2 ? byType.get(T.STOP) : [];
   const busCap = drivers * BUS_SEATS;
@@ -1837,12 +1846,12 @@ export function plan(s, rng = Math.random) {
   }
 
   // Trips. Short ones are walked or cycled on footpaths and pavements; longer ones are driven.
-  const load = new Float32Array(N), cap = new Float32Array(N);
+  const load = new Float32Array(s.grid.length), cap = new Float32Array(s.grid.length);
   const snowK = weather(cityDay(s)) === 'snow' ? 0.75 : 1;
   // Busy junctions are bottlenecks unless they have lights or a roundabout.
-  for (let i = 0; i < N; i++) {
+  for (let i = 0; i < s.grid.length; i++) {
     if (!carNet[i]) continue;
-    const t = s.grid[i], ways = neighbours(i).filter((n) => carNet[n]).length;
+    const t = s.grid[i], ways = councilNeighbours(s, i).filter((n) => carNet[n]).length;
     const k = t === T.HALL ? HALL_CAP / ROAD_CAP : t === T.XING ? 0.8 : t === T.LIGHTS ? 1.2 : t === T.ROUNDABOUT ? 1.45 : ways >= 3 ? 0.8 : 1;
     cap[i] = ROAD_CAP * k * snowK * (hasTech(s, 'trafficai') ? 1.2 : 1);
   }
@@ -1852,7 +1861,7 @@ export function plan(s, rng = Math.random) {
   const carRoute = (h, to) => {
     const goal = new Set(doorsteps(s, carNet, to));
     if (!goal.size) return null;
-    const dist = new Float32Array(N).fill(Infinity), prev = new Int32Array(N).fill(-1), heap = [];
+    const dist = new Float32Array(s.grid.length).fill(Infinity), prev = new Int32Array(s.grid.length).fill(-1), heap = [];
     const push = (d, v) => { heap.push([d, v]); let k = heap.length - 1; while (k > 0) { const j = (k - 1) >> 1; if (heap[j][0] <= heap[k][0]) break; [heap[j], heap[k]] = [heap[k], heap[j]]; k = j; } };
     const popMin = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let k = 0; for (;;) { const l = 2 * k + 1, r = l + 1; let m = k; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === k) break; [heap[m], heap[k]] = [heap[k], heap[m]]; k = m; } } return top; };
     for (const st of doorsteps(s, carNet, h)) { dist[st] = 1; push(1, st); }
@@ -1860,7 +1869,7 @@ export function plan(s, rng = Math.random) {
       const [d, u] = popMin();
       if (d > dist[u]) continue;
       if (goal.has(u)) { const path = []; for (let v = u; v !== -1; v = prev[v]) path.push(v); return path.reverse(); }
-      for (const v of neighbours(u)) {
+      for (const v of councilNeighbours(s, u)) {
         if (!carNet[v]) continue;
         const nd = d + 1 + 2 * (cap[v] ? load[v] / cap[v] : 0);
         if (nd < dist[v]) { dist[v] = nd; prev[v] = u; push(nd, v); }
@@ -2012,9 +2021,8 @@ export function plan(s, rng = Math.random) {
 
   // Routes the vehicles drive: trains between stations and out to the plot edge; one bus loop through every stop.
   const railEnds = [...stations];
-  for (let i = 0; i < N; i++) {
-    const x = i % PLOT, y = (i / PLOT) | 0;
-    if (isRail(s.grid[i]) && railNet[i] && (x === 0 || y === 0 || x === PLOT - 1 || y === PLOT - 1) && stations.length === 1 && !(s.railLinks > 0) && stations.some((st) => railComp[st] === railComp[i])) railEnds.push(i);
+  for (let i = 0; i < s.grid.length; i++) {
+    if (isRail(s.grid[i]) && railNet[i] && councilIsEdge(s, i) && stations.length === 1 && !(s.railLinks > 0) && stations.some((st) => railComp[st] === railComp[i])) railEnds.push(i);
   }
   const trainLines = [];
   for (let a = 0; a < railEnds.length; a++) for (let b = a + 1; b < railEnds.length; b++) {
@@ -2024,7 +2032,11 @@ export function plan(s, rng = Math.random) {
   }
   let busLoop = null;
   if (stops.length >= 2) {
-    const order = [...stops].sort((a, b) => Math.atan2(((a / PLOT) | 0) - 12, a % PLOT - 12) - Math.atan2(((b / PLOT) | 0) - 12, b % PLOT - 12));
+    // Sorted by angle around the council's overall centre (its suburbs' average centre, in global
+    // tile space - just (12,12), the plot's own middle, for a lone suburb) so the loop makes sense
+    // across the whole footprint instead of just one plot.
+    const subs = s._council.suburbs, ccx = subs.reduce((a, su) => a + su.dx * PLOT + 12, 0) / subs.length, ccy = subs.reduce((a, su) => a + su.dy * PLOT + 12, 0) / subs.length;
+    const order = [...stops].sort((a, b) => { const pa = councilGlobalXY(s, a), pb = councilGlobalXY(s, b); return Math.atan2(pa.y - ccy, pa.x - ccx) - Math.atan2(pb.y - ccy, pb.x - ccx); });
     const loop = [];
     for (let k = 0; k < order.length; k++) {
       const from = order[k], to = order[(k + 1) % order.length];
