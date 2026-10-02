@@ -2291,7 +2291,7 @@ function construct(s, hours = 1) {
 function roomIn(s, h, byHome) { return homeCap(s, h) - (byHome.get(h)?.length || 0); }
 function homesWithRoom(s, byHome, need = 1) {
   const out = [];
-  for (let i = 0; i < N; i++) if (isHome(s.grid[i]) && active(s, i) && roomIn(s, i, byHome) >= need) out.push(i);
+  for (let i = 0; i < s.grid.length; i++) if (isHome(s.grid[i]) && active(s, i) && roomIn(s, i, byHome) >= need) out.push(i);
   return out;
 }
 
@@ -2328,7 +2328,7 @@ function incomeByClass(s, plan, tot, uc) {
   by.visitors = (inc.fun || 0) * 2 + (inc.care || 0) * 4 + (inc.shop || 0) * 1 + (inc.school || 0) * 2 + (inc.tourists || 0) * 8;
   const air = plan.needs?.air ?? 1;
   let draw = 0, rooms = 0;
-  for (let i = 0; i < N; i++) {
+  for (let i = 0; i < s.grid.length; i++) {
     const d = B[s.grid[i]];
     if (!d || !active(s, i, uc) || !(staffing(s, i) > 0)) continue;
     if (d.draw) draw += d.draw * LEVEL.capacity[level(s, i)];
@@ -2338,7 +2338,7 @@ function incomeByClass(s, plan, tot, uc) {
   if (s.flags.festival > 0) draw += 15;
   draw += s._regional?.draw || 0;
   let hist = 0;
-  for (let i = 0; i < N; i++) if (isHistoric(s, i)) hist += isProtected(s, i) ? 2 : 1;
+  for (let i = 0; i < s.grid.length; i++) if (isHistoric(s, i)) hist += isProtected(s, i) ? 2 : 1;
   draw += Math.min(30, hist);
   const stays = Math.min(draw, rooms), trips = Math.round((draw - stays) * DAYTRIP_SHARE);
   by.tourism = stays * TOURIST_SPEND.night + trips * TOURIST_SPEND.day;
@@ -2581,7 +2581,7 @@ function daily(s, plan, rng) {
   // must still be able to repair once it's solvent again, or it's stuck derelict - earning nothing, costing
   // nothing, forever - the moment its condition hits exactly 0.
   const buildings = [], leased = [];
-  for (let i = 0; i < N; i++) {
+  for (let i = 0; i < s.grid.length; i++) {
     const t = s.grid[i];
     if (!B[t]?.cat || t === T.HALL || uc.has(i)) continue;
     (s.lease?.[i]?.k === 'civ' ? leased : buildings).push(i);
@@ -2627,7 +2627,7 @@ function daily(s, plan, rng) {
   // and residents who do buy pay the price that budget was marked up to - see grocerDemand()/capacity() above
   // for how a higher markup already left fewer of them able to.
   let groceryIncome = 0, groceryCost = 0;
-  for (let i = 0; i < N; i++) {
+  for (let i = 0; i < s.grid.length; i++) {
     if (s.grid[i] !== T.SHOP || !active(s, i, uc) || staffing(s, i) <= 0) continue;
     const { budget, markup } = shopTerms(s, i);
     groceryCost += budget / 7;
@@ -2836,7 +2836,7 @@ function daily(s, plan, rng) {
   for (const z of [1, 2, 3]) {
     if (want[z] <= 0.1) continue;
     const spots = [];
-    for (let i = 0; i < N; i++) if (s.zone[i] === z && s.grid[i] === T.EMPTY && terrainAt(s, i) !== 2 && owns(s, i) && neighbours(i).some((n) => isRoad(s.grid[n]) || s.grid[n] === T.HALL)) spots.push(i);
+    for (let i = 0; i < s.grid.length; i++) if (s.zone[i] === z && s.grid[i] === T.EMPTY && councilTerrainAt(s, i) !== 2 && councilOwns(s, i) && councilNeighbours(s, i).some((n) => isRoad(s.grid[n]) || s.grid[n] === T.HALL)) spots.push(i);
     for (let k = 0; k < Math.min(spots.length, want[z] > 0.5 ? 2 : 1); k++) {
       const i = spots.splice(Math.floor(rng() * spots.length), 1)[0], t = pickType(z);
       if (B[t].minPop && s.people.length < B[t].minPop) continue;
@@ -2848,20 +2848,25 @@ function daily(s, plan, rng) {
   if (st.grown) note(s, 'info', `Developers started ${st.grown} new building${st.grown > 1 ? 's' : ''} in your zones.`);
 
   // Disasters, and the things that defend against them.
-  const covered = (t, i) => s.grid.some((g, j) => g === t && active(s, j, uc) && dist1(i, j) <= B[t].supply);
+  const covered = (t, i) => s.grid.some((g, j) => g === t && active(s, j, uc) && councilDist1(s, i, j) <= B[t].supply);
+  // A localised disaster (flood, tornado below) picks one suburb of the council first - any one is as
+  // likely as another - then uses the same plot-local geometry as always, scoped to just that suburb,
+  // rather than trying to generalise the shape of a flood or a tornado's path across suburb boundaries.
+  const pickSuburb = () => { const subs = s._council.suburbs, k = Math.floor(rng() * subs.length); return { ref: subs[k].ref, off: k * N }; };
   const wx = weather(cityDay(s));
   if (wx === 'rain' && s.day > 5 && rng() < (s.terr?.includes('2') ? 0.09 : 0.07)) {
     // Rivers burst their banks: floods start by the water when there is any.
+    const { ref: su, off } = pickSuburb();
     const shore = [];
-    if (s.terr) for (let i = 0; i < N; i++) if (terrainAt(s, i) !== 2 && nearWater(s, i)) shore.push(i);
+    if (su.terr) for (let i = 0; i < N; i++) if (terrainAt(su, i) !== 2 && nearWater(su, i)) shore.push(i);
     const start = shore.length && rng() < 0.7 ? shore[Math.floor(rng() * shore.length)] : -1;
     const cx = start >= 0 ? Math.min(PLOT - 3, Math.max(2, start % PLOT)) : 2 + Math.floor(rng() * (PLOT - 4)), cy = start >= 0 ? Math.min(PLOT - 3, Math.max(2, (start / PLOT) | 0)) : 2 + Math.floor(rng() * (PLOT - 4));
     let hit = 0, saved = 0;
     for (let y = cy - 2; y <= cy + 2; y++) for (let x = cx - 2; x <= cx + 2; x++) {
       const i = idx(x, y);
-      if (!B[s.grid[i]]?.cat || s.cond[i] <= 0) continue;
-      if (covered(T.DRAIN, i)) { saved++; continue; }
-      s.cond[i] = Math.max(1, s.cond[i] - hurt(s, 35)); hit++;
+      if (!B[su.grid[i]]?.cat || su.cond[i] <= 0) continue;
+      if (covered(T.DRAIN, off + i)) { saved++; continue; }
+      su.cond[i] = Math.max(1, su.cond[i] - hurt(s, 35)); hit++;
     }
     if (hit) note(s, 'warn', `Flash flooding damaged ${hit} building${hit > 1 ? 's' : ''}.${saved ? ` Storm drains protected ${saved}.` : ' Storm drains would have helped.'}`);
     else if (saved) note(s, 'good', `Heavy rain flooded the streets, but storm drains kept ${saved} building${saved > 1 ? 's' : ''} safe.`);
@@ -2877,12 +2882,13 @@ function daily(s, plan, rng) {
     note(s, 'warn', st.disaster);
     for (const p of s.people) p.m = Math.max(0, p.m - 0.05);
   } else if (s.day > 8 && (wx === 'rain' || wx === 'heat') && ['Spring', 'Summer'].includes(season(cityDay(s))) && rng() < TORNADO_CHANCE) {
+    const { ref: su } = pickSuburb();
     const horiz = rng() < 0.5, line = 3 + Math.floor(rng() * (PLOT - 6));
     let hit = 0;
     for (let k = 0; k < PLOT; k++) for (const w of [0, 1]) {
       const i = horiz ? idx(k, Math.min(PLOT - 1, line + w)) : idx(Math.min(PLOT - 1, line + w), k);
-      if (!B[s.grid[i]]?.cat || s.grid[i] === T.HALL || s.cond[i] <= 0 || rng() < 0.4) continue;
-      s.cond[i] = Math.max(1, s.cond[i] - hurt(s, 45)); hit++;
+      if (!B[su.grid[i]]?.cat || su.grid[i] === T.HALL || su.cond[i] <= 0 || rng() < 0.4) continue;
+      su.cond[i] = Math.max(1, su.cond[i] - hurt(s, 45)); hit++;
     }
     if (hit) { st.disaster = `A tornado tore through town and damaged ${hit} building${hit > 1 ? 's' : ''}. They repair as upkeep is paid.`; note(s, 'warn', st.disaster); }
   }
