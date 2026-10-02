@@ -21,6 +21,13 @@ Guests can turn their guest city into a full account later (Account menu). Linki
 - Saves are split: `plots/{id}` is a small public summary everyone listens to; `plotState/{id}` holds the full city and is only fetched for adjacent neighbours.
 - `node test/balance.mjs` runs a scripted city for 100 days.
 
+## New in 2.23: whose city is this? - a name pops up as you look around
+
+- **New `#hover-city` element** (`public/index.html`, styled in `styles.css` with the same `:empty { display: none }` auto-hide trick as `.objective`): shows the name of whatever city is under the cursor, mouse or keyboard, whenever it isn't your own (your own is already always on screen via `#city-name`).
+- **`showHoverCity(h)`** in `main.js` is the single place this gets decided - it takes anything with `{px, py}` (the `pointermove` hit-test result, or the keyboard `cursor`) and looks it up with the same `plotAt(px, py)` the existing screen-reader announcement in `moveCursor()` already used, so there's no new Firestore read or lookup logic, just a second consumer of one that already existed.
+- No firestore.rules change - purely a read of data already loaded into the client's `plots` map.
+- **Investigated, couldn't reproduce**: "can't edit your own city after buying a second one." Traced `firestore.rules`' `citiesOk()`/the `plots` update rule, `buyPlot()`'s transaction, `switchCity()`, and `startGame()`'s state reset end to end - nothing wrong found, and the existing "council: buy the plot next door and switch between cities" smoke test already covers exactly this round-trip and passes. Needs an exact error message or reproduction steps to go further.
+
 ## New in 2.22: research points join the Inspect panel's editable stats
 
 - A "Set points" field for `s.rp` next to the technology count, same `editState` pattern as everything else in Inspect - it just hadn't been added alongside resources/mood in 2.21.

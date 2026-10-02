@@ -393,6 +393,7 @@ async function startGame(doc) {
   if (typeof doc.money === 'number' && state.money > doc.money + 1) state.money = doc.money;   // the checked summary wins
   plots.clear(); byXY.clear(); trips.clear(); bridges.clear();
   selected = null; drawer = null; followCam = false; lastHour = -1; moveFrom = -1; catalog = null; brush = null;
+  hoverPlotId = null; $('hover-city').textContent = '';
   me = toPlot(doc);
   me.ownerName = doc.ownerName;
   addPlot(me);
@@ -1856,6 +1857,16 @@ function undo() {
   afterChange();
 }
 
+// Whose city is this tile on - including a neighbour's, not just your own. Your own city's name is
+// already always on screen (#city-name), so this only speaks up for somewhere else.
+let hoverPlotId = null;
+function showHoverCity(h) {
+  const p = h && plotAt(h.px, h.py);
+  const id = p && p.id !== plotId ? p.id : null;
+  if (id === hoverPlotId) return;
+  hoverPlotId = id;
+  $('hover-city').textContent = p && id ? `${p.name}${p.ownerName ? ` — ${p.ownerName}` : ''}` : '';
+}
 function hoverInfo(h) {
   if (!isMine(h)) return null;
   const out = { ...h, tool: mode };
@@ -2037,6 +2048,7 @@ canvas.addEventListener('pointermove', (e) => {
     }
   }
   hover = e.pointerType === 'touch' ? null : hoverInfo(h);
+  showHoverCity(h);
   dirty = true;
 });
 function endPointer(e) {
@@ -2049,7 +2061,7 @@ function endPointer(e) {
 }
 canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
-canvas.addEventListener('pointerleave', () => { hover = null; dirty = true; });
+canvas.addEventListener('pointerleave', () => { hover = null; showHoverCity(null); dirty = true; });
 canvas.addEventListener('wheel', (e) => { e.preventDefault(); renderer.zoomAt(e.offsetX, e.offsetY, Math.exp(-e.deltaY * 0.0015)); dirty = true; }, { passive: false });
 
 // Keyboard play: a tile cursor on your own plot.
@@ -2072,6 +2084,7 @@ function moveCursor(dx, dy) {
   hover = hoverInfo(cursor);
   const there = plotAt(cursor.px, cursor.py);
   announce(isMine(cursor) ? describeTile(cursor.i) : there ? `${there.name}, ${there.ownerName}'s city` : 'Unclaimed land. Press Enter for details.');
+  showHoverCity(cursor);
   dirty = true;
 }
 window.addEventListener('keydown', (e) => {
@@ -3295,8 +3308,11 @@ function showHelp() {
   $('h-feedback').onclick = () => showFeedback();
 }
 
-const VERSION = 'Commons 2.22';
+const VERSION = 'Commons 2.23';
 const CHANGELOG = [
+  ['2.23', [
+    'Hovering or stepping the keyboard cursor onto another city - a neighbour\'s, or anyone else\'s on the map - now pops up its name at the top of the screen, so you always know whose land you\'re looking at.',
+  ]],
   ['2.18', [
     'Every account and every city was wiped at the project owner\'s request: a clean slate for everyone. Sign in again - guest, email or Google, it makes a fresh account either way - and found a new city.',
   ]],

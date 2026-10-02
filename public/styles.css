@@ -422,6 +422,13 @@ kbd {
 .toast.out { opacity: 0; transform: translateY(-6px); }
 @keyframes pop { from { opacity: 0; transform: translateY(-8px) scale(.97); } }
 
+.hover-city {
+  position: absolute; top: calc(max(12px, env(safe-area-inset-top)) + 10px); left: 50%; transform: translateX(-50%);
+  margin: 0; padding: 7px 16px 6px; border-radius: 999px; font-weight: 800; z-index: 7; pointer-events: none;
+  transition: opacity .15s;
+}
+.hover-city:empty { display: none; }
+
 /* ---------- dialogs ---------- */
 dialog {
   border: 0; padding: 0; color: var(--ink); background: var(--plate); border-radius: 20px; width: min(460px, calc(100vw - 24px));

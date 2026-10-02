@@ -343,6 +343,12 @@ test('world: neighbours touch, with borders', async ({ browser }) => {
   errors.push(...await watch(b));
   await found(b, { mayor: 'Nia', city: 'Nextdoor' });
   await closeModal(b);
+  // spiral(1) lands the second plot one tile east of the first, so Testhaven is west of here: step the
+  // keyboard cursor left off the edge of Nextdoor and onto it, and the name should pop up on screen.
+  await b.locator('#map').focus();
+  await b.keyboard.press('e');
+  for (let k = 0; k < 14; k++) await b.keyboard.press('ArrowLeft');
+  await expect(b.locator('#hover-city')).toContainText('Testhaven');
   await b.locator('#btn-world').click();
   await b.waitForTimeout(800);
   if (process.env.SHOTS) await b.screenshot({ path: `${process.env.SHOTS}/world-borders.png` });

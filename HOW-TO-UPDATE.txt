@@ -327,3 +327,22 @@ main"):
          field for s.rp, same pattern as resources and mood (replaces
          the research-point count that wasn't editable before).
          No firestore.rules change.
+   2.23  Hovering (mouse) or stepping the keyboard cursor onto any
+         other city - a neighbour's, or further out on the map - now
+         pops up its name at the top of the screen (#hover-city in
+         index.html, shown via showHoverCity() in main.js). It reuses
+         the same plotAt(px, py) lookup the existing screen-reader
+         announcement in moveCursor() already had, so it only ever
+         shows a city that's actually loaded into the local `plots`
+         map - nothing new fetched from Firestore. Your own city's
+         name is already always on screen (#city-name), so this only
+         speaks up for somewhere else. No firestore.rules change.
+         Investigated but couldn't reproduce: "can't edit your own
+         city after buying a second one." Traced the whole path -
+         firestore.rules' citiesOk()/plots update rule, buyPlot()'s
+         transaction, switchCity(), startGame()'s state reset - and
+         the existing "council: buy the plot next door and switch
+         between cities" smoke test already exercises exactly this
+         (found a 2nd city, opened it, switched back to the 1st) and
+         passes. If it happens again, get the exact error text and
+         what was clicked - there's nothing to fix without that.
