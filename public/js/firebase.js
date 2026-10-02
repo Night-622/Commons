@@ -11,9 +11,9 @@ const {
   getDocs, addDoc, serverTimestamp, setDoc, onSnapshot, deleteDoc, writeBatch, deleteField, getCountFromServer, arrayUnion, arrayRemove,
 } = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-firestore.js`);
 import { firebaseConfig } from './config.js';
-import { WORLD_ID, OPEN_WORLDS, REBUILD_MONEY, RESET_AT } from './constants.js';
+import { WORLD_ID, OPEN_WORLDS, RESET_AT } from './constants.js';
 import { spiral } from './spiral.js';
-import { newCity, serialize, summary, mapString, ensureTerrain } from './sim.js';
+import { newCity, newSuburb, newCouncil, linkCouncil, serialize, serializeSuburb, serializeCouncil, summary, mapString, ensureTerrain } from './sim.js';
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
@@ -171,23 +171,34 @@ export async function findPlot(user, world = WORLD_ID) {
     await updateDoc(linkRef(user.uid, world), { plotId: p.id }).catch((e) => console.warn('Couldn’t move home', e));
   }
   const data = { id: p.id, ...p.data() };
-  if (!data.state) data.state = await getState(p.id);
+  data.state = await mergedStateJson(p.id, data.councilId || p.id);
   if (!data.state) throw new Error('Your city’s save couldn’t be read. Reload the page; if it keeps happening, deploy the latest firestore.rules.');
   return data;
 }
 
-// Claims the next frontier plot. A transaction keeps two players from getting the same slot.
-// If the server still runs the older rules (before saves were split in two), claim the old way.
-export async function claimPlot(user, mayor, cityName, world = WORLD_ID) {
-  try { return await claimPlotTx(user, mayor, cityName, world, false); }
-  catch (e) {
-    if (!denied(e)) throw e;
-    console.warn('Claim refused with split saves; trying a one-document save (deploy firestore.rules to fix).', e);
-    try { const r = await claimPlotTx(user, mayor, cityName, world, true); legacySaves = true; return r; }
-    catch { throw e; }
+// A city's full save for play: its own suburb-local land and buildings (plotState), plus its council's shared
+// money/people/policy/clock (councilState) flattened on top - the shape sim.migrate() expects, and what
+// serialize() would have produced before saves were split. If no councilState exists (an old save from before
+// the council split, or an ancient one-document save still embedded in the plot itself) the suburb's own data
+// already has everything, so it's returned as-is.
+async function mergedStateJson(plotId, councilId) {
+  const [suburbSnap, councilSnap] = await Promise.all([
+    getDoc(doc(db, 'plotState', plotId)).catch((e) => { if (!denied(e)) throw e; return null; }),
+    getDoc(doc(db, 'councilState', councilId)).catch((e) => { if (!denied(e)) throw e; return null; }),
+  ]);
+  let suburbJson = suburbSnap?.exists() ? suburbSnap.data().state : null;
+  if (!suburbJson) {
+    const p = await getDoc(doc(db, 'plots', plotId));
+    suburbJson = p.exists() ? p.data().state || null : null;
   }
+  if (!suburbJson) return null;
+  if (!councilSnap?.exists()) return suburbJson;
+  return JSON.stringify({ ...JSON.parse(suburbJson), ...JSON.parse(councilSnap.data().state) });
 }
-async function claimPlotTx(user, mayor, cityName, world, legacy) {
+
+// Claims the next frontier plot. A transaction keeps two players from getting the same slot. A fresh city is
+// its own council, keyed by its own id (see councilOk() in firestore.rules).
+export async function claimPlot(user, mayor, cityName, world = WORLD_ID) {
   mayor = truncateUtf8(mayor, 24);
   const lref = linkRef(user.uid, world);
   const worldRef = doc(db, 'worlds', world);
@@ -208,14 +219,12 @@ async function claimPlotTx(user, mayor, cityName, world, legacy) {
     const state = newCity(cityName);
     ensureTerrain(state, x, y, world);
     const data = {
-      owner: user.uid, ownerName: mayor, world, px: x, py: y, index: n,
+      owner: user.uid, ownerName: mayor, world, px: x, py: y, index: n, councilId: id,
       createdAt: serverTimestamp(), updatedAt: serverTimestamp(), ...cleanSummary(state), map: mapString(state),
     };
-    if (legacy) tx.set(doc(db, 'plots', id), { ...data, state: serialize(state) });
-    else {
-      tx.set(doc(db, 'plots', id), data);
-      tx.set(doc(db, 'plotState', id), { state: serialize(state) });
-    }
+    tx.set(doc(db, 'plots', id), data);
+    tx.set(doc(db, 'plotState', id), { state: serializeSuburb(state) });
+    tx.set(doc(db, 'councilState', id), { state: serializeCouncil(state) });
     if (world === 'public') tx.set(lref, { plotId: id, createdAt: serverTimestamp() });
     else tx.set(lref, { uid: user.uid, world, plotId: id, createdAt: serverTimestamp() });
     if (w.exists()) tx.update(worldRef, { nextIndex: n + 1 });
@@ -240,18 +249,22 @@ export async function claimPlotAt(user, mayor, cityName, world, px, py) {
     const state = newCity(cityName);
     ensureTerrain(state, px, py, world);
     const data = {
-      owner: user.uid, ownerName: mayor, world, px, py, index: -1,
+      owner: user.uid, ownerName: mayor, world, px, py, index: -1, councilId: id,
       createdAt: serverTimestamp(), updatedAt: serverTimestamp(), ...cleanSummary(state), map: mapString(state),
     };
     tx.set(doc(db, 'plots', id), data);
-    tx.set(doc(db, 'plotState', id), { state: serialize(state) });
+    tx.set(doc(db, 'plotState', id), { state: serializeSuburb(state) });
+    tx.set(doc(db, 'councilState', id), { state: serializeCouncil(state) });
     if (world === 'public') tx.set(lref, { plotId: id, createdAt: serverTimestamp() });
     else tx.set(lref, { uid: user.uid, world, plotId: id, createdAt: serverTimestamp() });
     return { id, ...data, state: serialize(state) };
   });
 }
 
-// Start a new city on someone else's ruins. The rubble stays; newState is prepared by the caller.
+// Start a new city on someone else's ruins. The rubble stays; newState is prepared by the caller. It becomes
+// its own standalone council (councilId == targetId) regardless of whatever council the ruin's suburb used to
+// belong to - newState was built fresh (sim.rebuild() resets every council-level field), so there's nothing of
+// the old council worth keeping a link to.
 export async function takeOverRuins(user, mayor, targetId, newState, world = WORLD_ID) {
   mayor = truncateUtf8(mayor, 24);
   const lref = linkRef(user.uid, world);
@@ -260,9 +273,10 @@ export async function takeOverRuins(user, mayor, targetId, newState, world = WOR
     const p = await tx.get(pref);
     const link = await tx.get(lref);
     if (!p.exists() || p.data().status !== 'ruins') throw new Error('Someone has already rebuilt there.');
-    const data = { owner: user.uid, ownerName: mayor, ...cleanSummary(newState), map: mapString(newState), updatedAt: serverTimestamp(), state: deleteField() };
+    const data = { owner: user.uid, ownerName: mayor, councilId: targetId, ...cleanSummary(newState), map: mapString(newState), updatedAt: serverTimestamp(), state: deleteField() };
     tx.update(pref, data);
-    tx.set(doc(db, 'plotState', targetId), { state: serialize(newState) });
+    tx.set(doc(db, 'plotState', targetId), { state: serializeSuburb(newState) });
+    tx.set(doc(db, 'councilState', targetId), { state: serializeCouncil(newState) });
     if (link.exists()) tx.update(lref, { plotId: targetId });
     else if (world === 'public') tx.set(lref, { plotId: targetId, createdAt: serverTimestamp() });
     else tx.set(lref, { uid: user.uid, world, plotId: targetId, createdAt: serverTimestamp() });
@@ -270,24 +284,33 @@ export async function takeOverRuins(user, mayor, targetId, newState, world = WOR
   });
 }
 
-// Buy the plot next to one of your cities (`via`) and start a new city of your council there.
+// Buy the plot next to one of your cities (`via`) and extend its council with a new suburb there - no hall, no
+// settlers, no money of its own (newSuburb(), not newCity()): it joins the existing council's shared treasury
+// and population from the moment it's bought. The price (sim.plotPrice) comes out of that shared treasury
+// through the buyer's own next save, same as any other spend - this just creates the land.
 export async function buyPlot(user, mayor, via, px, py, cityName, world = WORLD_ID) {
   mayor = truncateUtf8(mayor, 24);
   const lref = linkRef(user.uid, world), id = `${world}_${px}_${py}`;
   return runTransaction(db, async (tx) => {
     const taken = await tx.get(doc(db, 'plots', id));
     const link = await tx.get(lref);
+    const viaDoc = await tx.get(doc(db, 'plots', via));
     if (taken.exists()) throw new Error('Someone has already claimed that plot.');
     if (!link.exists()) throw new Error('Found your first city before buying more land.');
+    if (!viaDoc.exists() || viaDoc.data().owner !== user.uid) throw new Error('That city isn’t yours anymore.');
+    const councilId = viaDoc.data().councilId || via;
     const ids = link.data().plotIds || [link.data().plotId];
-    const state = newCity(cityName);
-    ensureTerrain(state, px, py, world);
-    state.money = REBUILD_MONEY;
-    const data = { owner: user.uid, ownerName: mayor, world, px, py, index: -1, via, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), ...cleanSummary(state), map: mapString(state) };
+    const suburb = newSuburb();
+    ensureTerrain(suburb, px, py, world);
+    const data = {
+      owner: user.uid, ownerName: mayor, world, px, py, index: -1, via, councilId,
+      name: truncateUtf8(cityName, 40), money: 0, pop: 0, peakPop: 0, day: 0, status: 'alive', cityNo: 1, happiness: 0.65,
+      createdAt: serverTimestamp(), updatedAt: serverTimestamp(), map: mapString(suburb),
+    };
     tx.set(doc(db, 'plots', id), data);
-    tx.set(doc(db, 'plotState', id), { state: serialize(state) });
+    tx.set(doc(db, 'plotState', id), { state: serializeSuburb(suburb) });
     tx.update(lref, { plotIds: [...ids, id] });
-    return { id, ...data, state: serialize(state) };
+    return { id, ...data };
   });
 }
 // ---------- the market ----------
@@ -396,9 +419,21 @@ export const takeDesk = (plotId, user, name, idle = false) => setDoc(doc(db, 'de
 export function listenDesk(plotId, cb) {
   return onSnapshot(doc(db, 'desks', plotId), (d) => cb(d.exists() ? d.data() : null), (e) => console.error('Desk', e));
 }
-// Watching a shared city: its full save, as the mayor at the desk saves it.
+// Watching a shared city: its full save, as the mayor at the desk saves it - the suburb's own land and
+// buildings (plotState) plus its council's shared money/people/policy (councilState), merged exactly like
+// mergedStateJson() above, kept live. Either document changing re-fires the callback with the latest of both.
 export function listenState(plotId, cb) {
-  return onSnapshot(doc(db, 'plotState', plotId), (d) => { if (d.exists()) cb(d.data().state); }, (e) => console.error('Watching', e));
+  let suburbJson = null, councilJson = null, cancelled = false, offCouncil = null;
+  // Wait for both halves before the first callback - an early one with only the suburb's own land and
+  // buildings (no money/people yet) would look like a save that wiped the city's government.
+  const emit = () => { if (suburbJson != null && councilJson != null) cb(JSON.stringify({ ...JSON.parse(suburbJson), ...JSON.parse(councilJson) })); };
+  const offSuburb = onSnapshot(doc(db, 'plotState', plotId), (d) => { if (d.exists()) { suburbJson = d.data().state; emit(); } }, (e) => console.error('Watching', e));
+  getDoc(doc(db, 'plots', plotId)).then((p) => {
+    if (cancelled) return;
+    const councilId = p.exists() ? p.data().councilId || plotId : plotId;
+    offCouncil = onSnapshot(doc(db, 'councilState', councilId), (d) => { if (d.exists()) { councilJson = d.data().state; emit(); } }, (e) => console.error('Watching council', e));
+  });
+  return () => { cancelled = true; offSuburb(); offCouncil?.(); };
 }
 
 // Which of your cities opens when you come back.
@@ -407,7 +442,7 @@ export async function getPlot(id) {
   const p = await getDoc(doc(db, 'plots', id));
   if (!p.exists()) return null;
   const data = { id: p.id, ...p.data() };
-  if (!data.state) data.state = await getState(p.id);
+  data.state = await mergedStateJson(id, data.councilId || id);
   return data;
 }
 
@@ -447,30 +482,26 @@ function cleanSummary(state) {
   return s;
 }
 
-// Everyone listens to the small summary; the full save sits in plotState and is fetched only up close.
-// When the server still has the rules from before that split, the whole city goes into the plot document instead.
-let legacySaves = false;
-export const usingLegacySaves = () => legacySaves;
+// Kept so the save-state UI (main.js) doesn't need its own check: there's no older save format any more.
+export const usingLegacySaves = () => false;
+// Everyone listens to the small summary; the full save sits in plotState (this suburb's own land and
+// buildings) and councilState (the council's shared money/people/policy/clock, which `state` already carries
+// through to the right object via linkCouncil()'s accessors - serializeSuburb/serializeCouncil just split the
+// one object's fields back into their two documents). If this suburb isn't its council's founding one, its
+// councilState document lives at a different id, and every write to it must also touch the founding plot's
+// own updatedAt in the same batch - firestore.rules can only tell a councilState write is covered by a real
+// plot save by checking that one specific, known path (see councilState's comment there).
 export async function savePlot(id, state, extra = {}) {
-  const json = serialize(state);
   if (extra.ownerName) extra = { ...extra, ownerName: truncateUtf8(extra.ownerName, 24) };
   const top = { ...cleanSummary(state), map: mapString(state), ...tidy(extra), updatedAt: serverTimestamp() };
-  if (!legacySaves) {
-    try {
-      const b = writeBatch(db);
-      b.set(doc(db, 'plotState', id), { state: json });
-      b.update(doc(db, 'plots', id), { ...top, state: deleteField() });
-      return await b.commit();
-    } catch (e) {
-      if (!denied(e) || json.length >= 200000) throw e;
-      try { await updateDoc(doc(db, 'plots', id), { ...top, state: json }); }
-      catch { throw e; }   // the one-document save failed too, so the first reason is the useful one
-      legacySaves = true;
-      console.warn('Saved in the older one-document format. Deploy firestore.rules (npm run deploy:rules) to switch back.', e);
-      return;
-    }
-  }
-  return updateDoc(doc(db, 'plots', id), { ...top, state: json });
+  const current = await getDoc(doc(db, 'plots', id));
+  const councilId = current.exists() ? current.data().councilId || id : id;
+  const b = writeBatch(db);
+  b.set(doc(db, 'plotState', id), { state: serializeSuburb(state) });
+  b.set(doc(db, 'councilState', councilId), { state: serializeCouncil(state) });
+  b.update(doc(db, 'plots', id), { ...top, state: deleteField() });
+  if (councilId !== id) b.update(doc(db, 'plots', councilId), { updatedAt: serverTimestamp() });
+  return b.commit();
 }
 export async function getState(id) {
   try {
@@ -575,8 +606,12 @@ export function listenSentTransfers(world, uid, cb) {
   const q = query(collection(db, 'worlds', world, 'transfers'), where('fromOwner', '==', uid), limit(20));
   return onSnapshot(q, (snap) => cb(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), (e) => console.error('Sent transfers listener', e));
 }
-// One transaction: the city becomes mine (co-mayors don't carry over), joins my council, and the offer is gone.
-// The old owner's council list keeps the id; everything that opens a city checks the live owner, so it's harmless.
+// One transaction: the city becomes mine (co-mayors don't carry over) as its own standalone council (it leaves
+// whatever council it was part of - see acceptsTransfer() in firestore.rules), and the offer is gone. If it was
+// a suburb of a bigger council, it had no money or people of its own to bring with it (those were always
+// shared with the rest of that council, which keeps them) - it starts fresh, the same as any new city, while
+// keeping its own land and buildings. My own council list keeps whatever id it already used; everything that
+// opens a city checks the live owner, so it's harmless.
 export async function acceptTransfer(world, transferId, user, mayorName) {
   const tref = doc(db, 'worlds', world, 'transfers', transferId), lref = linkRef(user.uid, world);
   return runTransaction(db, async (tx) => {
@@ -590,8 +625,10 @@ export async function acceptTransfer(world, transferId, user, mayorName) {
     if (!p.exists() || p.data().owner !== d.fromOwner) throw new Error('That city has changed hands since it was offered.');
     const ids = link.exists() ? link.data().plotIds || [link.data().plotId] : [];
     if (!ids.includes(d.plot) && ids.length >= 9) throw new Error('Your council already has 9 cities, the most it can run.');
+    const oldCouncilId = p.data().councilId || d.plot;
     const ownerName = truncateUtf8(mayorName, 24);
-    tx.update(pref, { owner: user.uid, ownerName, co: deleteField(), updatedAt: serverTimestamp() });
+    tx.update(pref, { owner: user.uid, ownerName, co: deleteField(), councilId: d.plot, updatedAt: serverTimestamp() });
+    if (oldCouncilId !== d.plot) tx.set(doc(db, 'councilState', d.plot), { state: serializeCouncil(linkCouncil(newSuburb(), newCouncil(d.plotName))) });
     if (!link.exists()) tx.set(lref, world === 'public' ? { plotId: d.plot, createdAt: serverTimestamp() } : { uid: user.uid, world, plotId: d.plot, createdAt: serverTimestamp() });
     else if (!ids.includes(d.plot)) tx.update(lref, { plotIds: [...ids, d.plot] });
     tx.delete(tref);
